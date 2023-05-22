@@ -717,7 +717,7 @@ SOEXPORT void PSC_Connection_activate(PSC_Connection *self)
 SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 {
     if (!self->args.handling) return -1;
-    self->args.handling = 0;
+    if (--self->args.handling) return 0;
     PSC_Connection_activate(self);
 #ifdef WITH_TLS
     if (self->tls && self->args.size == CONNBUFSZ) doread(self);
@@ -823,5 +823,20 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_Event_destroy(self->closed);
     PSC_Event_destroy(self->connected);
     free(self);
+}
+
+SOEXPORT const uint8_t *PSC_EADataReceived_buf(const PSC_EADataReceived *self)
+{
+    return self->buf;
+}
+
+SOEXPORT uint16_t PSC_EADataReceived_size(const PSC_EADataReceived *self)
+{
+    return self->size;
+}
+
+SOEXPORT void PSC_EADataReceived_markHandling(PSC_EADataReceived *self)
+{
+    ++self->handling;
 }
 

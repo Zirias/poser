@@ -191,7 +191,7 @@ SOEXPORT void PSC_TcpClientOpts_setProto(PSC_Proto proto)
     tcpClientOpts.proto = proto;
 }
 
-SOEXPORT void PSC_TcpClientOpts_setNumericHosts(void)
+SOEXPORT void PSC_TcpClientOpts_numericHosts(void)
 {
     tcpClientOpts.numerichosts = 1;
 }

@@ -21,7 +21,7 @@ DECLEXPORT void
 PSC_TcpClientOpts_setProto(PSC_Proto proto);
 
 DECLEXPORT void
-PSC_TcpClientOpts_setNumericHosts(void);
+PSC_TcpClientOpts_numericHosts(void);
 
 DECLEXPORT void
 PSC_TcpClientOpts_setBlacklistHits(int blacklistHits);

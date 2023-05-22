@@ -423,3 +423,8 @@ SOEXPORT void PSC_Service_done(void)
     readyRead = 0;
 }
 
+SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
+{
+    self->rc = rc;
+}
+

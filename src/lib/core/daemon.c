@@ -275,7 +275,7 @@ done:
     return rc;
 }
 
-SOLOCAL void daemon_launched(void)
+SOEXPORT void PSC_Daemon_launched(void)
 {
     if (outfd >= 0)
     {

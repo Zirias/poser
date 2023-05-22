@@ -18,7 +18,7 @@ PSC_Connection_closed(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
 DECLEXPORT PSC_Event *
-Connection_dataReceived(PSC_Connection *self)
+PSC_Connection_dataReceived(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
 DECLEXPORT PSC_Event *
