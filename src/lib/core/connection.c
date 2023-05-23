@@ -572,42 +572,18 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	    self->tls = SSL_new(tls_server_ctx);
 	}
 	SSL_set_fd(self->tls, fd);
-	if (opts->tls_certfile)
+	if (opts->tls_cert)
 	{
-	    if (opts->tls_keyfile)
+	    if (!SSL_use_certificate(self->tls, opts->tls_cert))
 	    {
-		if (SSL_use_certificate_file(self->tls,
-			    opts->tls_certfile, SSL_FILETYPE_PEM) > 0)
-		{
-		    if (SSL_use_PrivateKey_file(self->tls,
-				opts->tls_keyfile, SSL_FILETYPE_PEM) <= 0)
-		    {
-			PSC_Log_fmt(PSC_L_ERROR,
-				"connection: error loading private key %s.",
-				opts->tls_keyfile);
-		    }
-		    else
-		    {
-			PSC_Log_fmt(PSC_L_INFO, "connection: using "
-				"certificate %s.", opts->tls_certfile);
-		    }
-		}
-		else
-		{
-		    PSC_Log_fmt(PSC_L_ERROR, "connection: error loading "
-			    "certificate %s.", opts->tls_certfile);
-		}
+		PSC_Log_msg(PSC_L_ERROR, "Error using certificate");
 	    }
-	    else
+	    if (!SSL_use_PrivateKey(self->tls, opts->tls_key))
 	    {
-		PSC_Log_msg(PSC_L_ERROR, "connection: certificate without "
-			"private key, ignoring.");
+		PSC_Log_msg(PSC_L_ERROR, "Error using private key");
 	    }
-	}
-	else if (opts->tls_keyfile)
-	{
-	    PSC_Log_msg(PSC_L_ERROR,
-		    "connection: private key without certificate, ignoring.");
+	    EVP_PKEY_free(opts->tls_key);
+	    X509_free(opts->tls_cert);
 	}
     }
     else

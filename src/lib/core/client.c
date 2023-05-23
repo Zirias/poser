@@ -19,6 +19,10 @@
 #include <threads.h>
 #include <unistd.h>
 
+#ifdef WITH_TLS
+#include <openssl/pem.h>
+#endif
+
 #define BLACKLISTSIZE 32
 
 typedef struct PSC_TcpClientOpts
@@ -49,6 +53,10 @@ typedef struct ResolveJobData
 {
     struct addrinfo *res0;
     void *receiver;
+#ifdef WITH_TLS
+    X509 *cert;
+    EVP_PKEY *key;
+#endif
     PSC_ClientCreatedHandler callback;
     PSC_TcpClientOpts opts;
 } ResolveJobData;
@@ -82,8 +90,12 @@ static int blacklistcheck(socklen_t len, struct sockaddr *addr)
     return 1;
 }
 
-static PSC_Connection *createFromAddrinfo(const PSC_TcpClientOpts *opts,
-	struct addrinfo *res0)
+static PSC_Connection *createFromAddrinfo(
+	const PSC_TcpClientOpts *opts, struct addrinfo *res0
+#ifdef WITH_TLS
+	, X509 *cert, EVP_PKEY *key
+#endif
+	)
 {
     struct addrinfo *res;
     int fd = -1;
@@ -115,8 +127,8 @@ static PSC_Connection *createFromAddrinfo(const PSC_TcpClientOpts *opts,
     }
     ConnOpts copts = {
 #ifdef WITH_TLS
-	.tls_certfile = opts->tls_certfile,
-	.tls_keyfile = opts->tls_keyfile,
+	.tls_cert = cert,
+	.tls_key = key,
 	.tls_hostname = opts->remotehost,
 	.tls_mode = opts->tls ? TM_CLIENT : TM_NONE,
 	.tls_noverify = opts->noverify,
@@ -150,10 +162,75 @@ static struct addrinfo *resolveAddress(const PSC_TcpClientOpts *opts)
     return res0;
 }
 
+#ifdef WITH_TLS
+static void fetchCert(X509 **cert, EVP_PKEY **key,
+	const PSC_TcpClientOpts *opts)
+{
+    FILE *certfile = 0;
+    FILE *keyfile = 0;
+    *cert = 0;
+    *key = 0;
+
+    if (opts->tls_certfile && !opts->tls_keyfile)
+    {
+	PSC_Log_msg(PSC_L_ERROR,
+		"client: certificate without private key, ignoring");
+	return;
+    }
+    if (opts->tls_keyfile && !opts->tls_certfile)
+    {
+	PSC_Log_msg(PSC_L_ERROR,
+		"client: private key without certificate, ignoring");
+	return;
+    }
+    if (!opts->tls_certfile) return;
+    if (!(certfile = fopen(opts->tls_certfile, "r")))
+    {
+	PSC_Log_fmt(PSC_L_ERROR,
+		"client: cannot open certificate file `%s' for reading",
+		opts->tls_certfile);
+	goto error;
+    }
+    if (!(keyfile = fopen(opts->tls_keyfile, "r")))
+    {
+	PSC_Log_fmt(PSC_L_ERROR,
+		"client: cannot open private key file `%s' for reading",
+		opts->tls_keyfile);
+	goto error;
+    }
+    if (!(*cert = PEM_read_X509(certfile, 0, 0, 0)))
+    {
+	PSC_Log_fmt(PSC_L_ERROR,
+		"client: cannot read certificate from `%s'",
+		opts->tls_certfile);
+	goto error;
+    }
+    if (!(*key = PEM_read_PrivateKey(keyfile, 0, 0, 0)))
+    {
+	PSC_Log_fmt(PSC_L_ERROR,
+		"client: cannot read private key from `%s'",
+		opts->tls_keyfile);
+	goto error;
+    }
+    fclose(keyfile);
+    fclose(certfile);
+    return;
+
+error:
+    EVP_PKEY_free(*key);
+    X509_free(*cert);
+    if (keyfile) fclose(keyfile);
+    if (certfile) fclose(certfile);
+}
+#endif
+
 static void doResolve(void *arg)
 {
     ResolveJobData *data = arg;
     data->res0 = resolveAddress(&data->opts);
+#ifdef WITH_TLS
+    fetchCert(&data->cert, &data->key, &data->opts);
+#endif
 }
 
 static void resolveDone(void *receiver, void *sender, void *args)
@@ -163,8 +240,14 @@ static void resolveDone(void *receiver, void *sender, void *args)
 
     ResolveJobData *data = args;
     if (!data->res0) data->callback(data->receiver, 0);
+#ifdef WITH_TLS
+    else data->callback(data->receiver,
+	    createFromAddrinfo(&data->opts, data->res0,
+		data->cert, data->key));
+#else
     else data->callback(data->receiver,
 	    createFromAddrinfo(&data->opts, data->res0));
+#endif
     free(data);
 }
 
@@ -217,7 +300,14 @@ SOEXPORT PSC_Connection *PSC_Connection_createTcpClient(void)
 {
     struct addrinfo *res0 = resolveAddress(&tcpClientOpts);
     if (!res0) return 0;
+#ifdef WITH_TLS
+    X509 *cert;
+    EVP_PKEY *key;
+    fetchCert(&cert, &key, &tcpClientOpts);
+    return createFromAddrinfo(&tcpClientOpts, res0, cert, key);
+#else
     return createFromAddrinfo(&tcpClientOpts, res0);
+#endif
 }
 
 SOEXPORT int PSC_Connection_createTcpClientAsync(

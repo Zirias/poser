@@ -23,6 +23,10 @@
 #include <threads.h>
 #include <unistd.h>
 
+#ifdef WITH_TLS
+#include <openssl/pem.h>
+#endif
+
 #ifndef MAXSOCKS
 #define MAXSOCKS 64
 #endif
@@ -76,8 +80,8 @@ struct PSC_Server
     PSC_Connection **conn;
     char *path;
 #ifdef WITH_TLS
-    char *certfile;
-    char *keyfile;
+    X509 *cert;
+    EVP_PKEY *key;
 #endif
     size_t conncapa;
     size_t connsize;
@@ -162,12 +166,19 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     }
     ConnOpts co = {
 #ifdef WITH_TLS
-	.tls_certfile = self->certfile,
-	.tls_keyfile = self->keyfile,
+	.tls_cert = self->cert,
+	.tls_key = self->key,
 	.tls_mode = self->tls ? TM_SERVER : TM_NONE,
 #endif
 	.createmode = self->connwait ? CCM_WAIT : CCM_NORMAL
     };
+#ifdef WITH_TLS
+    if (self->tls)
+    {
+	X509_up_ref(self->cert);
+	EVP_PKEY_up_ref(self->key);
+    }
+#endif
     PSC_Connection *newconn = PSC_Connection_create(connfd, &co);
     self->conn[self->connsize++] = newconn;
     PSC_Event_register(PSC_Connection_closed(newconn), self,
@@ -188,11 +199,50 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
 	char *path)
 {
-    if (nsocks < 1)
+#ifdef WITH_TLS
+    FILE *certfile = 0;
+    FILE *keyfile = 0;
+    X509 *cert = 0;
+    EVP_PKEY *key = 0;
+#endif
+    if (nsocks < 1) goto error;
+#ifdef WITH_TLS
+    if (tcpServerOpts.tls)
     {
-	free(path);
-	return 0;
+	if (!(certfile = fopen(tcpServerOpts.certfile, "r")))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot open certificate file `%s' for reading",
+		    tcpServerOpts.certfile);
+	    goto error;
+	}
+	if (!(keyfile = fopen(tcpServerOpts.keyfile, "r")))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot open private key file `%s' for reading",
+		    tcpServerOpts.keyfile);
+	    goto error;
+	}
+	if (!(cert = PEM_read_X509(certfile, 0, 0, 0)))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot read certificate from `%s'",
+		    tcpServerOpts.certfile);
+	    goto error;
+	}
+	if (!(key = PEM_read_PrivateKey(keyfile, 0, 0, 0)))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot read private key from `%s'",
+		    tcpServerOpts.keyfile);
+	    goto error;
+	}
+	fclose(keyfile);
+	fclose(certfile);
+	PSC_Log_fmt(PSC_L_INFO,
+		"server: using certificate `%s'", tcpServerOpts.certfile);
     }
+#endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->clientConnected = PSC_Event_create(self);
     self->clientDisconnected = PSC_Event_create(self);
@@ -204,8 +254,8 @@ static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
     self->connwait = tcpServerOpts.connwait;
 #ifdef WITH_TLS
     self->tls = tcpServerOpts.tls;
-    self->certfile = PSC_copystr(tcpServerOpts.certfile);
-    self->keyfile = PSC_copystr(tcpServerOpts.keyfile);
+    self->cert = cert;
+    self->key = key;
 #endif
     self->nsocks = nsocks;
     memcpy(self->socks, socks, nsocks * sizeof *socks);
@@ -217,6 +267,16 @@ static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
     }
 
     return self;
+
+error:
+#ifdef WITH_TLS
+    EVP_PKEY_free(key);
+    X509_free(cert);
+    if (keyfile) fclose(keyfile);
+    if (certfile) fclose(certfile);
+#endif
+    free(path);
+    return 0;
 }
 
 SOEXPORT void PSC_TcpServerOpts_init(int port)
@@ -399,8 +459,8 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	free(self->path);
     }
 #ifdef WITH_TLS
-    free(self->keyfile);
-    free(self->certfile);
+    EVP_PKEY_free(self->key);
+    X509_free(self->cert);
 #endif
     free(self);
 }

@@ -5,6 +5,11 @@
 
 #include <sys/socket.h>
 
+#ifdef WITH_TLS
+#include <openssl/evp.h>
+#include <openssl/x509.h>
+#endif
+
 typedef enum ConnectionCreateMode
 {
     CCM_NORMAL,
@@ -22,8 +27,8 @@ typedef enum TlsMode
 typedef struct ConnOpts
 {
 #ifdef WITH_TLS
-    const char *tls_certfile;
-    const char *tls_keyfile;
+    X509 *tls_cert;
+    EVP_PKEY *tls_key;
     const char *tls_hostname;
     TlsMode tls_mode;
     int tls_noverify;
