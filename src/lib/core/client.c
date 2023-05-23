@@ -33,6 +33,7 @@ typedef struct PSC_TcpClientOpts
     int numerichosts;
 #ifdef WITH_TLS
     int tls;
+    int noverify;
 #endif
     int blacklisthits;
 } PSC_TcpClientOpts;
@@ -116,7 +117,9 @@ static PSC_Connection *createFromAddrinfo(const PSC_TcpClientOpts *opts,
 #ifdef WITH_TLS
 	.tls_client_certfile = opts->tls_certfile,
 	.tls_client_keyfile = opts->tls_keyfile,
+	.tls_hostname = opts->remotehost,
 	.tls_client = opts->tls,
+	.tls_noverify = opts->noverify,
 #endif
 	.createmode = CCM_CONNECTING,
 	.blacklisthits = opts->blacklisthits
@@ -182,6 +185,15 @@ SOEXPORT void PSC_TcpClientOpts_enableTls(
 #else
     (void)certfile;
     (void)keyfile;
+    PSC_Service_panic("This version of libposercore does not support TLS!");
+#endif
+}
+
+SOEXPORT void PSC_TcpClientOpts_disableCertVerify(void)
+{
+#ifdef WITH_TLS
+    tcpClientOpts.noverify = 1;
+#else
     PSC_Service_panic("This version of libposercore does not support TLS!");
 #endif
 }

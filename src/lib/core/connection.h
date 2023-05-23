@@ -17,7 +17,9 @@ typedef struct ConnOpts
 #ifdef WITH_TLS
     const char *tls_client_certfile;
     const char *tls_client_keyfile;
+    const char *tls_hostname;
     int tls_client;
+    int tls_noverify;
 #endif
     ConnectionCreateMode createmode;
     int blacklisthits;

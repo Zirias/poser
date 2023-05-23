@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #ifdef WITH_TLS
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 #endif
 
@@ -57,8 +58,8 @@ typedef struct RemoteAddrResolveArgs
 } RemoteAddrResolveArgs;
 
 #ifdef WITH_TLS
-static SSL_CTX *tls_ctx = 0;
-static int tls_nconn = 0;
+static SSL_CTX *tls_client_ctx = 0;
+static int tls_nclients = 0;
 #endif
 
 struct PSC_Connection
@@ -83,6 +84,7 @@ struct PSC_Connection
     int connecting;
     int port;
 #ifdef WITH_TLS
+    int tls_is_client;
     int tls_connect_st;
     int tls_connect_ticks;
     int tls_read_st;
@@ -185,10 +187,19 @@ static void dohandshake(PSC_Connection *self)
     if (rc > 0)
     {
 	self->tls_connect_st = 0;
-	PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
-		PSC_Connection_remoteAddr(self));
 	PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
 	self->tls_connect_ticks = 0;
+	long vres;
+	if ((vres = SSL_get_verify_result(self->tls)) != X509_V_OK)
+	{
+	    PSC_Log_fmt(PSC_L_WARNING,
+		    "connection: peer verification failed: %s",
+		    X509_verify_cert_error_string(vres));
+	    PSC_Connection_close(self, 1);
+	    return;
+	}
+	PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
+		PSC_Connection_remoteAddr(self));
 	PSC_Event_raise(self->connected, 0, 0);
     }
     else
@@ -201,8 +212,9 @@ static void dohandshake(PSC_Connection *self)
 	else
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
-		    "connection: TLS handshake failed with %s",
-		    PSC_Connection_remoteAddr(self));
+		    "connection: TLS handshake failed with %s: %s",
+		    PSC_Connection_remoteAddr(self),
+		    ERR_error_string(ERR_get_error(), 0));
 	    PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
 	    PSC_Connection_close(self, 1);
 	    return;
@@ -504,10 +516,23 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 #ifdef WITH_TLS
     if (opts->tls_client)
     {
-	if (!tls_ctx) tls_ctx = SSL_CTX_new(TLS_client_method());
-	++tls_nconn;
-	self->tls = SSL_new(tls_ctx);
+	if (!tls_client_ctx)
+	{
+	    tls_client_ctx = SSL_CTX_new(TLS_client_method());
+	    SSL_CTX_set_default_verify_paths(tls_client_ctx);
+	    SSL_CTX_set_verify(tls_client_ctx, SSL_VERIFY_PEER, 0);
+	}
+	++tls_nclients;
+	self->tls = SSL_new(tls_client_ctx);
 	SSL_set_fd(self->tls, fd);
+	if (opts->tls_noverify)
+	{
+	    SSL_set_verify(self->tls, SSL_VERIFY_NONE, 0);
+	}
+	else
+	{
+	    SSL_set1_host(self->tls, opts->tls_hostname);
+	}
 	if (opts->tls_client_certfile)
 	{
 	    if (opts->tls_client_keyfile)
@@ -802,10 +827,10 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     }
 #ifdef WITH_TLS
     SSL_free(self->tls);
-    if (tls_nconn && !--tls_nconn)
+    if (tls_nclients && !--tls_nclients)
     {
-	SSL_CTX_free(tls_ctx);
-	tls_ctx = 0;
+	SSL_CTX_free(tls_client_ctx);
+	tls_client_ctx = 0;
     }
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
 #endif

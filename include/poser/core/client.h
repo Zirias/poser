@@ -18,6 +18,9 @@ DECLEXPORT void
 PSC_TcpClientOpts_enableTls(const char *certfile, const char *keyfile);
 
 DECLEXPORT void
+PSC_TcpClientOpts_disableCertVerify(void);
+
+DECLEXPORT void
 PSC_TcpClientOpts_setProto(PSC_Proto proto);
 
 DECLEXPORT void
