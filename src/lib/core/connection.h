@@ -12,13 +12,20 @@ typedef enum ConnectionCreateMode
     CCM_CONNECTING
 } ConnectionCreateMode;
 
+typedef enum TlsMode
+{
+    TM_NONE,
+    TM_CLIENT,
+    TM_SERVER
+} TlsMode;
+
 typedef struct ConnOpts
 {
 #ifdef WITH_TLS
-    const char *tls_client_certfile;
-    const char *tls_client_keyfile;
+    const char *tls_certfile;
+    const char *tls_keyfile;
     const char *tls_hostname;
-    int tls_client;
+    TlsMode tls_mode;
     int tls_noverify;
 #endif
     ConnectionCreateMode createmode;

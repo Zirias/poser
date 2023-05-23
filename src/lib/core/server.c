@@ -33,9 +33,16 @@
 typedef struct PSC_TcpServerOpts
 {
     const char **bindhosts;
+#ifdef WITH_TLS
+    const char *certfile;
+    const char *keyfile;
+#endif
     size_t bh_capa;
     size_t bh_count;
     PSC_Proto proto;
+#ifdef WITH_TLS
+    int tls;
+#endif
     int port;
     int numerichosts;
     int connwait;
@@ -68,11 +75,18 @@ struct PSC_Server
     PSC_Event *clientDisconnected;
     PSC_Connection **conn;
     char *path;
+#ifdef WITH_TLS
+    char *certfile;
+    char *keyfile;
+#endif
     size_t conncapa;
     size_t connsize;
     size_t nsocks;
     int numericHosts;
     int connwait;
+#ifdef WITH_TLS
+    int tls;
+#endif
     SockInfo socks[];
 };
 
@@ -148,9 +162,9 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     }
     ConnOpts co = {
 #ifdef WITH_TLS
-	.tls_client_certfile = 0,
-	.tls_client_keyfile = 0,
-	.tls_client = 0,
+	.tls_certfile = self->certfile,
+	.tls_keyfile = self->keyfile,
+	.tls_mode = self->tls ? TM_SERVER : TM_NONE,
 #endif
 	.createmode = self->connwait ? CCM_WAIT : CCM_NORMAL
     };
@@ -188,6 +202,11 @@ static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
     self->connsize = 0;
     self->numericHosts = tcpServerOpts.numerichosts;
     self->connwait = tcpServerOpts.connwait;
+#ifdef WITH_TLS
+    self->tls = tcpServerOpts.tls;
+    self->certfile = PSC_copystr(tcpServerOpts.certfile);
+    self->keyfile = PSC_copystr(tcpServerOpts.keyfile);
+#endif
     self->nsocks = nsocks;
     memcpy(self->socks, socks, nsocks * sizeof *socks);
     for (size_t i = 0; i < nsocks; ++i)
@@ -216,6 +235,20 @@ SOEXPORT void PSC_TcpServerOpts_bind(const char *bindhost)
 		tcpServerOpts.bh_capa * sizeof *tcpServerOpts.bindhosts);
     }
     tcpServerOpts.bindhosts[tcpServerOpts.bh_count++] = bindhost;
+}
+
+SOEXPORT void PSC_TcpServerOpts_enableTls(
+	const char *certfile, const char *keyfile)
+{
+#ifdef WITH_TLS
+    tcpServerOpts.tls = 1;
+    tcpServerOpts.certfile = certfile;
+    tcpServerOpts.keyfile = keyfile;
+#else
+    (void)certfile;
+    (void)keyfile;
+    PSC_Service_panic("This version of libposercore does not support TLS!");
+#endif
 }
 
 SOEXPORT void PSC_TcpServerOpts_setProto(PSC_Proto proto)
@@ -365,6 +398,10 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	unlink(self->path);
 	free(self->path);
     }
+#ifdef WITH_TLS
+    free(self->keyfile);
+    free(self->certfile);
+#endif
     free(self);
 }
 

@@ -16,6 +16,10 @@ PSC_TcpServerOpts_bind(const char *bindhost)
     ATTR_NONNULL((1));
 
 DECLEXPORT void
+PSC_TcpServerOpts_enableTls(const char *certfile, const char *keyfile)
+    ATTR_NONNULL((1)) ATTR_NONNULL((2));
+
+DECLEXPORT void
 PSC_TcpServerOpts_setProto(PSC_Proto proto);
 
 DECLEXPORT void

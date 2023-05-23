@@ -59,7 +59,9 @@ typedef struct RemoteAddrResolveArgs
 
 #ifdef WITH_TLS
 static SSL_CTX *tls_client_ctx = 0;
+static SSL_CTX *tls_server_ctx = 0;
 static int tls_nclients = 0;
+static int tls_nservers = 0;
 #endif
 
 struct PSC_Connection
@@ -82,6 +84,7 @@ struct PSC_Connection
     RemoteAddrResolveArgs resolveArgs;
     int fd;
     int connecting;
+    int waiting;
     int port;
 #ifdef WITH_TLS
     int tls_is_client;
@@ -105,6 +108,7 @@ static void wantreadwrite(PSC_Connection *self) CMETHOD;
 #ifdef WITH_TLS
 static void checkPendingTls(void *receiver, void *sender, void *args);
 static void dohandshake(PSC_Connection *self) CMETHOD;
+static void handshakenow(void *receiver, void *sender, void *args);
 #endif
 static void dowrite(PSC_Connection *self) CMETHOD;
 static void deleteConnection(void *receiver, void *sender, void *args);
@@ -133,13 +137,17 @@ static void checkPendingConnection(void *receiver, void *sender, void *args)
 
 static void wantreadwrite(PSC_Connection *self)
 {
-    if (self->connecting ||
+    if (!self->deleteScheduled && (
+		self->connecting ||
 #ifdef WITH_TLS
-	    self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
-	    self->tls_read_st == SSL_ERROR_WANT_WRITE ||
-	    self->tls_write_st == SSL_ERROR_WANT_WRITE ||
+		self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
+		self->tls_read_st == SSL_ERROR_WANT_WRITE ||
+		self->tls_write_st == SSL_ERROR_WANT_WRITE ||
+		(self->nrecs && !self->tls_connect_ticks)
+#else
+		self->nrecs
 #endif
-	    self->nrecs)
+	))
     {
 	PSC_Service_registerWrite(self->fd);
     }
@@ -148,13 +156,13 @@ static void wantreadwrite(PSC_Connection *self)
 	PSC_Service_unregisterWrite(self->fd);
     }
 
-    if (
+    if (!self->deleteScheduled && (
 #ifdef WITH_TLS
-	    self->tls_connect_st == SSL_ERROR_WANT_READ ||
-	    self->tls_read_st == SSL_ERROR_WANT_READ ||
-	    self->tls_write_st == SSL_ERROR_WANT_READ ||
+		self->tls_connect_st == SSL_ERROR_WANT_READ ||
+		self->tls_read_st == SSL_ERROR_WANT_READ ||
+		self->tls_write_st == SSL_ERROR_WANT_READ ||
 #endif
-	    !self->args.handling)
+		(!self->waiting && !self->args.handling)))
     {
 	PSC_Service_registerRead(self->fd);
     }
@@ -183,24 +191,28 @@ static void dohandshake(PSC_Connection *self)
 {
     PSC_Log_fmt(PSC_L_DEBUG, "connection: handshake with %s",
 	    PSC_Connection_remoteAddr(self));
-    int rc = SSL_connect(self->tls);
+    int rc = self->tls_is_client ?
+	SSL_connect(self->tls) : SSL_accept(self->tls);
     if (rc > 0)
     {
 	self->tls_connect_st = 0;
 	PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
 	self->tls_connect_ticks = 0;
-	long vres;
-	if ((vres = SSL_get_verify_result(self->tls)) != X509_V_OK)
+	if (self->tls_is_client)
 	{
-	    PSC_Log_fmt(PSC_L_WARNING,
-		    "connection: peer verification failed: %s",
-		    X509_verify_cert_error_string(vres));
-	    PSC_Connection_close(self, 1);
-	    return;
+	    long vres;
+	    if ((vres = SSL_get_verify_result(self->tls)) != X509_V_OK)
+	    {
+		PSC_Log_fmt(PSC_L_WARNING,
+			"connection: peer verification failed: %s",
+			X509_verify_cert_error_string(vres));
+		PSC_Connection_close(self, 1);
+		return;
+	    }
+	    PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
+		    PSC_Connection_remoteAddr(self));
+	    PSC_Event_raise(self->connected, 0, 0);
 	}
-	PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
-		PSC_Connection_remoteAddr(self));
-	PSC_Event_raise(self->connected, 0, 0);
     }
     else
     {
@@ -221,6 +233,17 @@ static void dohandshake(PSC_Connection *self)
 	}
     }
     wantreadwrite(self);
+}
+
+static void handshakenow(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_Connection *self = receiver;
+
+    PSC_Event_unregister(PSC_Service_eventsDone(), self, handshakenow, 0);
+    dohandshake(self);
 }
 #endif
 
@@ -508,56 +531,71 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
+    self->waiting = (opts->createmode == CCM_WAIT);
     self->port = 0;
     self->addr = 0;
     self->name = 0;
     self->data = 0;
     self->deleter = 0;
 #ifdef WITH_TLS
-    if (opts->tls_client)
+    self->tls_is_client = 0;
+    if (opts->tls_mode != TM_NONE)
     {
-	if (!tls_client_ctx)
+	if (opts->tls_mode == TM_CLIENT)
 	{
-	    tls_client_ctx = SSL_CTX_new(TLS_client_method());
-	    SSL_CTX_set_default_verify_paths(tls_client_ctx);
-	    SSL_CTX_set_verify(tls_client_ctx, SSL_VERIFY_PEER, 0);
-	}
-	++tls_nclients;
-	self->tls = SSL_new(tls_client_ctx);
-	SSL_set_fd(self->tls, fd);
-	if (opts->tls_noverify)
-	{
-	    SSL_set_verify(self->tls, SSL_VERIFY_NONE, 0);
+	    self->tls_is_client = 1;
+	    if (!tls_client_ctx)
+	    {
+		tls_client_ctx = SSL_CTX_new(TLS_client_method());
+		SSL_CTX_set_default_verify_paths(tls_client_ctx);
+		SSL_CTX_set_verify(tls_client_ctx, SSL_VERIFY_PEER, 0);
+	    }
+	    ++tls_nclients;
+	    self->tls = SSL_new(tls_client_ctx);
+	    if (opts->tls_noverify)
+	    {
+		SSL_set_verify(self->tls, SSL_VERIFY_NONE, 0);
+	    }
+	    else
+	    {
+		SSL_set1_host(self->tls, opts->tls_hostname);
+	    }
 	}
 	else
 	{
-	    SSL_set1_host(self->tls, opts->tls_hostname);
+	    if (!tls_server_ctx)
+	    {
+		tls_server_ctx = SSL_CTX_new(TLS_server_method());
+		SSL_CTX_set_min_proto_version(tls_server_ctx, TLS1_2_VERSION);
+	    }
+	    ++tls_nservers;
+	    self->tls = SSL_new(tls_server_ctx);
 	}
-	if (opts->tls_client_certfile)
+	SSL_set_fd(self->tls, fd);
+	if (opts->tls_certfile)
 	{
-	    if (opts->tls_client_keyfile)
+	    if (opts->tls_keyfile)
 	    {
 		if (SSL_use_certificate_file(self->tls,
-			    opts->tls_client_certfile, SSL_FILETYPE_PEM) > 0)
+			    opts->tls_certfile, SSL_FILETYPE_PEM) > 0)
 		{
 		    if (SSL_use_PrivateKey_file(self->tls,
-				opts->tls_client_keyfile,
-				SSL_FILETYPE_PEM) <= 0)
+				opts->tls_keyfile, SSL_FILETYPE_PEM) <= 0)
 		    {
 			PSC_Log_fmt(PSC_L_ERROR,
 				"connection: error loading private key %s.",
-				opts->tls_client_keyfile);
+				opts->tls_keyfile);
 		    }
 		    else
 		    {
-			PSC_Log_fmt(PSC_L_INFO, "connection: using client "
-				"certificate %s.", opts->tls_client_certfile);
+			PSC_Log_fmt(PSC_L_INFO, "connection: using "
+				"certificate %s.", opts->tls_certfile);
 		    }
 		}
 		else
 		{
 		    PSC_Log_fmt(PSC_L_ERROR, "connection: error loading "
-			    "certificate %s.", opts->tls_client_certfile);
+			    "certificate %s.", opts->tls_certfile);
 		}
 	    }
 	    else
@@ -566,7 +604,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 			"private key, ignoring.");
 	    }
 	}
-	else if (opts->tls_client_keyfile)
+	else if (opts->tls_keyfile)
 	{
 	    PSC_Log_msg(PSC_L_ERROR,
 		    "connection: private key without certificate, ignoring.");
@@ -595,6 +633,14 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 		checkPendingConnection, 0);
 	PSC_Service_registerWrite(fd);
     }
+#ifdef WITH_TLS
+    else if (self->tls && !self->tls_is_client)
+    {
+	self->tls_connect_ticks = CONNTICKS;
+	PSC_Event_register(PSC_Service_tick(), self, checkPendingTls, 0);
+	PSC_Event_register(PSC_Service_eventsDone(), self, handshakenow, 0);
+    }
+#endif
     else if (opts->createmode == CCM_NORMAL)
     {
 	PSC_Service_registerRead(fd);
@@ -736,6 +782,7 @@ SOEXPORT void PSC_Connection_activate(PSC_Connection *self)
     if (self->args.handling) return;
     PSC_Log_fmt(PSC_L_DEBUG, "connection: unblocking reads from %s",
 	    PSC_Connection_remoteAddr(self));
+    self->waiting = 0;
     wantreadwrite(self);
 }
 
@@ -752,6 +799,7 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 
 SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 {
+    if (self->deleteScheduled) return;
 #ifdef WITH__TLS
     if (self->tls && !self->connecting && !self->tls_connect_st)
     {
@@ -827,10 +875,21 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     }
 #ifdef WITH_TLS
     SSL_free(self->tls);
-    if (tls_nclients && !--tls_nclients)
+    if (self->tls_is_client)
     {
-	SSL_CTX_free(tls_client_ctx);
-	tls_client_ctx = 0;
+	if (tls_nclients && !--tls_nclients)
+	{
+	    SSL_CTX_free(tls_client_ctx);
+	    tls_client_ctx = 0;
+	}
+    }
+    else
+    {
+	if (tls_nservers && !--tls_nservers)
+	{
+	    SSL_CTX_free(tls_server_ctx);
+	    tls_server_ctx = 0;
+	}
     }
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
 #endif

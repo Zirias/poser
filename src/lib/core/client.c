@@ -115,10 +115,10 @@ static PSC_Connection *createFromAddrinfo(const PSC_TcpClientOpts *opts,
     }
     ConnOpts copts = {
 #ifdef WITH_TLS
-	.tls_client_certfile = opts->tls_certfile,
-	.tls_client_keyfile = opts->tls_keyfile,
+	.tls_certfile = opts->tls_certfile,
+	.tls_keyfile = opts->tls_keyfile,
 	.tls_hostname = opts->remotehost,
-	.tls_client = opts->tls,
+	.tls_mode = opts->tls ? TM_CLIENT : TM_NONE,
 	.tls_noverify = opts->noverify,
 #endif
 	.createmode = CCM_CONNECTING,
