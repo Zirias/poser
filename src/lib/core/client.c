@@ -16,7 +16,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <threads.h>
 #include <unistd.h>
 
 #ifdef WITH_TLS
@@ -25,12 +24,12 @@
 
 #define BLACKLISTSIZE 32
 
-typedef struct PSC_TcpClientOpts
+struct PSC_TcpClientOpts
 {
-    const char *remotehost;
+    char *remotehost;
 #ifdef WITH_TLS
-    const char *tls_certfile;
-    const char *tls_keyfile;
+    char *tls_certfile;
+    char *tls_keyfile;
 #endif
     PSC_Proto proto;
     int port;
@@ -40,7 +39,8 @@ typedef struct PSC_TcpClientOpts
     int noverify;
 #endif
     int blacklisthits;
-} PSC_TcpClientOpts;
+    int refcnt;
+};
 
 typedef struct BlacklistEntry
 {
@@ -58,11 +58,10 @@ typedef struct ResolveJobData
     EVP_PKEY *key;
 #endif
     PSC_ClientCreatedHandler callback;
-    PSC_TcpClientOpts opts;
+    PSC_TcpClientOpts *opts;
 } ResolveJobData;
 
 static BlacklistEntry blacklist[BLACKLISTSIZE];
-static thread_local PSC_TcpClientOpts tcpClientOpts;
 
 SOLOCAL void PSC_Connection_blacklistAddress(int hits,
 	socklen_t len, struct sockaddr *addr)
@@ -227,9 +226,9 @@ error:
 static void doResolve(void *arg)
 {
     ResolveJobData *data = arg;
-    data->res0 = resolveAddress(&data->opts);
+    data->res0 = resolveAddress(data->opts);
 #ifdef WITH_TLS
-    fetchCert(&data->cert, &data->key, &data->opts);
+    fetchCert(&data->cert, &data->key, data->opts);
 #endif
 }
 
@@ -242,29 +241,36 @@ static void resolveDone(void *receiver, void *sender, void *args)
     if (!data->res0) data->callback(data->receiver, 0);
 #ifdef WITH_TLS
     else data->callback(data->receiver,
-	    createFromAddrinfo(&data->opts, data->res0,
+	    createFromAddrinfo(data->opts, data->res0,
 		data->cert, data->key));
 #else
     else data->callback(data->receiver,
-	    createFromAddrinfo(&data->opts, data->res0));
+	    createFromAddrinfo(data->opts, data->res0));
 #endif
+    PSC_TcpClientOpts_destroy(data->opts);
     free(data);
 }
 
-SOEXPORT void PSC_TcpClientOpts_init(const char *remotehost, int port)
+SOEXPORT PSC_TcpClientOpts *PSC_TcpClientOpts_create(
+	const char *remotehost, int port)
 {
-    memset(&tcpClientOpts, 0, sizeof tcpClientOpts);
-    tcpClientOpts.remotehost = remotehost;
-    tcpClientOpts.port = port;
+    PSC_TcpClientOpts *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
+    self->remotehost = PSC_copystr(remotehost);
+    self->port = port;
+    self->refcnt = 1;
+    return self;
 }
 
-SOEXPORT void PSC_TcpClientOpts_enableTls(
+SOEXPORT void PSC_TcpClientOpts_enableTls(PSC_TcpClientOpts *self,
 	const char *certfile, const char *keyfile)
 {
 #ifdef WITH_TLS
-    tcpClientOpts.tls = 1;
-    tcpClientOpts.tls_certfile = certfile;
-    tcpClientOpts.tls_keyfile = keyfile;
+    self->tls = 1;
+    free(self->tls_certfile);
+    self->tls_certfile = PSC_copystr(certfile);
+    free(self->tls_keyfile);
+    self->tls_keyfile = PSC_copystr(keyfile);
 #else
     (void)certfile;
     (void)keyfile;
@@ -272,45 +278,60 @@ SOEXPORT void PSC_TcpClientOpts_enableTls(
 #endif
 }
 
-SOEXPORT void PSC_TcpClientOpts_disableCertVerify(void)
+SOEXPORT void PSC_TcpClientOpts_disableCertVerify(PSC_TcpClientOpts *self)
 {
 #ifdef WITH_TLS
-    tcpClientOpts.noverify = 1;
+    self->noverify = 1;
 #else
     PSC_Service_panic("This version of libposercore does not support TLS!");
 #endif
 }
 
-SOEXPORT void PSC_TcpClientOpts_setProto(PSC_Proto proto)
+SOEXPORT void PSC_TcpClientOpts_setProto(PSC_TcpClientOpts *self,
+	PSC_Proto proto)
 {
-    tcpClientOpts.proto = proto;
+    self->proto = proto;
 }
 
-SOEXPORT void PSC_TcpClientOpts_numericHosts(void)
+SOEXPORT void PSC_TcpClientOpts_numericHosts(PSC_TcpClientOpts *self)
 {
-    tcpClientOpts.numerichosts = 1;
+    self->numerichosts = 1;
 }
 
-SOEXPORT void PSC_TcpClientOpts_setBlacklistHits(int blacklistHits)
+SOEXPORT void PSC_TcpClientOpts_setBlacklistHits(PSC_TcpClientOpts *self,
+	int blacklistHits)
 {
-    tcpClientOpts.blacklisthits = blacklistHits;
+    self->blacklisthits = blacklistHits;
 }
 
-SOEXPORT PSC_Connection *PSC_Connection_createTcpClient(void)
+SOEXPORT void PSC_TcpClientOpts_destroy(PSC_TcpClientOpts *self)
 {
-    struct addrinfo *res0 = resolveAddress(&tcpClientOpts);
+    if (!self) return;
+    if (--self->refcnt) return;
+    free(self->remotehost);
+#ifdef WITH_TLS
+    free(self->tls_certfile);
+    free(self->tls_keyfile);
+#endif
+    free(self);
+}
+
+SOEXPORT PSC_Connection *PSC_Connection_createTcpClient(
+	const PSC_TcpClientOpts *opts)
+{
+    struct addrinfo *res0 = resolveAddress(opts);
     if (!res0) return 0;
 #ifdef WITH_TLS
     X509 *cert;
     EVP_PKEY *key;
-    fetchCert(&cert, &key, &tcpClientOpts);
-    return createFromAddrinfo(&tcpClientOpts, res0, cert, key);
+    fetchCert(&cert, &key, opts);
+    return createFromAddrinfo(opts, res0, cert, key);
 #else
-    return createFromAddrinfo(&tcpClientOpts, res0);
+    return createFromAddrinfo(opts, res0);
 #endif
 }
 
-SOEXPORT int PSC_Connection_createTcpClientAsync(
+SOEXPORT int PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
 	void *receiver, PSC_ClientCreatedHandler callback)
 {
     if (!PSC_ThreadPool_active())
@@ -324,7 +345,8 @@ SOEXPORT int PSC_Connection_createTcpClientAsync(
     data->res0 = 0;
     data->receiver = receiver;
     data->callback = callback;
-    memcpy(&data->opts, &tcpClientOpts, sizeof tcpClientOpts);
+    data->opts = (PSC_TcpClientOpts *)opts;
+    ++data->opts->refcnt;
     PSC_ThreadJob *resolveJob = PSC_ThreadJob_create(doResolve, data, 0);
     PSC_Event_register(PSC_ThreadJob_finished(resolveJob), 0, resolveDone, 0);
     PSC_ThreadPool_enqueue(resolveJob);

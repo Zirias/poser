@@ -3,11 +3,8 @@
 
 #include <poser/decl.h>
 
-typedef int (*PSC_main)(void *data);
-
 DECLEXPORT void
-PSC_RunOpts_init(PSC_main rmain, void *data, const char *pidfile)
-    ATTR_NONNULL((1));
+PSC_RunOpts_init(const char *pidfile);
 
 DECLEXPORT void
 PSC_RunOpts_runas(long uid, long gid);

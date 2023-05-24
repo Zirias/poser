@@ -124,7 +124,7 @@ static int waitpflock(FILE *pf, const char *pidfile)
     return 0;
 }
 
-SOEXPORT int PSC_Daemon_run(void)
+SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 {
     pid_t pid, sid;
     int rc = EXIT_FAILURE;
@@ -132,7 +132,7 @@ SOEXPORT int PSC_Daemon_run(void)
 
     outfd = -1;
     PSC_RunOpts *opts = runOpts();
-    if (!opts->daemonize) return opts->rmain(opts->data);
+    if (!opts->daemonize) return dmain(data);
 
     if (opts->pidfile && !(pf = openpidfile(opts->pidfile))) goto done;
 
@@ -261,7 +261,7 @@ SOEXPORT int PSC_Daemon_run(void)
     }
 
     PSC_Log_msg(PSC_L_INFO, "forked into background");
-    rc = opts->rmain(opts->data);
+    rc = dmain(data);
     if (rc != EXIT_SUCCESS) write(STDERR_FILENO, "\0", 1);
     if (pf)
     {

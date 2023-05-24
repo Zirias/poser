@@ -1,4 +1,5 @@
-#include <poser/core/event.h>
+#include "event.h"
+
 #include <poser/core/util.h>
 
 #include <stdlib.h>
@@ -6,20 +7,11 @@
 
 #define EVCHUNKSIZE 4
 
-typedef struct EvHandler
+struct EvHandler
 {
     void *receiver;
     PSC_EventHandler handler;
     int id;
-} EvHandler;
-
-struct PSC_Event
-{
-    void *sender;
-    EvHandler *handlers;
-    size_t size;
-    size_t capa;
-    int dirty;
 };
 
 SOEXPORT PSC_Event *PSC_Event_create(void *sender)

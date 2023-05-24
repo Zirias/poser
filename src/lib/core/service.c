@@ -1,10 +1,12 @@
 #define _DEFAULT_SOURCE
 
+#include "event.h"
 #include "runopts.h"
 
-#include <poser/core/event.h>
+#include <poser/core/daemon.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
+#include <poser/core/threadpool.h>
 
 #include <grp.h>
 #include <setjmp.h>
@@ -21,14 +23,13 @@ struct PSC_EAStartup
     int rc;
 };
 
-static const PSC_RunOpts *opts;
-static PSC_Event *readyRead;
-static PSC_Event *readyWrite;
-static PSC_Event *prestartup;
-static PSC_Event *startup;
-static PSC_Event *shutdown;
-static PSC_Event *tick;
-static PSC_Event *eventsDone;
+static PSC_Event readyRead;
+static PSC_Event readyWrite;
+static PSC_Event prestartup;
+static PSC_Event startup;
+static PSC_Event shutdown;
+static PSC_Event tick;
+static PSC_Event eventsDone;
 
 static fd_set readfds;
 static fd_set writefds;
@@ -79,67 +80,39 @@ static void tryReduceNfds(int id)
     }
 }
 
-SOEXPORT int PSC_Service_init(void)
-{
-    if (opts) return -1;
-    opts = runOpts();
-    readyRead = PSC_Event_create(0);
-    readyWrite = PSC_Event_create(0);
-    prestartup = PSC_Event_create(0);
-    startup = PSC_Event_create(0);
-    shutdown = PSC_Event_create(0);
-    tick = PSC_Event_create(0);
-    eventsDone = PSC_Event_create(0);
-    FD_ZERO(&readfds);
-    FD_ZERO(&writefds);
-    nread = 0;
-    nwrite = 0;
-    nfds = 0;
-    running = 0;
-    shutdownRequest = 0;
-    timerTick = 0;
-    shutdownRef = -1;
-    shutdownTicks = -1;
-    timer.it_interval.tv_sec = 0;
-    timer.it_interval.tv_usec = 0;
-    timer.it_value.tv_sec = 0;
-    timer.it_value.tv_usec = 0;
-    return 0;
-}
-
 SOEXPORT PSC_Event *PSC_Service_readyRead(void)
 {
-    return readyRead;
+    return &readyRead;
 }
 
 SOEXPORT PSC_Event *PSC_Service_readyWrite(void)
 {
-    return readyWrite;
+    return &readyWrite;
 }
 
 SOEXPORT PSC_Event *PSC_Service_prestartup(void)
 {
-    return prestartup;
+    return &prestartup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_startup(void)
 {
-    return startup;
+    return &startup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_shutdown(void)
 {
-    return shutdown;
+    return &shutdown;
 }
 
 SOEXPORT PSC_Event *PSC_Service_tick(void)
 {
-    return tick;
+    return &tick;
 }
 
 SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 {
-    return eventsDone;
+    return &eventsDone;
 }
 
 SOEXPORT void PSC_Service_registerRead(int id)
@@ -211,14 +184,14 @@ static int panicreturn(void)
     return setjmp(panicjmp) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-SOEXPORT int PSC_Service_run(void)
+SOEXPORT int PSC_Service_loop(void)
 {
-    if (!opts) return -1;
-
     int rc = EXIT_FAILURE;
 
+    PSC_RunOpts *opts = runOpts();
+
     PSC_EAStartup sea = { EXIT_SUCCESS };
-    PSC_Event_raise(prestartup, 0, &sea);
+    PSC_Event_raise(&prestartup, 0, &sea);
     if (sea.rc != EXIT_SUCCESS)
     {
 	rc = sea.rc;
@@ -286,11 +259,13 @@ SOEXPORT int PSC_Service_run(void)
 	goto done;
     }
 
-    PSC_Event_raise(startup, 0, &sea);
+    PSC_Event_raise(&startup, 0, &sea);
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
 
     running = 1;
+    shutdownRef = -1;
+    shutdownTicks = -1;
     PSC_Log_msg(PSC_L_INFO, "service started");
 
     if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
@@ -298,7 +273,7 @@ SOEXPORT int PSC_Service_run(void)
     int src = 0;
     while (shutdownRef != 0)
     {
-	PSC_Event_raise(eventsDone, 0, 0);
+	PSC_Event_raise(&eventsDone, 0, 0);
 	fd_set rfds;
 	fd_set wfds;
 	fd_set *r = 0;
@@ -319,7 +294,7 @@ SOEXPORT int PSC_Service_run(void)
 	    shutdownRequest = 0;
 	    shutdownRef = 0;
 	    shutdownTicks = 5;
-	    PSC_Event_raise(shutdown, 0, 0);
+	    PSC_Event_raise(&shutdown, 0, 0);
 	    continue;
 	}
 	if (timerTick)
@@ -330,7 +305,7 @@ SOEXPORT int PSC_Service_run(void)
 		shutdownRef = 0;
 		break;
 	    }
-	    PSC_Event_raise(tick, 0, 0);
+	    PSC_Event_raise(&tick, 0, 0);
 	    continue;
 	}
 	if (src < 0)
@@ -344,7 +319,7 @@ SOEXPORT int PSC_Service_run(void)
 	    if (FD_ISSET(i, w))
 	    {
 		--src;
-		PSC_Event_raise(readyWrite, i, 0);
+		PSC_Event_raise(&readyWrite, i, 0);
 	    }
 	}
 	if (r) for (int i = 0; src > 0 && i < nfds; ++i)
@@ -352,7 +327,7 @@ SOEXPORT int PSC_Service_run(void)
 	    if (FD_ISSET(i, r))
 	    {
 		--src;
-		PSC_Event_raise(readyRead, i, 0);
+		PSC_Event_raise(&readyRead, i, 0);
 	    }
 	}
     }
@@ -375,6 +350,42 @@ done:
     }
 
     return rc;
+}
+
+static int serviceMain(void *data)
+{
+    (void)data;
+
+    int rc = EXIT_FAILURE;
+
+    if (PSC_ThreadPool_init() < 0) goto done;
+
+    rc = PSC_Service_loop();
+
+done:
+    PSC_ThreadPool_done();
+
+    free(readyRead.handlers);
+    free(readyWrite.handlers);
+    free(prestartup.handlers);
+    free(startup.handlers);
+    free(shutdown.handlers);
+    free(tick.handlers);
+    free(eventsDone.handlers);
+    memset(&readyRead, 0, sizeof readyRead);
+    memset(&readyWrite, 0, sizeof readyWrite);
+    memset(&prestartup, 0, sizeof prestartup);
+    memset(&startup, 0, sizeof startup);
+    memset(&shutdown, 0, sizeof shutdown);
+    memset(&tick, 0, sizeof tick);
+    memset(&eventsDone, 0, sizeof eventsDone);
+
+    return rc;
+}
+
+SOEXPORT int PSC_Service_run(void)
+{
+    return PSC_Daemon_run(serviceMain, 0);
 }
 
 SOEXPORT void PSC_Service_quit(void)
@@ -403,24 +414,6 @@ SOEXPORT void PSC_Service_panic(const char *msg)
     PSC_Log_msg(PSC_L_FATAL, msg);
     if (running) longjmp(panicjmp, -1);
     else abort();
-}
-
-SOEXPORT void PSC_Service_done(void)
-{
-    if (!opts) return;
-    PSC_Event_destroy(eventsDone);
-    PSC_Event_destroy(tick);
-    PSC_Event_destroy(shutdown);
-    PSC_Event_destroy(startup);
-    PSC_Event_destroy(prestartup);
-    PSC_Event_destroy(readyWrite);
-    PSC_Event_destroy(readyRead);
-    opts = 0;
-    shutdown = 0;
-    startup = 0;
-    prestartup = 0;
-    readyWrite = 0;
-    readyRead = 0;
 }
 
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)

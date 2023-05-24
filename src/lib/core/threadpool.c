@@ -15,6 +15,10 @@
 #include <threads.h>
 #include <unistd.h>
 
+#ifndef DEFTHREADS
+#define DEFTHREADS 16
+#endif
+
 #ifndef MAXTHREADS
 #define MAXTHREADS 128
 #endif
@@ -69,7 +73,7 @@ typedef struct Thread
     int stoprq;
 } Thread;
 
-static thread_local PSC_ThreadOpts opts;
+static PSC_ThreadOpts opts;
 static Thread *threads;
 static PSC_ThreadJob **jobQueue;
 static pthread_mutex_t queuelock;
@@ -362,6 +366,7 @@ SOEXPORT int PSC_ThreadPool_init(void)
     int rc = -1;
     
     if (threads) return rc;
+    if (!opts.defNThreads) PSC_ThreadOpts_init(DEFTHREADS);
 
     if (sigprocmask(SIG_BLOCK, &blockmask, &mask) < 0)
     {

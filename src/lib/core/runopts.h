@@ -5,8 +5,6 @@
 
 typedef struct PSC_RunOpts
 {
-    PSC_main rmain;
-    void *data;
     const char *pidfile;
     long uid;
     long gid;

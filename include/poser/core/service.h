@@ -10,9 +10,6 @@ C_CLASS_DECL(PSC_Event);
 
 typedef void (*PSC_PanicHandler)(const char *msg) ATTR_NONNULL((1));
 
-DECLEXPORT int
-PSC_Service_init(void);
-
 DECLEXPORT PSC_Event *
 PSC_Service_readyRead(void)
     ATTR_RETNONNULL ATTR_PURE;
@@ -65,6 +62,9 @@ DECLEXPORT int
 PSC_Service_setTickInterval(unsigned msec);
 
 DECLEXPORT int
+PSC_Service_loop(void);
+
+DECLEXPORT int
 PSC_Service_run(void);
 
 DECLEXPORT void
@@ -79,9 +79,6 @@ PSC_Service_shutdownUnlock(void);
 DECLEXPORT void
 PSC_Service_panic(const char *msg)
     ATTR_NONNULL((1)) ATTR_NORETURN;
-
-DECLEXPORT void
-PSC_Service_done(void);
 
 DECLEXPORT void
 PSC_EAStartup_return(PSC_EAStartup *self, int rc)

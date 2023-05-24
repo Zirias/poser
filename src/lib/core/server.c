@@ -20,7 +20,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
-#include <threads.h>
 #include <unistd.h>
 
 #ifdef WITH_TLS
@@ -34,12 +33,12 @@
 #define BINDCHUNK 8
 #define CONNCHUNK 8
 
-typedef struct PSC_TcpServerOpts
+struct PSC_TcpServerOpts
 {
-    const char **bindhosts;
+    char **bindhosts;
 #ifdef WITH_TLS
-    const char *certfile;
-    const char *keyfile;
+    char *certfile;
+    char *keyfile;
 #endif
     size_t bh_capa;
     size_t bh_count;
@@ -50,9 +49,7 @@ typedef struct PSC_TcpServerOpts
     int port;
     int numerichosts;
     int connwait;
-} PSC_TcpServerOpts;
-
-static thread_local PSC_TcpServerOpts tcpServerOpts;
+};
 
 static char hostbuf[NI_MAXHOST];
 static char servbuf[NI_MAXSERV];
@@ -196,8 +193,8 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     PSC_Event_raise(self->clientConnected, 0, newconn);
 }
 
-static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
-	char *path)
+static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
+	size_t nsocks, SockInfo *socks, char *path)
 {
 #ifdef WITH_TLS
     FILE *certfile = 0;
@@ -207,40 +204,40 @@ static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
 #endif
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
-    if (tcpServerOpts.tls)
+    if (opts->tls)
     {
-	if (!(certfile = fopen(tcpServerOpts.certfile, "r")))
+	if (!(certfile = fopen(opts->certfile, "r")))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot open certificate file `%s' for reading",
-		    tcpServerOpts.certfile);
+		    opts->certfile);
 	    goto error;
 	}
-	if (!(keyfile = fopen(tcpServerOpts.keyfile, "r")))
+	if (!(keyfile = fopen(opts->keyfile, "r")))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot open private key file `%s' for reading",
-		    tcpServerOpts.keyfile);
+		    opts->keyfile);
 	    goto error;
 	}
 	if (!(cert = PEM_read_X509(certfile, 0, 0, 0)))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot read certificate from `%s'",
-		    tcpServerOpts.certfile);
+		    opts->certfile);
 	    goto error;
 	}
 	if (!(key = PEM_read_PrivateKey(keyfile, 0, 0, 0)))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot read private key from `%s'",
-		    tcpServerOpts.keyfile);
+		    opts->keyfile);
 	    goto error;
 	}
 	fclose(keyfile);
 	fclose(certfile);
 	PSC_Log_fmt(PSC_L_INFO,
-		"server: using certificate `%s'", tcpServerOpts.certfile);
+		"server: using certificate `%s'", opts->certfile);
     }
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
@@ -250,10 +247,10 @@ static PSC_Server *PSC_Server_create(size_t nsocks, SockInfo *socks,
     self->path = path;
     self->conncapa = CONNCHUNK;
     self->connsize = 0;
-    self->numericHosts = tcpServerOpts.numerichosts;
-    self->connwait = tcpServerOpts.connwait;
+    self->numericHosts = opts->numerichosts;
+    self->connwait = opts->connwait;
 #ifdef WITH_TLS
-    self->tls = tcpServerOpts.tls;
+    self->tls = opts->tls;
     self->cert = cert;
     self->key = key;
 #endif
@@ -279,31 +276,35 @@ error:
     return 0;
 }
 
-SOEXPORT void PSC_TcpServerOpts_init(int port)
+SOEXPORT PSC_TcpServerOpts *PSC_TcpServerOpts_create(int port)
 {
-    free(tcpServerOpts.bindhosts);
-    memset(&tcpServerOpts, 0, sizeof tcpServerOpts);
-    tcpServerOpts.port = port;
+    PSC_TcpServerOpts *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
+    self->port = port;
+    return self;
 }
 
-SOEXPORT void PSC_TcpServerOpts_bind(const char *bindhost)
+SOEXPORT void PSC_TcpServerOpts_bind(PSC_TcpServerOpts *self,
+	const char *bindhost)
 {
-    if (tcpServerOpts.bh_count == tcpServerOpts.bh_capa)
+    if (self->bh_count == self->bh_capa)
     {
-	tcpServerOpts.bh_capa += BINDCHUNK;
-	tcpServerOpts.bindhosts = PSC_realloc(tcpServerOpts.bindhosts,
-		tcpServerOpts.bh_capa * sizeof *tcpServerOpts.bindhosts);
+	self->bh_capa += BINDCHUNK;
+	self->bindhosts = PSC_realloc(self->bindhosts,
+		self->bh_capa * sizeof *self->bindhosts);
     }
-    tcpServerOpts.bindhosts[tcpServerOpts.bh_count++] = bindhost;
+    self->bindhosts[self->bh_count++] = PSC_copystr(bindhost);
 }
 
-SOEXPORT void PSC_TcpServerOpts_enableTls(
+SOEXPORT void PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
 	const char *certfile, const char *keyfile)
 {
 #ifdef WITH_TLS
-    tcpServerOpts.tls = 1;
-    tcpServerOpts.certfile = certfile;
-    tcpServerOpts.keyfile = keyfile;
+    self->tls = 1;
+    free(self->certfile);
+    self->certfile = PSC_copystr(certfile);
+    free(self->keyfile);
+    self->keyfile = PSC_copystr(keyfile);
 #else
     (void)certfile;
     (void)keyfile;
@@ -311,22 +312,35 @@ SOEXPORT void PSC_TcpServerOpts_enableTls(
 #endif
 }
 
-SOEXPORT void PSC_TcpServerOpts_setProto(PSC_Proto proto)
+SOEXPORT void PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self,
+	PSC_Proto proto)
 {
-    tcpServerOpts.proto = proto;
+    self->proto = proto;
 }
 
-SOEXPORT void PSC_TcpServerOpts_numericHosts(void)
+SOEXPORT void PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
 {
-    tcpServerOpts.numerichosts = 1;
+    self->numerichosts = 1;
 }
 
-SOEXPORT void PSC_TcpServerOpts_connWait(void)
+SOEXPORT void PSC_TcpServerOpts_connWait(PSC_TcpServerOpts *self)
 {
-    tcpServerOpts.connwait = 1;
+    self->connwait = 1;
 }
 
-SOEXPORT PSC_Server *PSC_Server_createTcp(void)
+SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)
+{
+    if (!self) return;
+    for (size_t i = 0; i < self->bh_count; ++i) free(self->bindhosts[i]);
+    free(self->bindhosts);
+#ifdef WITH_TLS
+    free(self->certfile);
+    free(self->keyfile);
+#endif
+    free(self);
+}
+
+SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 {
     SockInfo socks[MAXSOCKS];
 
@@ -336,7 +350,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(void)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE|AI_ADDRCONFIG|AI_NUMERICSERV;
     char portstr[6];
-    snprintf(portstr, 6, "%d", tcpServerOpts.port);
+    snprintf(portstr, 6, "%d", opts->port);
 
     struct addrinfo *res0;
     size_t nsocks = 0;
@@ -345,12 +359,12 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(void)
     do
     {
 	res0 = 0;
-	if (getaddrinfo(tcpServerOpts.bindhosts[bi],
+	if (getaddrinfo(opts->bindhosts[bi],
 		    portstr, &hints, &res0) < 0 || !res0)
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot get address info for `%s'",
-		    tcpServerOpts.bindhosts[bi]);
+		    opts->bindhosts[bi]);
 	    continue;
 	}
 	for (struct addrinfo *res = res0; res && nsocks < MAXSOCKS;
@@ -358,9 +372,9 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(void)
 	{
 	    if (res->ai_family != AF_INET
 		    && res->ai_family != AF_INET6) continue;
-	    if (tcpServerOpts.proto == PSC_P_IPv4
+	    if (opts->proto == PSC_P_IPv4
 		    && res->ai_family != AF_INET) continue;
-	    if (tcpServerOpts.proto == PSC_P_IPv6
+	    if (opts->proto == PSC_P_IPv6
 		    && res->ai_family != AF_INET6) continue;
 	    socks[nsocks].fd = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
@@ -412,7 +426,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(void)
 		ST_INET : ST_INET6;
 	}
 	freeaddrinfo(res0);
-    } while (++bi < tcpServerOpts.bh_count);
+    } while (++bi < opts->bh_count);
     if (!nsocks)
     {
 	PSC_Log_msg(PSC_L_FATAL, "server: could not create any sockets for "
@@ -420,7 +434,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(void)
 	return 0;
     }
     
-    PSC_Server *self = PSC_Server_create(nsocks, socks, 0);
+    PSC_Server *self = PSC_Server_create(opts, nsocks, socks, 0);
     return self;
 }
 
