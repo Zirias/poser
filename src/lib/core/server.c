@@ -403,7 +403,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
     do
     {
 	res0 = 0;
-	if (getaddrinfo(opts->bindhosts[bi],
+	if (getaddrinfo(opts->bh_count ? opts->bindhosts[bi] : 0,
 		    portstr, &hints, &res0) < 0 || !res0)
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
