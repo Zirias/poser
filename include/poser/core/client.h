@@ -48,4 +48,8 @@ PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
 	void *receiver, PSC_ClientCreatedHandler callback)
     ATTR_NONNULL((1)) ATTR_NONNULL((3));
 
+DECLEXPORT PSC_Connection *
+PSC_Connection_createUnixClient(const char *sockname)
+    ATTR_NONNULL((1));
+
 #endif

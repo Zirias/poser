@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #ifdef WITH_TLS
@@ -351,5 +352,37 @@ SOEXPORT int PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
     PSC_Event_register(PSC_ThreadJob_finished(resolveJob), 0, resolveDone, 0);
     PSC_ThreadPool_enqueue(resolveJob);
     return 0;
+}
+
+SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(const char *sockname)
+{
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "client: cannot create socket");
+	return 0;
+    }
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof addr);
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, sockname, sizeof addr.sun_path - 1);
+
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    errno = 0;
+    if (connect(fd, (struct sockaddr *)&addr, sizeof addr) < 0
+	    && errno != EINPROGRESS)
+    {
+	PSC_Log_fmt(PSC_L_ERROR, "client: error connecting to `%s'",
+		addr.sun_path);
+	close(fd);
+	return 0;
+    }
+    ConnOpts copts = {
+	.createmode = CCM_CONNECTING
+    };
+    PSC_Connection *conn = PSC_Connection_create(fd, &copts);
+    PSC_Connection_setRemoteAddrStr(conn, addr.sun_path);
+    return conn;
 }
 

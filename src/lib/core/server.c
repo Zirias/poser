@@ -51,6 +51,15 @@ struct PSC_TcpServerOpts
     int connwait;
 };
 
+struct PSC_UnixServerOpts
+{
+    char *name;
+    int uid;
+    int gid;
+    int mode;
+    int connwait;
+};
+
 static char hostbuf[NI_MAXHOST];
 static char servbuf[NI_MAXSERV];
 
@@ -340,6 +349,41 @@ SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)
     free(self);
 }
 
+SOEXPORT PSC_UnixServerOpts *PSC_UnixServerOpts_create(const char *name)
+{
+    PSC_UnixServerOpts *self = PSC_malloc(sizeof *self);
+    self->name = PSC_copystr(name);
+    self->uid = -1;
+    self->gid = -1;
+    self->mode = 0600;
+    self->connwait = 0;
+    return self;
+}
+
+SOEXPORT void PSC_UnixServerOpts_owner(PSC_UnixServerOpts *self,
+	int uid, int gid)
+{
+    self->uid = uid;
+    self->gid = gid;
+}
+
+SOEXPORT void PSC_UnixServerOpts_mode(PSC_UnixServerOpts *self, int mode)
+{
+    self->mode = mode;
+}
+
+SOEXPORT void PSC_UnixServerOpts_connWait(PSC_UnixServerOpts *self)
+{
+    self->connwait = 1;
+}
+
+SOEXPORT void PSC_UnixServerOpts_destroy(PSC_UnixServerOpts *self)
+{
+    if (!self) return;
+    free(self->name);
+    free(self);
+}
+
 SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 {
     SockInfo socks[MAXSOCKS];
@@ -435,6 +479,118 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
     }
     
     PSC_Server *self = PSC_Server_create(opts, nsocks, socks, 0);
+    return self;
+}
+
+SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
+{
+    SockInfo sock = {
+	.fd = socket(AF_UNIX, SOCK_STREAM, 0),
+	.st = ST_UNIX
+    };
+    if (sock.fd < 0)
+    {
+        PSC_Log_msg(PSC_L_ERROR, "server: cannot create socket");
+        return 0;
+    }
+    fcntl(sock.fd, F_SETFL, fcntl(sock.fd, F_GETFL, 0) | O_NONBLOCK);
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof addr);
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, opts->name, sizeof addr.sun_path - 1);
+
+    struct stat st;
+    errno = 0;
+    if (stat(addr.sun_path, &st) >= 0)
+    {
+        if (!S_ISSOCK(st.st_mode))
+        {
+            PSC_Log_fmt(PSC_L_ERROR, "server: `%s' exists and is not a socket",
+                    addr.sun_path);
+            close(sock.fd);
+            return 0;
+        }
+
+	fd_set wfds;
+	FD_ZERO(&wfds);
+	FD_SET(sock.fd, &wfds);
+	struct timeval tv;
+	memset(&tv, 0, sizeof tv);
+	tv.tv_usec = 300000U;
+	int sockerr = 0;
+	socklen_t sockerrlen = sizeof sockerr;
+	errno = 0;
+	if (connect(sock.fd, (struct sockaddr *)&addr, sizeof addr) >= 0
+		|| (errno == EINPROGRESS
+		    && select(sock.fd + 1, 0, &wfds, 0, &tv) > 0
+		    && getsockopt(sock.fd, SOL_SOCKET, SO_ERROR,
+			&sockerr, &sockerrlen) >= 0
+		    && !sockerr))
+        {
+            PSC_Log_fmt(PSC_L_ERROR,
+		    "server: `%s' is already opened for listening",
+		    addr.sun_path);
+            close(sock.fd);
+            return 0;
+        }
+	close(sock.fd);
+
+        if (unlink(addr.sun_path) < 0)
+        {
+            PSC_Log_fmt(PSC_L_ERROR, "server: cannot remove stale socket `%s'",
+                    addr.sun_path);
+            return 0;
+        }
+
+        PSC_Log_fmt(PSC_L_WARNING, "server: removed stale socket `%s'",
+                addr.sun_path);
+	sock.fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	fcntl(sock.fd, F_SETFL, fcntl(sock.fd, F_GETFL, 0) | O_NONBLOCK);
+    }
+    else if (errno != ENOENT)
+    {
+        PSC_Log_fmt(PSC_L_ERROR, "server: cannot access `%s'", addr.sun_path);
+        close(sock.fd);
+        return 0;
+    }
+
+    if (bind(sock.fd, (struct sockaddr *)&addr, sizeof addr) < 0)
+    {
+        PSC_Log_fmt(PSC_L_ERROR, "server: cannot bind to `%s'", addr.sun_path);
+        close(sock.fd);
+        return 0;
+    }
+
+    if (listen(sock.fd, 8) < 0)
+    {
+        PSC_Log_fmt(PSC_L_ERROR, "server: cannot listen on `%s'",
+		addr.sun_path);
+        close(sock.fd);
+	unlink(addr.sun_path);
+        return 0;
+    }
+    PSC_Log_fmt(PSC_L_INFO, "server: listening on %s", addr.sun_path);
+
+    if (chmod(addr.sun_path, opts->mode) < 0)
+    {
+	PSC_Log_fmt(PSC_L_ERROR,
+		"server: cannot set desired socket permissions");
+    }
+    if (opts->uid != -1 || opts->gid != -1)
+    {
+	if (chown(addr.sun_path, opts->uid, opts->gid) < 0)
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot set desired socket ownership");
+	}
+    }
+
+    PSC_TcpServerOpts tcpOpts = {
+	.connwait = opts->connwait
+    };
+    PSC_Server *self = PSC_Server_create(&tcpOpts, 1, &sock,
+	    PSC_copystr(addr.sun_path));
     return self;
 }
 

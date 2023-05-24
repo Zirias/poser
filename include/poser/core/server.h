@@ -8,6 +8,7 @@
 C_CLASS_DECL(PSC_Event);
 C_CLASS_DECL(PSC_Server);
 C_CLASS_DECL(PSC_TcpServerOpts);
+C_CLASS_DECL(PSC_UnixServerOpts);
 
 DECLEXPORT PSC_TcpServerOpts *
 PSC_TcpServerOpts_create(int port)
@@ -37,8 +38,31 @@ PSC_TcpServerOpts_connWait(PSC_TcpServerOpts *self)
 DECLEXPORT void
 PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self);
 
+DECLEXPORT PSC_UnixServerOpts *
+PSC_UnixServerOpts_create(const char *name)
+    ATTR_RETNONNULL ATTR_NONNULL((1));
+
+DECLEXPORT void
+PSC_UnixServerOpts_owner(PSC_UnixServerOpts *self, int uid, int gid)
+    CMETHOD;
+
+DECLEXPORT void
+PSC_UnixServerOpts_mode(PSC_UnixServerOpts *self, int mode)
+    CMETHOD;
+
+DECLEXPORT void
+PSC_UnixServerOpts_connWait(PSC_UnixServerOpts *self)
+    CMETHOD;
+
+DECLEXPORT void
+PSC_UnixServerOpts_destroy(PSC_UnixServerOpts *self);
+
 DECLEXPORT PSC_Server *
 PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
+    ATTR_NONNULL((1));
+
+DECLEXPORT PSC_Server *
+PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
     ATTR_NONNULL((1));
 
 DECLEXPORT PSC_Event *
