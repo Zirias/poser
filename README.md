@@ -16,7 +16,10 @@ This is the core part offering basic functionality needed for every service:
 * A simple logging abstraction
 * Generic code to automatically deamonize and correctly handle a pidfile
 * A generic service main loop built around `pselect()`
-* An abstraction for a (socket) connection, with optional TLS client support
+* A thread pool used to offload jobs that might block, available to schedule
+  own jobs on
+* An abstraction for a (socket) connection
 * An abstraction for a server listening on a socket and accepting connections
+* Optional TLS support
 * A few utility functions
 
