@@ -360,6 +360,11 @@ static int serviceMain(void *data)
 
     if (PSC_ThreadPool_init() < 0) goto done;
 
+    if (!timer.it_interval.tv_sec &&
+	    !timer.it_interval.tv_usec &&
+	    !timer.it_value.tv_sec &&
+	    !timer.it_value.tv_usec) PSC_Service_setTickInterval(1000);
+
     rc = PSC_Service_loop();
 
 done:
