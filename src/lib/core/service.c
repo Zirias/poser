@@ -16,7 +16,12 @@
 #include <sys/param.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <syslog.h>
 #include <unistd.h>
+
+#ifndef DEFLOGIDENT
+#define DEFLOGIDENT "posercore"
+#endif
 
 struct PSC_EAStartup
 {
@@ -184,7 +189,7 @@ static int panicreturn(void)
     return setjmp(panicjmp) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-SOEXPORT int PSC_Service_loop(void)
+static int serviceLoop(int isRun)
 {
     int rc = EXIT_FAILURE;
 
@@ -262,6 +267,21 @@ SOEXPORT int PSC_Service_loop(void)
     PSC_Event_raise(&startup, 0, &sea);
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
+
+    if (isRun && opts->daemonize)
+    {
+	if (opts->logEnabled)
+	{
+	    const char *logident = opts->logident;
+	    if (!logident) logident = DEFLOGIDENT;
+	    PSC_Log_setAsync(1);
+	    PSC_Log_setSyslogLogger(logident, LOG_DAEMON, 0);
+	}
+	if (opts->waitLaunched)
+	{
+	    PSC_Daemon_launched();
+	}
+    }
 
     running = 1;
     shutdownRef = -1;
@@ -365,7 +385,7 @@ static int serviceMain(void *data)
 	    !timer.it_value.tv_sec &&
 	    !timer.it_value.tv_usec) PSC_Service_setTickInterval(1000);
 
-    rc = PSC_Service_loop();
+    rc = serviceLoop(1);
 
 done:
     PSC_ThreadPool_done();
@@ -388,8 +408,24 @@ done:
     return rc;
 }
 
+SOEXPORT int PSC_Service_loop(void)
+{
+    return serviceLoop(0);
+}
+
 SOEXPORT int PSC_Service_run(void)
 {
+    PSC_RunOpts *opts = runOpts();
+    if (opts->logEnabled)
+    {
+	if (!opts->daemonize) PSC_Log_setFileLogger(stderr);
+	else
+	{
+	    const char *logident = opts->logident;
+	    if (!logident) logident = DEFLOGIDENT;
+	    PSC_Log_setSyslogLogger(logident, LOG_DAEMON, 1);
+	}
+    }
     return PSC_Daemon_run(serviceMain, 0);
 }
 

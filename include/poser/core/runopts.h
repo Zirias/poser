@@ -10,6 +10,9 @@ DECLEXPORT void
 PSC_RunOpts_runas(long uid, long gid);
 
 DECLEXPORT void
+PSC_RunOpts_enableDefaultLogging(const char *logident);
+
+DECLEXPORT void
 PSC_RunOpts_foreground(void);
 
 DECLEXPORT void

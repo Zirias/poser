@@ -28,6 +28,13 @@ SOEXPORT void PSC_RunOpts_runas(long uid, long gid)
     opts.gid = gid;
 }
 
+SOEXPORT void PSC_RunOpts_enableDefaultLogging(const char *logident)
+{
+    if (!initialized) PSC_RunOpts_init(0);
+    opts.logident = logident;
+    opts.logEnabled = 1;
+}
+
 SOEXPORT void PSC_RunOpts_foreground(void)
 {
     if (!initialized) PSC_RunOpts_init(0);
