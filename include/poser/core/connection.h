@@ -3,6 +3,7 @@
 
 #include <poser/decl.h>
 
+#include <stddef.h>
 #include <stdint.h>
 
 C_CLASS_DECL(PSC_Connection);
@@ -43,7 +44,7 @@ PSC_Connection_remotePort(const PSC_Connection *self)
 
 DECLEXPORT int
 PSC_Connection_write(PSC_Connection *self,
-	const uint8_t *buf, uint16_t sz, void *id)
+	const uint8_t *buf, size_t sz, void *id)
     CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT void

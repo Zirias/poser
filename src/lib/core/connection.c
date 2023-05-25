@@ -42,7 +42,8 @@ typedef struct WriteRecord
 {
     const uint8_t *wrbuf;
     void *id;
-    uint16_t wrbuflen;
+    size_t wrbuflen;
+    size_t wrbufpos;
 } WriteRecord;
 
 typedef struct WriteNotifyRecord
@@ -264,21 +265,27 @@ static void dowrite(PSC_Connection *self)
     if (self->nrecs && !self->wrbuflen)
     {
 	uint8_t recno = 0;
-	for (; recno < self->nrecs; ++recno)
+	for (; recno < self->nrecs && self->wrbuflen < CONNBUFSZ; ++recno)
 	{
-	    uint16_t newlen = self->wrbuflen + self->writerecs[recno].wrbuflen;
-	    if (newlen < self->wrbuflen || newlen > CONNBUFSZ) break;
-	    memcpy(self->wrbuf + self->wrbuflen, self->writerecs[recno].wrbuf,
-		    self->writerecs[recno].wrbuflen);
-	    if (self->writerecs[recno].id)
+	    WriteRecord *rec = self->writerecs + recno;
+	    size_t chunklen = rec->wrbuflen - rec->wrbufpos;
+	    if (chunklen + self->wrbuflen > CONNBUFSZ)
 	    {
-		self->writenotify[notno].id = self->writerecs[recno].id;
-		self->writenotify[notno].wrbufpos = newlen;
+		chunklen = CONNBUFSZ - self->wrbuflen;
+	    }
+	    memcpy(self->wrbuf + self->wrbuflen, rec->wrbuf + rec->wrbufpos,
+		    chunklen);
+	    self->wrbuflen += chunklen;
+	    rec->wrbufpos += chunklen;
+	    if (rec->wrbufpos != rec->wrbuflen) break;
+	    if (rec->id)
+	    {
+		self->writenotify[notno].id = rec->id;
+		self->writenotify[notno].wrbufpos = self->wrbuflen;
 		++notno;
 	    }
-	    self->wrbuflen = newlen;
 	}
-	if (recno < self->nrecs)
+	if (recno && recno < self->nrecs)
 	{
 	    memmove(self->writerecs, self->writerecs + recno,
 		    (self->nrecs - recno) * sizeof *self->writerecs);
@@ -287,7 +294,7 @@ static void dowrite(PSC_Connection *self)
 	self->nnotify = notno;
     }
     for (notno = 0; notno < self->nnotify
-	    && self->writenotify[notno].id; ++notno);
+	    && !self->writenotify[notno].id; ++notno);
 #ifdef WITH_TLS
     if (self->tls)
     {
@@ -788,11 +795,12 @@ SOLOCAL void PSC_Connection_setRemoteAddrStr(PSC_Connection *self,
 }
 
 SOEXPORT int PSC_Connection_write(PSC_Connection *self,
-	const uint8_t *buf, uint16_t sz, void *id)
+	const uint8_t *buf, size_t sz, void *id)
 {
     if (self->nrecs == NWRITERECS) return -1;
     WriteRecord *rec = self->writerecs + self->nrecs++;
     rec->wrbuflen = sz;
+    rec->wrbufpos = 0;
     rec->wrbuf = buf;
     rec->id = id;
     wantreadwrite(self);
