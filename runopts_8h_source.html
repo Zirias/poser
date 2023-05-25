@@ -93,33 +93,37 @@ $(document).ready(function(){initNavTree('runopts_8h_source.html',''); initResiz
   <div class="headertitle"><div class="title">runopts.h</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_RUNOPTS_H</span></div>
+<a href="runopts_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_RUNOPTS_H</span></div>
 <div class="line"><a id="l00002" name="l00002"></a><span class="lineno">    2</span><span class="preprocessor">#define POSER_CORE_RUNOPTS_H</span></div>
 <div class="line"><a id="l00003" name="l00003"></a><span class="lineno">    3</span> </div>
-<div class="line"><a id="l00004" name="l00004"></a><span class="lineno">    4</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
-<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span> </div>
-<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span>PSC_RunOpts_init(<span class="keyword">const</span> <span class="keywordtype">char</span> *pidfile);</div>
-<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span> </div>
-<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span>PSC_RunOpts_runas(<span class="keywordtype">long</span> uid, <span class="keywordtype">long</span> gid);</div>
-<div class="line"><a id="l00011" name="l00011"></a><span class="lineno">   11</span> </div>
-<div class="line"><a id="l00012" name="l00012"></a><span class="lineno">   12</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00013" name="l00013"></a><span class="lineno">   13</span>PSC_RunOpts_enableDefaultLogging(<span class="keyword">const</span> <span class="keywordtype">char</span> *logident);</div>
-<div class="line"><a id="l00014" name="l00014"></a><span class="lineno">   14</span> </div>
-<div class="line"><a id="l00015" name="l00015"></a><span class="lineno">   15</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00016" name="l00016"></a><span class="lineno">   16</span>PSC_RunOpts_foreground(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00017" name="l00017"></a><span class="lineno">   17</span> </div>
-<div class="line"><a id="l00018" name="l00018"></a><span class="lineno">   18</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00019" name="l00019"></a><span class="lineno">   19</span>PSC_RunOpts_nowait(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00020" name="l00020"></a><span class="lineno">   20</span> </div>
-<div class="line"><a id="l00021" name="l00021"></a><span class="lineno">   21</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
+<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span> </div>
+<div class="line"><a id="l00022" name="l00022"></a><span class="lineno">   22</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00023" name="l00023"></a><span class="lineno"><a class="line" href="class_p_s_c___run_opts.html#ab52e951ccc63b1b9089fc1ab29b85ba7">   23</a></span><a class="code hl_function" href="class_p_s_c___run_opts.html#ab52e951ccc63b1b9089fc1ab29b85ba7">PSC_RunOpts_init</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *pidfile);</div>
+<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span> </div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno"><a class="line" href="class_p_s_c___run_opts.html#a97400bc43ef2f92f2fb4f47bd10bcde2">   35</a></span><a class="code hl_function" href="class_p_s_c___run_opts.html#a97400bc43ef2f92f2fb4f47bd10bcde2">PSC_RunOpts_runas</a>(<span class="keywordtype">long</span> uid, <span class="keywordtype">long</span> gid);</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span> </div>
+<div class="line"><a id="l00049" name="l00049"></a><span class="lineno"><a class="line" href="class_p_s_c___run_opts.html#a5af78465b223ed44371c6d090e05ab06">   49</a></span>DECLEXPORT <span class="keywordtype">void</span> <a class="code hl_function" href="class_p_s_c___run_opts.html#a5af78465b223ed44371c6d090e05ab06">PSC_RunOpts_enableDefaultLogging</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *logident);</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span> </div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno"><a class="line" href="class_p_s_c___run_opts.html#a1476fff6b7d8863232c84ed0f1a8cdbb">   58</a></span><a class="code hl_function" href="class_p_s_c___run_opts.html#a1476fff6b7d8863232c84ed0f1a8cdbb">PSC_RunOpts_foreground</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span> </div>
+<div class="line"><a id="l00066" name="l00066"></a><span class="lineno">   66</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno"><a class="line" href="class_p_s_c___run_opts.html#a9c5ea166fb439c74ad8560e7ae2eb82c">   67</a></span><a class="code hl_function" href="class_p_s_c___run_opts.html#a9c5ea166fb439c74ad8560e7ae2eb82c">PSC_RunOpts_nowait</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span> </div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span><span class="preprocessor">#endif</span></div>
+<div class="ttc" id="aclass_p_s_c___run_opts_html_a1476fff6b7d8863232c84ed0f1a8cdbb"><div class="ttname"><a href="class_p_s_c___run_opts.html#a1476fff6b7d8863232c84ed0f1a8cdbb">PSC_RunOpts::PSC_RunOpts_foreground</a></div><div class="ttdeci">void PSC_RunOpts_foreground(void)</div><div class="ttdoc">Run in foreground.</div></div>
+<div class="ttc" id="aclass_p_s_c___run_opts_html_a5af78465b223ed44371c6d090e05ab06"><div class="ttname"><a href="class_p_s_c___run_opts.html#a5af78465b223ed44371c6d090e05ab06">PSC_RunOpts::PSC_RunOpts_enableDefaultLogging</a></div><div class="ttdeci">void PSC_RunOpts_enableDefaultLogging(const char *logident)</div><div class="ttdoc">Handle logging using default options.</div></div>
+<div class="ttc" id="aclass_p_s_c___run_opts_html_a97400bc43ef2f92f2fb4f47bd10bcde2"><div class="ttname"><a href="class_p_s_c___run_opts.html#a97400bc43ef2f92f2fb4f47bd10bcde2">PSC_RunOpts::PSC_RunOpts_runas</a></div><div class="ttdeci">void PSC_RunOpts_runas(long uid, long gid)</div><div class="ttdoc">Run as a different user.</div></div>
+<div class="ttc" id="aclass_p_s_c___run_opts_html_a9c5ea166fb439c74ad8560e7ae2eb82c"><div class="ttname"><a href="class_p_s_c___run_opts.html#a9c5ea166fb439c74ad8560e7ae2eb82c">PSC_RunOpts::PSC_RunOpts_nowait</a></div><div class="ttdeci">void PSC_RunOpts_nowait(void)</div><div class="ttdoc">Don't wait for successful service startup.</div></div>
+<div class="ttc" id="aclass_p_s_c___run_opts_html_ab52e951ccc63b1b9089fc1ab29b85ba7"><div class="ttname"><a href="class_p_s_c___run_opts.html#ab52e951ccc63b1b9089fc1ab29b85ba7">PSC_RunOpts::PSC_RunOpts_init</a></div><div class="ttdeci">void PSC_RunOpts_init(const char *pidfile)</div><div class="ttdoc">Initialize to default values.</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><b>runopts.h</b></li>
+    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><a class="el" href="runopts_8h.html">runopts.h</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.9.6 </li>
   </ul>
 </div>

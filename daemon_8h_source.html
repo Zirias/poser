@@ -93,27 +93,30 @@ $(document).ready(function(){initNavTree('daemon_8h_source.html',''); initResiza
   <div class="headertitle"><div class="title">daemon.h</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_DAEMON_H</span></div>
+<a href="daemon_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_DAEMON_H</span></div>
 <div class="line"><a id="l00002" name="l00002"></a><span class="lineno">    2</span><span class="preprocessor">#define POSER_CORE_DAEMON_H</span></div>
 <div class="line"><a id="l00003" name="l00003"></a><span class="lineno">    3</span> </div>
-<div class="line"><a id="l00004" name="l00004"></a><span class="lineno">    4</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
-<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span> </div>
-<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="keyword">typedef</span> int (*PSC_Daemon_main)(<span class="keywordtype">void</span> *data);</div>
-<div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span> </div>
-<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span>DECLEXPORT <span class="keywordtype">int</span></div>
-<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span>PSC_Daemon_run(PSC_Daemon_main dmain, <span class="keywordtype">void</span> *data)</div>
-<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00011" name="l00011"></a><span class="lineno">   11</span> </div>
-<div class="line"><a id="l00012" name="l00012"></a><span class="lineno">   12</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00013" name="l00013"></a><span class="lineno">   13</span>PSC_Daemon_launched(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00014" name="l00014"></a><span class="lineno">   14</span> </div>
-<div class="line"><a id="l00015" name="l00015"></a><span class="lineno">   15</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
+<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span> </div>
+<div class="line"><a id="l00019" name="l00019"></a><span class="lineno"><a class="line" href="daemon_8h.html#a5758135adcdba7d9bab97fb52918282c">   19</a></span><span class="keyword">typedef</span> int (*<a class="code hl_typedef" href="daemon_8h.html#a5758135adcdba7d9bab97fb52918282c">PSC_Daemon_main</a>)(<span class="keywordtype">void</span> *data);</div>
+<div class="line"><a id="l00020" name="l00020"></a><span class="lineno">   20</span> </div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno"><a class="line" href="class_p_s_c___daemon.html#a307496dcebce5e353ca916315ac05f6f">   35</a></span><a class="code hl_function" href="class_p_s_c___daemon.html#a307496dcebce5e353ca916315ac05f6f">PSC_Daemon_run</a>(<a class="code hl_typedef" href="daemon_8h.html#a5758135adcdba7d9bab97fb52918282c">PSC_Daemon_main</a> dmain, <span class="keywordtype">void</span> *data)</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno"><a class="line" href="class_p_s_c___daemon.html#ac694cab34a5ed4b433fd2ce6ee5337a5">   46</a></span><a class="code hl_function" href="class_p_s_c___daemon.html#ac694cab34a5ed4b433fd2ce6ee5337a5">PSC_Daemon_launched</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span> </div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span><span class="preprocessor">#endif</span></div>
+<div class="ttc" id="aclass_p_s_c___daemon_html_a307496dcebce5e353ca916315ac05f6f"><div class="ttname"><a href="class_p_s_c___daemon.html#a307496dcebce5e353ca916315ac05f6f">PSC_Daemon::PSC_Daemon_run</a></div><div class="ttdeci">int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)</div><div class="ttdoc">Run as a daemon.</div></div>
+<div class="ttc" id="aclass_p_s_c___daemon_html_ac694cab34a5ed4b433fd2ce6ee5337a5"><div class="ttname"><a href="class_p_s_c___daemon.html#ac694cab34a5ed4b433fd2ce6ee5337a5">PSC_Daemon::PSC_Daemon_launched</a></div><div class="ttdeci">void PSC_Daemon_launched(void)</div><div class="ttdoc">Notify parent that the daemon successfully started.</div></div>
+<div class="ttc" id="adaemon_8h_html_a5758135adcdba7d9bab97fb52918282c"><div class="ttname"><a href="daemon_8h.html#a5758135adcdba7d9bab97fb52918282c">PSC_Daemon_main</a></div><div class="ttdeci">int(* PSC_Daemon_main)(void *data)</div><div class="ttdoc">Main function for a daemon.</div><div class="ttdef"><b>Definition:</b> daemon.h:19</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><b>daemon.h</b></li>
+    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><a class="el" href="daemon_8h.html">daemon.h</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.9.6 </li>
   </ul>
 </div>

@@ -93,65 +93,80 @@ $(document).ready(function(){initNavTree('log_8h_source.html',''); initResizable
   <div class="headertitle"><div class="title">log.h</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_LOG_H</span></div>
+<a href="log_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span><span class="preprocessor">#ifndef POSER_CORE_LOG_H</span></div>
 <div class="line"><a id="l00002" name="l00002"></a><span class="lineno">    2</span><span class="preprocessor">#define POSER_CORE_LOG_H</span></div>
 <div class="line"><a id="l00003" name="l00003"></a><span class="lineno">    3</span> </div>
-<div class="line"><a id="l00004" name="l00004"></a><span class="lineno">    4</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
-<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span> </div>
-<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="preprocessor">#include &lt;stdio.h&gt;</span></div>
-<div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span> </div>
-<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#define PSC_MAXLOGLINE 16384</span></div>
+<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
 <div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span> </div>
-<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span><span class="keyword">typedef</span> <span class="keyword">enum</span> PSC_LogLevel</div>
-<div class="line"><a id="l00011" name="l00011"></a><span class="lineno">   11</span>{</div>
-<div class="line"><a id="l00012" name="l00012"></a><span class="lineno">   12</span>    PSC_L_FATAL,</div>
-<div class="line"><a id="l00013" name="l00013"></a><span class="lineno">   13</span>    PSC_L_ERROR,</div>
-<div class="line"><a id="l00014" name="l00014"></a><span class="lineno">   14</span>    PSC_L_WARNING,</div>
-<div class="line"><a id="l00015" name="l00015"></a><span class="lineno">   15</span>    PSC_L_INFO,</div>
-<div class="line"><a id="l00016" name="l00016"></a><span class="lineno">   16</span>    PSC_L_DEBUG</div>
-<div class="line"><a id="l00017" name="l00017"></a><span class="lineno">   17</span>} PSC_LogLevel;</div>
-<div class="line"><a id="l00018" name="l00018"></a><span class="lineno">   18</span> </div>
-<div class="line"><a id="l00019" name="l00019"></a><span class="lineno">   19</span><span class="keyword">typedef</span> void (*PSC_LogWriter)(PSC_LogLevel level,</div>
-<div class="line"><a id="l00020" name="l00020"></a><span class="lineno">   20</span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *message, <span class="keywordtype">void</span> *data)</div>
-<div class="line"><a id="l00021" name="l00021"></a><span class="lineno">   21</span>    ATTR_NONNULL((2));</div>
-<div class="line"><a id="l00022" name="l00022"></a><span class="lineno">   22</span> </div>
-<div class="line"><a id="l00023" name="l00023"></a><span class="lineno">   23</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span>PSC_Log_setFileLogger(FILE *file)</div>
-<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span> </div>
-<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span>PSC_Log_setSyslogLogger(<span class="keyword">const</span> <span class="keywordtype">char</span> *ident, <span class="keywordtype">int</span> facility, <span class="keywordtype">int</span> withStderr)</div>
-<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span> </div>
-<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span>PSC_Log_setCustomLogger(PSC_LogWriter writer, <span class="keywordtype">void</span> *data)</div>
-<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span> </div>
-<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span>PSC_Log_setMaxLogLevel(PSC_LogLevel level);</div>
-<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
-<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span>PSC_Log_setSilent(<span class="keywordtype">int</span> silent);</div>
-<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span> </div>
-<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span>PSC_Log_setAsync(<span class="keywordtype">int</span> async);</div>
-<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span> </div>
-<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span>PSC_Log_msg(PSC_LogLevel level, <span class="keyword">const</span> <span class="keywordtype">char</span> *message)</div>
-<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span>    ATTR_NONNULL((2));</div>
-<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span> </div>
-<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00049" name="l00049"></a><span class="lineno">   49</span>PSC_Log_fmt(PSC_LogLevel level, <span class="keyword">const</span> <span class="keywordtype">char</span> *format, ...)</div>
-<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>    ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));</div>
-<div class="line"><a id="l00051" name="l00051"></a><span class="lineno">   51</span> </div>
-<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span><span class="preprocessor">#endif</span></div>
-<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span> </div>
+<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span><span class="preprocessor">#include &lt;stdio.h&gt;</span></div>
+<div class="line"><a id="l00011" name="l00011"></a><span class="lineno">   11</span> </div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno"><a class="line" href="log_8h.html#ab1d3ca8e86b75912543edf10b848c043">   30</a></span><span class="preprocessor">#define PSC_MAXLOGLINE 16384</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span> </div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338">   34</a></span><span class="keyword">typedef</span> <span class="keyword">enum</span> <a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span>{</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338ae9d879ebede2b8fecded2dbcdfc45195">   36</a></span>    <a class="code hl_enumvalue" href="log_8h.html#ac88147d906da201e8b128683a5eec338ae9d879ebede2b8fecded2dbcdfc45195">PSC_L_FATAL</a>,    </div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338a2a32ce7de236c7e43604de0b104a1b7a">   37</a></span>    <a class="code hl_enumvalue" href="log_8h.html#ac88147d906da201e8b128683a5eec338a2a32ce7de236c7e43604de0b104a1b7a">PSC_L_ERROR</a>,    </div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338aee91f1a1d59f535e1e7df2cebdcdc2e6">   38</a></span>    <a class="code hl_enumvalue" href="log_8h.html#ac88147d906da201e8b128683a5eec338aee91f1a1d59f535e1e7df2cebdcdc2e6">PSC_L_WARNING</a>,  </div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338a61deff225424164c70ca812acfe93bfe">   39</a></span>    <a class="code hl_enumvalue" href="log_8h.html#ac88147d906da201e8b128683a5eec338a61deff225424164c70ca812acfe93bfe">PSC_L_INFO</a>,     </div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span>    <a class="code hl_enumvalue" href="log_8h.html#ac88147d906da201e8b128683a5eec338a70a4fe00feb68b30bc0b2e8de48fe6fa">PSC_L_DEBUG</a>     </div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno"><a class="line" href="log_8h.html#ac88147d906da201e8b128683a5eec338a70a4fe00feb68b30bc0b2e8de48fe6fa">   41</a></span>} <a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a>;</div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span> </div>
+<div class="line"><a id="l00049" name="l00049"></a><span class="lineno"><a class="line" href="log_8h.html#a1f392463fbff859b3ef8ea3cb6f93fe4">   49</a></span><span class="keyword">typedef</span> void (*<a class="code hl_typedef" href="log_8h.html#a1f392463fbff859b3ef8ea3cb6f93fe4">PSC_LogWriter</a>)(<a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a> level,</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *message, <span class="keywordtype">void</span> *data)</div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno">   51</span>    ATTR_NONNULL((2));</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span> </div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a59899133691f7d9879017cec6b47b57f">   59</a></span><a class="code hl_function" href="class_p_s_c___log.html#a59899133691f7d9879017cec6b47b57f">PSC_Log_setFileLogger</a>(FILE *file)</div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span> </div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a8c20f9b232d78826de04c017bc9c6fc6">   70</a></span><a class="code hl_function" href="class_p_s_c___log.html#a8c20f9b232d78826de04c017bc9c6fc6">PSC_Log_setSyslogLogger</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *ident, <span class="keywordtype">int</span> facility, <span class="keywordtype">int</span> withStderr)</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span> </div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#aee36480476509a47a158d9b6428a1a2d">   80</a></span><a class="code hl_function" href="class_p_s_c___log.html#aee36480476509a47a158d9b6428a1a2d">PSC_Log_setCustomLogger</a>(<a class="code hl_typedef" href="log_8h.html#a1f392463fbff859b3ef8ea3cb6f93fe4">PSC_LogWriter</a> writer, <span class="keywordtype">void</span> *data)</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span> </div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#ad4d429f86b2e953574324e68e3ff884c">   91</a></span><a class="code hl_function" href="class_p_s_c___log.html#ad4d429f86b2e953574324e68e3ff884c">PSC_Log_setMaxLogLevel</a>(<a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a> level);</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span> </div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00101" name="l00101"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a3ed1703300f37b7e360587ae4892e3de">  101</a></span><a class="code hl_function" href="class_p_s_c___log.html#a3ed1703300f37b7e360587ae4892e3de">PSC_Log_setSilent</a>(<span class="keywordtype">int</span> silent);</div>
+<div class="line"><a id="l00102" name="l00102"></a><span class="lineno">  102</span> </div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a47732aac0217a636f0e41937e1c8c21a">  119</a></span><a class="code hl_function" href="class_p_s_c___log.html#a47732aac0217a636f0e41937e1c8c21a">PSC_Log_setAsync</a>(<span class="keywordtype">int</span> async);</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span> </div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a901d046f7a54e19ec30fd13e35f6c22b">  128</a></span><a class="code hl_function" href="class_p_s_c___log.html#a901d046f7a54e19ec30fd13e35f6c22b">PSC_Log_msg</a>(<a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a> level, <span class="keyword">const</span> <span class="keywordtype">char</span> *message)</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span>    ATTR_NONNULL((2));</div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span> </div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno"><a class="line" href="class_p_s_c___log.html#a7fe82024e8cc76e424b6b6b125e97b69">  139</a></span><a class="code hl_function" href="class_p_s_c___log.html#a7fe82024e8cc76e424b6b6b125e97b69">PSC_Log_fmt</a>(<a class="code hl_enumeration" href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a> level, <span class="keyword">const</span> <span class="keywordtype">char</span> *format, ...)</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span>    ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));</div>
+<div class="line"><a id="l00141" name="l00141"></a><span class="lineno">  141</span> </div>
+<div class="line"><a id="l00142" name="l00142"></a><span class="lineno">  142</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span> </div>
+<div class="ttc" id="aclass_p_s_c___log_html_a3ed1703300f37b7e360587ae4892e3de"><div class="ttname"><a href="class_p_s_c___log.html#a3ed1703300f37b7e360587ae4892e3de">PSC_Log::PSC_Log_setSilent</a></div><div class="ttdeci">void PSC_Log_setSilent(int silent)</div><div class="ttdoc">Enable/disable silent mode.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_a47732aac0217a636f0e41937e1c8c21a"><div class="ttname"><a href="class_p_s_c___log.html#a47732aac0217a636f0e41937e1c8c21a">PSC_Log::PSC_Log_setAsync</a></div><div class="ttdeci">void PSC_Log_setAsync(int async)</div><div class="ttdoc">Enable/disable asynchronous logging.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_a59899133691f7d9879017cec6b47b57f"><div class="ttname"><a href="class_p_s_c___log.html#a59899133691f7d9879017cec6b47b57f">PSC_Log::PSC_Log_setFileLogger</a></div><div class="ttdeci">void PSC_Log_setFileLogger(FILE *file)</div><div class="ttdoc">Use a standard file logger.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_a7fe82024e8cc76e424b6b6b125e97b69"><div class="ttname"><a href="class_p_s_c___log.html#a7fe82024e8cc76e424b6b6b125e97b69">PSC_Log::PSC_Log_fmt</a></div><div class="ttdeci">void PSC_Log_fmt(PSC_LogLevel level, const char *format,...)</div><div class="ttdoc">Log a message using a prinft-like format string.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_a8c20f9b232d78826de04c017bc9c6fc6"><div class="ttname"><a href="class_p_s_c___log.html#a8c20f9b232d78826de04c017bc9c6fc6">PSC_Log::PSC_Log_setSyslogLogger</a></div><div class="ttdeci">void PSC_Log_setSyslogLogger(const char *ident, int facility, int withStderr)</div><div class="ttdoc">Use a standard syslog loggeer.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_a901d046f7a54e19ec30fd13e35f6c22b"><div class="ttname"><a href="class_p_s_c___log.html#a901d046f7a54e19ec30fd13e35f6c22b">PSC_Log::PSC_Log_msg</a></div><div class="ttdeci">void PSC_Log_msg(PSC_LogLevel level, const char *message)</div><div class="ttdoc">Log a message.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_ad4d429f86b2e953574324e68e3ff884c"><div class="ttname"><a href="class_p_s_c___log.html#ad4d429f86b2e953574324e68e3ff884c">PSC_Log::PSC_Log_setMaxLogLevel</a></div><div class="ttdeci">void PSC_Log_setMaxLogLevel(PSC_LogLevel level)</div><div class="ttdoc">Set maximum log level.</div></div>
+<div class="ttc" id="aclass_p_s_c___log_html_aee36480476509a47a158d9b6428a1a2d"><div class="ttname"><a href="class_p_s_c___log.html#aee36480476509a47a158d9b6428a1a2d">PSC_Log::PSC_Log_setCustomLogger</a></div><div class="ttdeci">void PSC_Log_setCustomLogger(PSC_LogWriter writer, void *data)</div><div class="ttdoc">Use a custom log writer.</div></div>
+<div class="ttc" id="alog_8h_html_a1f392463fbff859b3ef8ea3cb6f93fe4"><div class="ttname"><a href="log_8h.html#a1f392463fbff859b3ef8ea3cb6f93fe4">PSC_LogWriter</a></div><div class="ttdeci">void(* PSC_LogWriter)(PSC_LogLevel level, const char *message, void *data)</div><div class="ttdoc">A log writer.</div><div class="ttdef"><b>Definition:</b> log.h:49</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338">PSC_LogLevel</a></div><div class="ttdeci">PSC_LogLevel</div><div class="ttdoc">Log levels.</div><div class="ttdef"><b>Definition:</b> log.h:35</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338a2a32ce7de236c7e43604de0b104a1b7a"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338a2a32ce7de236c7e43604de0b104a1b7a">PSC_L_ERROR</a></div><div class="ttdeci">@ PSC_L_ERROR</div><div class="ttdoc">error condition, something can't complete</div><div class="ttdef"><b>Definition:</b> log.h:37</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338a61deff225424164c70ca812acfe93bfe"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338a61deff225424164c70ca812acfe93bfe">PSC_L_INFO</a></div><div class="ttdeci">@ PSC_L_INFO</div><div class="ttdoc">info logging to see what the service does</div><div class="ttdef"><b>Definition:</b> log.h:39</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338a70a4fe00feb68b30bc0b2e8de48fe6fa"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338a70a4fe00feb68b30bc0b2e8de48fe6fa">PSC_L_DEBUG</a></div><div class="ttdeci">@ PSC_L_DEBUG</div><div class="ttdoc">verbose debugging messages</div><div class="ttdef"><b>Definition:</b> log.h:40</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338ae9d879ebede2b8fecded2dbcdfc45195"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338ae9d879ebede2b8fecded2dbcdfc45195">PSC_L_FATAL</a></div><div class="ttdeci">@ PSC_L_FATAL</div><div class="ttdoc">fatal condition, service must abort</div><div class="ttdef"><b>Definition:</b> log.h:36</div></div>
+<div class="ttc" id="alog_8h_html_ac88147d906da201e8b128683a5eec338aee91f1a1d59f535e1e7df2cebdcdc2e6"><div class="ttname"><a href="log_8h.html#ac88147d906da201e8b128683a5eec338aee91f1a1d59f535e1e7df2cebdcdc2e6">PSC_L_WARNING</a></div><div class="ttdeci">@ PSC_L_WARNING</div><div class="ttdoc">something seems wrong and should get attention</div><div class="ttdef"><b>Definition:</b> log.h:38</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><b>log.h</b></li>
+    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><a class="el" href="log_8h.html">log.h</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.9.6 </li>
   </ul>
 </div>

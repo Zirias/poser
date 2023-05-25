@@ -1,12 +1,19 @@
 var searchData=
 [
   ['psc_5fconnection_0',['PSC_Connection',['../class_p_s_c___connection.html',1,'']]],
-  ['psc_5feadatareceived_1',['PSC_EADataReceived',['../class_p_s_c___e_a_data_received.html',1,'']]],
-  ['psc_5fhashtable_2',['PSC_HashTable',['../class_p_s_c___hash_table.html',1,'']]],
-  ['psc_5fhashtableiterator_3',['PSC_HashTableIterator',['../class_p_s_c___hash_table_iterator.html',1,'']]],
-  ['psc_5flist_4',['PSC_List',['../class_p_s_c___list.html',1,'']]],
-  ['psc_5flistiterator_5',['PSC_ListIterator',['../class_p_s_c___list_iterator.html',1,'']]],
-  ['psc_5fqueue_6',['PSC_Queue',['../class_p_s_c___queue.html',1,'']]],
-  ['psc_5fstringbuilder_7',['PSC_StringBuilder',['../class_p_s_c___string_builder.html',1,'']]],
-  ['psc_5ftcpclientopts_8',['PSC_TcpClientOpts',['../class_p_s_c___tcp_client_opts.html',1,'']]]
+  ['psc_5fdaemon_1',['PSC_Daemon',['../class_p_s_c___daemon.html',1,'']]],
+  ['psc_5feadatareceived_2',['PSC_EADataReceived',['../class_p_s_c___e_a_data_received.html',1,'']]],
+  ['psc_5fevent_3',['PSC_Event',['../class_p_s_c___event.html',1,'']]],
+  ['psc_5fhashtable_4',['PSC_HashTable',['../class_p_s_c___hash_table.html',1,'']]],
+  ['psc_5fhashtableiterator_5',['PSC_HashTableIterator',['../class_p_s_c___hash_table_iterator.html',1,'']]],
+  ['psc_5flist_6',['PSC_List',['../class_p_s_c___list.html',1,'']]],
+  ['psc_5flistiterator_7',['PSC_ListIterator',['../class_p_s_c___list_iterator.html',1,'']]],
+  ['psc_5flog_8',['PSC_Log',['../class_p_s_c___log.html',1,'']]],
+  ['psc_5fqueue_9',['PSC_Queue',['../class_p_s_c___queue.html',1,'']]],
+  ['psc_5frunopts_10',['PSC_RunOpts',['../class_p_s_c___run_opts.html',1,'']]],
+  ['psc_5fserver_11',['PSC_Server',['../class_p_s_c___server.html',1,'']]],
+  ['psc_5fstringbuilder_12',['PSC_StringBuilder',['../class_p_s_c___string_builder.html',1,'']]],
+  ['psc_5ftcpclientopts_13',['PSC_TcpClientOpts',['../class_p_s_c___tcp_client_opts.html',1,'']]],
+  ['psc_5ftcpserveropts_14',['PSC_TcpServerOpts',['../class_p_s_c___tcp_server_opts.html',1,'']]],
+  ['psc_5funixserveropts_15',['PSC_UnixServerOpts',['../class_p_s_c___unix_server_opts.html',1,'']]]
 ];
