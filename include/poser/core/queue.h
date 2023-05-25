@@ -8,7 +8,7 @@
  */
 
 /** A simple queue of objects
- * @class PSC_Queue queue.h <ircbot/queue.h>
+ * @class PSC_Queue queue.h <poser/core/queue.h>
  */
 C_CLASS_DECL(PSC_Queue);
 

@@ -1,81 +1,238 @@
 #ifndef POSER_CORE_CONNECTION_H
 #define POSER_CORE_CONNECTION_H
 
+/** declarations for the PSC_Connection class
+ * @file
+ */
+
 #include <poser/decl.h>
 
 #include <stddef.h>
 #include <stdint.h>
 
+/** A socket connection.
+ * This class offers reading from and writing to a socket (TCP or local Unix)
+ * and retreiving basic peer information.
+ *
+ * A connection cannot be created directly. It's either created as a client,
+ * or obtained from a PSC_Server when a client connected there.
+ *
+ * There's no destructor either, a connection destroys itself after being
+ * closed and having done the necessary cleanup. Note that it automatically
+ * closes on any errors, so if you need to know about it, you should listen on
+ * the PSC_Connection_closed() event.
+ * @class PSC_Connection connection.h <poser/core/connection.h>
+ */
 C_CLASS_DECL(PSC_Connection);
+
+/** Event arguments for data received on a connection.
+ * @class PSC_EADataReceived connection.h <poser/core/connection.h>
+ */
 C_CLASS_DECL(PSC_EADataReceived);
+
 C_CLASS_DECL(PSC_Event);
 
+/** Connection successfully connected.
+ * This event fires as soon as a connection is fully connected and therefore
+ * ready to communicate. Note this never fires on connections obtained from a
+ * PSC_Server, they are already connected.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the connected event
+ */
 DECLEXPORT PSC_Event *
 PSC_Connection_connected(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Connection closed.
+ * This event fires when the connection was closed, either by calling
+ * PSC_Connection_closed(), or because the peer closed it, or because of any
+ * error.
+ *
+ * If the connection was fully connected before, it passes itself as the event
+ * arguments. Otherwise, the event args will be NULL. That way, it's possible
+ * to know whether there was an error during establishing the connection.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the closed event
+ */
 DECLEXPORT PSC_Event *
 PSC_Connection_closed(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Data received.
+ * This event fires whenever there was new data received on the socket. It
+ * passes a PSC_EADataReceived instance as event arguments, from which you can
+ * access a buffer and its size.
+ *
+ * You can also mark the buffer as being handled. This will stop receiving
+ * more data (which would overwrite the buffer) until you explicitly call
+ * PSC_Connection_confirmDataReceived().
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the data received event
+ */
 DECLEXPORT PSC_Event *
 PSC_Connection_dataReceived(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Data sent.
+ * This event fires when data passed to PSC_Connection_write() was sent. It
+ * only fires when an "id" object was passed with the data. This object is
+ * passed back via event args, so you can identify which write completed.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the data sent event
+ */
 DECLEXPORT PSC_Event *
 PSC_Connection_dataSent(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Remote name resolved.
+ * This event fires as soon as the name of the peer was successfully resolved.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the name resolved event
+ */
 DECLEXPORT PSC_Event *
 PSC_Connection_nameResolved(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** The remote address.
+ * The address of the peer. For TCP connections, an IPv4 or IPv6 address. For
+ * local UNIX connections, the name of the socket.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the remote address
+ */
 DECLEXPORT const char *
 PSC_Connection_remoteAddr(const PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** The remote hostname.
+ * The hostname of the peer. For local UNIX sockets, or if not resolved yet,
+ * or if resolving is disabled: NULL.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the remote hostname
+ */
 DECLEXPORT const char *
 PSC_Connection_remoteHost(const PSC_Connection *self)
     CMETHOD ATTR_PURE;
 
+/** The remote port.
+ * For local UNIX sockets, this returns 0.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the remote port
+ */
 DECLEXPORT int
 PSC_Connection_remotePort(const PSC_Connection *self)
     CMETHOD ATTR_PURE;
 
+/** Send data to the peer.
+ * The data passed is scheduled for sending and sent as soon as the socket is
+ * ready for sending. If an id is given, a PSC_Connection_dataSent() event
+ * fires as soon as the data was actually sent, passing back the id as the
+ * event args.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param buf pointer to the data
+ * @param sz size of the data
+ * @param id optional identifier object
+ * @returns -1 on immediate error, 0 when sending is scheduled
+ */
 DECLEXPORT int
 PSC_Connection_write(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
     CMETHOD ATTR_NONNULL((2));
 
+/** Activate connection.
+ * When a new connection is obtained from a PSC_Server which is configured for
+ * connWait, it will only start receiving data after calling this.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ */
 DECLEXPORT void
 PSC_Connection_activate(PSC_Connection *self)
     CMETHOD;
 
+/** Confirm receiving data is completed.
+ * This reactivates reading from the connection after it was paused by calling
+ * PSC_EADataReceived_markHandling() in a data received event handler, to
+ * signal the buffer is still being processed.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns 0 on success, -1 if reading wasn't paused
+ */
 DECLEXPORT int
 PSC_Connection_confirmDataReceived(PSC_Connection *self)
     CMETHOD;
 
+/** Close connection.
+ * This initiates closing the connection. If TLS is enabled, the TLS shutdown
+ * is performed immediately. A closed event is fired and the connection is
+ * scheduled for deletion after all events were handled, which will also close
+ * the socket.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param blacklist (0) or (1): also blacklist the socket address, so it won't
+ *                  be reused immediately, use when the peer behaved
+ *                  erroneously
+ */
 DECLEXPORT void
 PSC_Connection_close(PSC_Connection *self, int blacklist)
     CMETHOD;
 
+/** Attach a data object.
+ * Attach some custom data to the connection.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param data the data to attach
+ * @param deleter if not NULL, called on the data when the connection is
+ *                destroyed or some different data is attached
+ */
 DECLEXPORT void
 PSC_Connection_setData(PSC_Connection *self,
 	void *data, void (*deleter)(void *))
     CMETHOD;
 
+/** Retreive attached data object.
+ * Get data that was attached with PSC_Connection_setData().
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the currently attached data
+ */
 DECLEXPORT void *
 PSC_Connection_data(const PSC_Connection *self)
     CMETHOD ATTR_PURE;
 
+/** The data received.
+ * Get a pointer to the data received on a connection.
+ * @memberof PSC_EADataReceived
+ * @param self the PSC_EADataReceived
+ * @returns a pointer to received data
+ */
 DECLEXPORT const uint8_t *
 PSC_EADataReceived_buf(const PSC_EADataReceived *self)
     CMETHOD ATTR_RETNONNULL;
 
+/** The size of the data received.
+ * Get the size of the received data (in bytes).
+ * @memberof PSC_EADataReceived
+ * @param self the PSC_EADataReceived
+ * @returns the size of the data
+ */
 DECLEXPORT uint16_t
 PSC_EADataReceived_size(const PSC_EADataReceived *self)
     CMETHOD;
 
+/** Mark received data as being handled.
+ * Calling this makes the PSC_Connection stop receiving further data unless
+ * PSC_Connection_confirmDataReceived() is called.
+ * @memberof PSC_EADataReceived
+ * @param self the PSC_EADataReceived
+ */
 DECLEXPORT void
 PSC_EADataReceived_markHandling(PSC_EADataReceived *self)
     CMETHOD;

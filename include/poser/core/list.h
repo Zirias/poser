@@ -10,12 +10,12 @@
  */
 
 /** A list of objects.
- * @class PSC_List list.h <ircbot/list.h>
+ * @class PSC_List list.h <poser/core/list.h>
  */
 C_CLASS_DECL(PSC_List);
 
 /** An iterator over the contents of an PSC_List.
- * @class PSC_ListIterator list.h <ircbot/list.h>
+ * @class PSC_ListIterator list.h <poser/core/list.h>
  */
 C_CLASS_DECL(PSC_ListIterator);
 

@@ -11,12 +11,12 @@
 #include <stdint.h>
 
 /** A hash table storing any data objects using string keys.
- * @class PSC_HashTable hashtable.h <ircbot/hashtable.h>
+ * @class PSC_HashTable hashtable.h <poser/core/hashtable.h>
  */
 C_CLASS_DECL(PSC_HashTable);
 
 /** An iterator over the contents of an PSC_HashTable.
- * @class PSC_HashTableIterator hashtable.h <ircbot/hashtable.h>
+ * @class PSC_HashTableIterator hashtable.h <poser/core/hashtable.h>
  */
 C_CLASS_DECL(PSC_HashTableIterator);
 

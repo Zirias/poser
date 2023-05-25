@@ -8,7 +8,7 @@
  */
 
 /** A simple string builder
- * @class PSC_StringBuilder stringbuilder.h <ircbot/stringbuilder.h>
+ * @class PSC_StringBuilder stringbuilder.h <poser/core/stringbuilder.h>
  */
 C_CLASS_DECL(PSC_StringBuilder);
 
