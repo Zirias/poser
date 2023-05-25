@@ -227,8 +227,13 @@ static int serviceLoop(int isRun)
 
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
-    handler.sa_handler = handlesig;
+    handler.sa_handler = SIG_IGN;
     sigemptyset(&handler.sa_mask);
+    sigaction(SIGHUP, &handler, 0);
+    sigaction(SIGPIPE, &handler, 0);
+    sigaction(SIGUSR1, &handler, 0);
+
+    handler.sa_handler = handlesig;
     sigaddset(&handler.sa_mask, SIGTERM);
     sigaddset(&handler.sa_mask, SIGINT);
     sigaddset(&handler.sa_mask, SIGALRM);
