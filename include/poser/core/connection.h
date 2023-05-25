@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 /** A socket connection.
- * This class offers reading from and writing to a socket (TCP or local Unix)
+ * This class offers reading from and writing to a socket (TCP or local UNIX)
  * and retreiving basic peer information.
  *
  * A connection cannot be created directly. It's either created as a client,

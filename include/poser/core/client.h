@@ -11,7 +11,7 @@
 
 C_CLASS_DECL(PSC_Connection);
 
-/** Options for creating a TCP Client.
+/** Options for creating a TCP client.
  * @class PSC_TcpClientOpts client.h <poser/core/client.h>
  */
 C_CLASS_DECL(PSC_TcpClientOpts);
@@ -58,7 +58,7 @@ DECLEXPORT void
 PSC_TcpClientOpts_disableCertVerify(PSC_TcpClientOpts *self)
     CMETHOD;
 
-/** Set a specific protocol (IPv4 or IPv4).
+/** Set a specific protocol (IPv4 or IPv6).
  * @memberof PSC_TcpClientOpts
  * @param self the PSC_TcpClientOpts
  * @param proto protocol the client should use
@@ -132,7 +132,7 @@ PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
 	void *receiver, PSC_ClientCreatedHandler callback)
     ATTR_NONNULL((1)) ATTR_NONNULL((3));
 
-/** Create a connection as a Unix socket client.
+/** Create a connection as a UNIX socket client.
  * The created connection will be in a "connecting" state. To know when it is
  * successfully connected, you must listen on the PSC_Connection_connected()
  * event.
