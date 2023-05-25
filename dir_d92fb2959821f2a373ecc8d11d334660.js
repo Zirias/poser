@@ -11,8 +11,8 @@ var dir_d92fb2959821f2a373ecc8d11d334660 =
     [ "queue.h", "queue_8h.html", null ],
     [ "runopts.h", "runopts_8h.html", null ],
     [ "server.h", "server_8h.html", null ],
-    [ "service.h", "service_8h_source.html", null ],
+    [ "service.h", "service_8h.html", "service_8h" ],
     [ "stringbuilder.h", "stringbuilder_8h.html", null ],
-    [ "threadpool.h", "threadpool_8h_source.html", null ],
-    [ "util.h", "util_8h_source.html", null ]
+    [ "threadpool.h", "threadpool_8h.html", "threadpool_8h" ],
+    [ "util.h", "util_8h.html", "util_8h" ]
 ];

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['psc_5fmaxlogline_0',['PSC_MAXLOGLINE',['../log_8h.html#ab1d3ca8e86b75912543edf10b848c043',1,'log.h']]]
+  ['maxpanichandlers_0',['MAXPANICHANDLERS',['../service_8h.html#a4dff1a093c65986499f6bdb23b362dc8',1,'service.h']]]
 ];
