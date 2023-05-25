@@ -251,83 +251,90 @@ static void dowrite(PSC_Connection *self)
 {
     PSC_Log_fmt(PSC_L_DEBUG, "connection: writing to %s",
 	    PSC_Connection_remoteAddr(self));
-    WriteRecord *rec = self->writerecs + self->baserecidx;
-    void *id = 0;
-#ifdef WITH_TLS
-    if (self->tls)
+    int checkagain;
+    do
     {
-	size_t writesz = 0;
-	int rc = SSL_write_ex(self->tls, rec->wrbuf + rec->wrbufpos,
-		rec->wrbuflen - rec->wrbufpos, &writesz);
-	if (rc > 0)
+	checkagain = 0;
+	WriteRecord *rec = self->writerecs + self->baserecidx;
+	void *id = 0;
+#ifdef WITH_TLS
+	if (self->tls)
 	{
-	    self->tls_write_st = 0;
-	    if (writesz < (size_t)(rec->wrbuflen - rec->wrbufpos))
+	    size_t writesz = 0;
+	    int rc = SSL_write_ex(self->tls, rec->wrbuf + rec->wrbufpos,
+		    rec->wrbuflen - rec->wrbufpos, &writesz);
+	    if (rc > 0)
 	    {
-		rec->wrbufpos += writesz;
-		wantreadwrite(self);
-		return;
+		self->tls_write_st = 0;
+		if (writesz < (size_t)(rec->wrbuflen - rec->wrbufpos))
+		{
+		    rec->wrbufpos += writesz;
+		    wantreadwrite(self);
+		    return;
+		}
+		else id = rec->id;
+		if (++self->baserecidx == NWRITERECS) self->baserecidx = 0;
+		if (--self->nrecs) checkagain = 1;
+		if (id)
+		{
+		    PSC_Event_raise(self->dataSent, 0, id);
+		}
 	    }
-	    else id = rec->id;
-	    if (++self->baserecidx == NWRITERECS) self->baserecidx = 0;
-	    --self->nrecs;
-	    if (id)
+	    else
 	    {
-		PSC_Event_raise(self->dataSent, 0, id);
+		rc = SSL_get_error(self->tls, rc);
+		if (rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE)
+		{
+		    self->tls_write_st = rc;
+		}
+		else
+		{
+		    PSC_Log_fmt(PSC_L_WARNING,
+			    "connection: error writing to %s",
+			    PSC_Connection_remoteAddr(self));
+		    PSC_Connection_close(self, 0);
+		    return;
+		}
 	    }
+	    wantreadwrite(self);
 	}
 	else
+#endif
 	{
-	    rc = SSL_get_error(self->tls, rc);
-	    if (rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE)
+	    errno = 0;
+	    int rc = write(self->fd, rec->wrbuf + rec->wrbufpos,
+		    rec->wrbuflen - rec->wrbufpos);
+	    if (rc >= 0)
 	    {
-		self->tls_write_st = rc;
+		if (rc < rec->wrbuflen - rec->wrbufpos)
+		{
+		    rec->wrbufpos += rc;
+		    return;
+		}
+		else id = rec->id;
+		if (++self->baserecidx == NWRITERECS) self->baserecidx = 0;
+		if (--self->nrecs) checkagain = 1;
+		else wantreadwrite(self);
+		if (id)
+		{
+		    PSC_Event_raise(self->dataSent, 0, id);
+		}
+	    }
+	    else if (errno == EWOULDBLOCK || errno == EAGAIN)
+	    {
+		PSC_Log_fmt(PSC_L_DEBUG,
+			"connection: not ready for writing to %s",
+			PSC_Connection_remoteAddr(self));
+		return;
 	    }
 	    else
 	    {
 		PSC_Log_fmt(PSC_L_WARNING, "connection: error writing to %s",
 			PSC_Connection_remoteAddr(self));
 		PSC_Connection_close(self, 0);
-		return;
 	    }
 	}
-	wantreadwrite(self);
-    }
-    else
-#endif
-    {
-	errno = 0;
-	int rc = write(self->fd, rec->wrbuf + rec->wrbufpos,
-		rec->wrbuflen - rec->wrbufpos);
-	if (rc >= 0)
-	{
-	    if (rc < rec->wrbuflen - rec->wrbufpos)
-	    {
-		rec->wrbufpos += rc;
-		return;
-	    }
-	    else id = rec->id;
-	    if (++self->baserecidx == NWRITERECS) self->baserecidx = 0;
-	    --self->nrecs;
-	    wantreadwrite(self);
-	    if (id)
-	    {
-		PSC_Event_raise(self->dataSent, 0, id);
-	    }
-	}
-	else if (errno == EWOULDBLOCK || errno == EAGAIN)
-	{
-	    PSC_Log_fmt(PSC_L_INFO, "connection: not ready for writing to %s",
-		    PSC_Connection_remoteAddr(self));
-	    return;
-	}
-	else
-	{
-	    PSC_Log_fmt(PSC_L_WARNING, "connection: error writing to %s",
-		    PSC_Connection_remoteAddr(self));
-	    PSC_Connection_close(self, 0);
-	}
-    }
+    } while (checkagain);
 }
 
 static void writeConnection(void *receiver, void *sender, void *args)
