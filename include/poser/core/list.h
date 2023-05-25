@@ -14,7 +14,7 @@
  */
 C_CLASS_DECL(PSC_List);
 
-/** An iterator over the contents of an PSC_List.
+/** An iterator over the contents of a PSC_List.
  * @class PSC_ListIterator list.h <poser/core/list.h>
  */
 C_CLASS_DECL(PSC_ListIterator);

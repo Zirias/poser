@@ -15,7 +15,7 @@
  */
 C_CLASS_DECL(PSC_HashTable);
 
-/** An iterator over the contents of an PSC_HashTable.
+/** An iterator over the contents of a PSC_HashTable.
  * @class PSC_HashTableIterator hashtable.h <poser/core/hashtable.h>
  */
 C_CLASS_DECL(PSC_HashTableIterator);
