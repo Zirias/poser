@@ -2,10 +2,14 @@ posercore_MODULES:=		client \
 				connection \
 				daemon \
 				event \
+				hashtable \
+				list \
 				log \
+				queue \
 				runopts \
 				server \
 				service \
+				stringbuilder \
 				threadpool \
 				util
 
@@ -14,11 +18,15 @@ posercore_HEADERS_INSTALL:=	core \
 				core/connection \
 				core/daemon \
 				core/event \
+				core/hashtable \
+				core/list \
 				core/log \
 				core/proto \
+				core/queue \
 				core/runopts \
 				core/server \
 				core/service \
+				core/stringbuilder \
 				core/threadpool \
 				core/util \
 				decl

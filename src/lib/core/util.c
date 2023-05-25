@@ -1,5 +1,6 @@
+#include "util.h"
+
 #include <poser/core/service.h>
-#include <poser/core/util.h>
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -68,5 +69,15 @@ SOEXPORT char *PSC_joinstr(const char *delim, char **strings)
 	++cur;
     }
     return joined;
+}
+
+SOLOCAL uint8_t hashstr(const char *key, uint8_t mask)
+{
+    size_t h = 5381;
+    while (*key)
+    {
+	h += (h << 5) + ((uint8_t)*key++);
+    }
+    return h & mask;
 }
 
