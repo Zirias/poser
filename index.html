@@ -114,6 +114,7 @@ libposercore</h1>
 Quick start</h2>
 <p>A typical structure for a service looks like this minimal example implementing a TCP server that just writes "Hello!" to every client:</p>
 <div class="fragment"><div class="line"><span class="preprocessor">#include &lt;poser/core.h&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;stddef.h&gt;</span></div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <a class="code hl_class" href="class_p_s_c___server.html">PSC_Server</a> *server;</div>
 <div class="line"><span class="keyword">static</span> <span class="keyword">const</span> uint8_t hellomsg[] = <span class="stringliteral">&quot;Hello!\n&quot;</span>;</div>
