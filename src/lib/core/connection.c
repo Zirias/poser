@@ -428,7 +428,7 @@ static void writeConnection(void *receiver, void *sender, void *args)
     else
 #endif
     {
-	if (!self->nrecs)
+	if (!self->nrecs && !self->wrbuflen)
 	{
 #ifdef WITH_TLS
 	    self->tls_write_st = 0;
@@ -630,6 +630,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	self->tls = 0;
     }
     self->tls_connect_st = 0;
+    self->tls_connect_ticks = 0;
     self->tls_read_st = 0;
     self->tls_write_st = 0;
     self->tls_readagain = 0;
