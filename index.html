@@ -100,16 +100,85 @@ $(document).ready(function(){initNavTree('index.html',''); initResizable(); });
 libposercore</h1>
 <p>This is the core part offering basic functionality needed for every service:</p>
 <ul>
-<li>A simple event mechanism</li>
-<li>A simple logging abstraction</li>
-<li>Generic code to automatically deamonize and correctly handle a pidfile</li>
-<li>A generic service main loop built around <code>pselect()</code></li>
-<li>A thread pool used to offload jobs that might block, available to schedule own jobs on</li>
-<li>An abstraction for a (socket) connection</li>
-<li>An abstraction for a server listening on a socket and accepting connections</li>
+<li><code><a class="el" href="class_p_s_c___event.html" title="A simple event class.">PSC_Event</a></code>: a simple event mechanism</li>
+<li><code><a class="el" href="class_p_s_c___log.html" title="A logging mechanism offering pluggable writers.">PSC_Log</a></code>: a simple logging abstraction</li>
+<li><code><a class="el" href="class_p_s_c___daemon.html" title="Run something as a daemon.">PSC_Daemon</a></code>: generic code to automatically deamonize and correctly handle a pidfile</li>
+<li><code><a class="el" href="class_p_s_c___service.html" title="A main service loop.">PSC_Service</a></code>: a generic service main loop built around <code>pselect()</code></li>
+<li><code><a class="el" href="class_p_s_c___thread_pool.html" title="A thread pool.">PSC_ThreadPool</a></code>: a thread pool used to offload jobs that might block, available to schedule own jobs on</li>
+<li><code><a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a></code>: an abstraction for a (socket) connection</li>
+<li><code><a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a></code>: an abstraction for a server listening on a socket and accepting connections</li>
 <li>Optional TLS support</li>
-<li>A few utility functions </li>
+<li>A few utility functions and classes</li>
 </ul>
+<h2><a class="anchor" id="autotoc_md2"></a>
+Quick start</h2>
+<p>A typical structure for a service looks like this minimal example implementing a TCP server that just writes "Hello!" to every client:</p>
+<div class="fragment"><div class="line"><span class="preprocessor">#include &lt;poser/core.h&gt;</span></div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">static</span> <a class="code hl_class" href="class_p_s_c___server.html">PSC_Server</a> *server;</div>
+<div class="line"><span class="keyword">static</span> <span class="keyword">const</span> uint8_t hellomsg[] = <span class="stringliteral">&quot;Hello!\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> sent(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
+<div class="line">    <span class="comment">// Close the connection after it sent our message:</span></div>
+<div class="line">    Connection_close(sender, 0);</div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> connected(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
+<div class="line">    <span class="comment">// PSC_Server_clientConnected() gives us the new client connection in</span></div>
+<div class="line">    <span class="comment">// the event args:</span></div>
+<div class="line">    <a class="code hl_class" href="class_p_s_c___connection.html">PSC_Connection</a> *client = args;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// We want to know when data to the client was sent:</span></div>
+<div class="line">    PSC_Event_register(PSC_Connection_dataSent(client), 0, sent, 0);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Send &quot;hello&quot; to the client, also pass some id object, so we get a</span></div>
+<div class="line">    <span class="comment">// &quot;dataSent&quot; event for it:</span></div>
+<div class="line">    PSC_Connection_write(client, hellomsg, <span class="keyword">sizeof</span> hellomsg - 1, client);</div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> startup(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
+<div class="line">    <span class="comment">// initialization, for example create a PSC_Server</span></div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Create TCP server options to listen on some port:</span></div>
+<div class="line">    <a class="code hl_class" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *opts = PSC_TcpServerOpts_create(10000);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Create server using these options:</span></div>
+<div class="line">    server = PSC_Server_create(opts);</div>
+<div class="line">    PSC_TcpServerOpts_destroy(opts);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// In case of error, let PSC_Service know via event arguments:</span></div>
+<div class="line">    <span class="keywordflow">if</span> (!server) {</div>
+<div class="line">        PSC_EAStartup_return(args, EXIT_FAILURE);</div>
+<div class="line">        <span class="keywordflow">return</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// We want to know when a client connects:</span></div>
+<div class="line">    PSC_Event_register(PSC_Server_clientConnected(server), 0, connected, 0);</div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> shutdown(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
+<div class="line">    <span class="comment">// cleanup, e.g. destroy objects created in startup()</span></div>
+<div class="line"> </div>
+<div class="line">    PSC_Server_destroy(server);</div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line"><span class="keywordtype">int</span> main(<span class="keywordtype">void</span>) {</div>
+<div class="line">    PSC_RunOpts_init(<span class="stringliteral">&quot;/tmp/example.pid&quot;</span>);         <span class="comment">// configure pidfile</span></div>
+<div class="line">    PSC_RunOpts_enableDefaultLogging(<span class="stringliteral">&quot;example&quot;</span>);  <span class="comment">// ident for syslog</span></div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Execute startup() early during service startup</span></div>
+<div class="line">    PSC_Event_register(PSC_Service_prestartup(), 0, startup, 0);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Execute shutdown() when service is about to stop</span></div>
+<div class="line">    PSC_Event_register(PSC_Service_shutdown(), 0, shutdown, 0);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Run the service</span></div>
+<div class="line">    <span class="keywordflow">return</span> PSC_Service_run();</div>
+<div class="line">}</div>
+<div class="ttc" id="aclass_p_s_c___connection_html"><div class="ttname"><a href="class_p_s_c___connection.html">PSC_Connection</a></div><div class="ttdoc">A socket connection.</div></div>
+<div class="ttc" id="aclass_p_s_c___server_html"><div class="ttname"><a href="class_p_s_c___server.html">PSC_Server</a></div><div class="ttdoc">A server listening on a socket and accepting connections.</div></div>
+<div class="ttc" id="aclass_p_s_c___tcp_server_opts_html"><div class="ttname"><a href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></div><div class="ttdoc">Options for creating a TCP server.</div></div>
+</div><!-- fragment --><p>Reference documentation is available at <a href="https://zirias.github.io/poser/">https://zirias.github.io/poser/</a> and can be built from the source using <code>doxygen</code>. </p>
 </div></div><!-- PageDoc -->
 </div><!-- contents -->
 </div><!-- doc-content -->
