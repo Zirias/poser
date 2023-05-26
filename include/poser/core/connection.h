@@ -135,6 +135,18 @@ PSC_Connection_remotePort(const PSC_Connection *self)
  * ready for sending. If an id is given, a PSC_Connection_dataSent() event
  * fires as soon as the data was actually sent, passing back the id as the
  * event args.
+ *
+ * **WARNING:** The data you pass is not (immediately) copied, instead a
+ * pointer to it is saved to copy data into the sending buffer as soon as the
+ * socket is ready for sending and there's enough room.
+ *
+ * As a consequence, **do not pass a pointer to an object with automatic
+ * storage duration!** (IOW, do not pass a pointer to some local variable).
+ * Doing so will not work and, in the worst case, crash your service.
+ *
+ * Instead, either use a static buffer (static storage duration or a member of
+ * your own dynamically allocated object) or dynamically allocate a buffer
+ * that you can destroy again from a PSC_Connection_dataSent() handler.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  * @param buf pointer to the data
