@@ -46,7 +46,7 @@ PSC_Connection_connected(PSC_Connection *self)
 
 /** Connection closed.
  * This event fires when the connection was closed, either by calling
- * PSC_Connection_closed(), or because the peer closed it, or because of any
+ * PSC_Connection_close(), or because the peer closed it, or because of any
  * error.
  *
  * If the connection was fully connected before, it passes itself as the event
