@@ -99,6 +99,7 @@ struct PSC_Connection
     int tls_connect_ticks;
     int tls_read_st;
     int tls_write_st;
+    int tls_readagain;
 #endif
     int blacklisthits;
     uint16_t wrbuflen;
@@ -449,10 +450,9 @@ static void doread(PSC_Connection *self)
 #ifdef WITH_TLS
     if (self->tls)
     {
-	int checkagain;
 	do
 	{
-	    checkagain = 0;
+	    self->tls_readagain = 0;
 	    size_t readsz = 0;
 	    int ret = SSL_read_ex(self->tls, self->rdbuf, CONNBUFSZ, &readsz);
 	    if (ret > 0)
@@ -460,19 +460,10 @@ static void doread(PSC_Connection *self)
 		self->tls_read_st = 0;
 		self->args.size = readsz;
 		PSC_Event_raise(self->dataReceived, 0, &self->args);
-		if (self->args.handling)
-		{
-		    PSC_Log_fmt(PSC_L_DEBUG,
-			    "connection: blocking reads from %s",
-			    PSC_Connection_remoteAddr(self));
-		}
-		else
-		{
-		    if (readsz == CONNBUFSZ) checkagain = 1;
-		    PSC_Log_fmt(PSC_L_DEBUG,
-			    "connection: done reading from %s",
-			    PSC_Connection_remoteAddr(self));
-		}
+		if (readsz == CONNBUFSZ) self->tls_readagain = 1;
+		PSC_Log_fmt(PSC_L_DEBUG,
+			"connection: done reading from %s",
+			PSC_Connection_remoteAddr(self));
 	    }
 	    else
 	    {
@@ -496,7 +487,7 @@ static void doread(PSC_Connection *self)
 		    return;
 		}
 	    }
-	} while (checkagain);
+	} while (self->tls_readagain && !self->args.handling);
 	wantreadwrite(self);
     }
     else
@@ -508,11 +499,6 @@ static void doread(PSC_Connection *self)
 	{
 	    self->args.size = rc;
 	    PSC_Event_raise(self->dataReceived, 0, &self->args);
-	    if (self->args.handling)
-	    {
-		PSC_Log_fmt(PSC_L_DEBUG, "connection: blocking reads from %s",
-			PSC_Connection_remoteAddr(self));
-	    }
 	    wantreadwrite(self);
 	}
 	else if (errno == EWOULDBLOCK || errno == EAGAIN)
@@ -646,6 +632,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_connect_st = 0;
     self->tls_read_st = 0;
     self->tls_write_st = 0;
+    self->tls_readagain = 0;
 #endif
     self->blacklisthits = opts->blacklisthits;
     self->args.buf = self->rdbuf;
@@ -810,8 +797,6 @@ SOEXPORT int PSC_Connection_write(PSC_Connection *self,
 SOEXPORT void PSC_Connection_activate(PSC_Connection *self)
 {
     if (self->args.handling) return;
-    PSC_Log_fmt(PSC_L_DEBUG, "connection: unblocking reads from %s",
-	    PSC_Connection_remoteAddr(self));
     self->waiting = 0;
     wantreadwrite(self);
 }
@@ -822,7 +807,7 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
     if (--self->args.handling) return 0;
     PSC_Connection_activate(self);
 #ifdef WITH_TLS
-    if (self->tls && self->args.size == CONNBUFSZ) doread(self);
+    if (self->tls_readagain) doread(self);
 #endif
     return 0;
 }
