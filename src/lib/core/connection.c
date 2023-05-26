@@ -784,8 +784,15 @@ SOLOCAL void PSC_Connection_setRemoteAddrStr(PSC_Connection *self,
 SOEXPORT int PSC_Connection_write(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
 {
-    if (self->nrecs == NWRITERECS) return -1;
+    if (self->nrecs == NWRITERECS)
+    {
+	PSC_Log_fmt(PSC_L_DEBUG, "connection: write queue overflow to %s",
+		PSC_Connection_remoteAddr(self));
+	return -1;
+    }
     WriteRecord *rec = self->writerecs + self->nrecs++;
+    PSC_Log_fmt(PSC_L_DEBUG, "connection: added write request to %s, "
+	    "queue len: %hhu", PSC_Connection_remoteAddr(self), self->nrecs);
     rec->wrbuflen = sz;
     rec->wrbufpos = 0;
     rec->wrbuf = buf;
