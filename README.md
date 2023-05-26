@@ -32,6 +32,7 @@ a TCP server that just writes "Hello!" to every client:
 
 ```c
 #include <poser/core.h>
+#include <stddef.h>
 
 static PSC_Server *server;
 static const uint8_t hellomsg[] = "Hello!\n";
