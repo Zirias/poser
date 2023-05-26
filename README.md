@@ -61,7 +61,7 @@ static void startup(void *receiver, void *sender, void *args) {
     PSC_TcpServerOpts *opts = PSC_TcpServerOpts_create(10000);
 
     // Create server using these options:
-    server = PSC_Server_create(opts);
+    server = PSC_Server_createTcp(opts);
     PSC_TcpServerOpts_destroy(opts);
 
     // In case of error, let PSC_Service know via event arguments:
