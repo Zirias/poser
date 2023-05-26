@@ -153,9 +153,9 @@ static void wantreadwrite(PSC_Connection *self)
 		self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_read_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_write_st == SSL_ERROR_WANT_WRITE ||
-		(self->nrecs && !self->tls_connect_ticks)
+		((self->wrbuflen || self->nrecs) && !self->tls_connect_ticks)
 #else
-		self->nrecs
+		self->wrbuflen || self->nrecs
 #endif
 	))
     {
