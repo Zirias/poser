@@ -697,6 +697,9 @@ Public Member Functions</h2></td></tr>
 
 <p>Send data to the peer. </p>
 <p>The data passed is scheduled for sending and sent as soon as the socket is ready for sending. If an id is given, a <a class="el" href="class_p_s_c___connection.html#afddf59b4ff29b1bee16ba4ba3b97837d" title="Data sent.">PSC_Connection_dataSent()</a> event fires as soon as the data was actually sent, passing back the id as the event args.</p>
+<p><b>WARNING:</b> The data you pass is not (immediately) copied, instead a pointer to it is saved to copy data into the sending buffer as soon as the socket is ready for sending and there's enough room.</p>
+<p>As a consequence, <b>do not pass a pointer to an object with automatic storage duration!</b> (IOW, do not pass a pointer to some local variable). Doing so will not work and, in the worst case, crash your service.</p>
+<p>Instead, either use a static buffer (static storage duration or a member of your own dynamically allocated object) or dynamically allocate a buffer that you can destroy again from a <a class="el" href="class_p_s_c___connection.html#afddf59b4ff29b1bee16ba4ba3b97837d" title="Data sent.">PSC_Connection_dataSent()</a> handler.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
