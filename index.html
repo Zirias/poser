@@ -134,7 +134,7 @@ Quick start</h2>
 <div class="line"> </div>
 <div class="line">    <span class="comment">// Send &quot;hello&quot; to the client, also pass some id object, so we get a</span></div>
 <div class="line">    <span class="comment">// &quot;dataSent&quot; event for it:</span></div>
-<div class="line">    PSC_Connection_write(client, hellomsg, <span class="keyword">sizeof</span> hellomsg - 1, client);</div>
+<div class="line">    PSC_Connection_sendAsync(client, hellomsg, <span class="keyword">sizeof</span> hellomsg - 1, client);</div>
 <div class="line">}</div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> startup(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>

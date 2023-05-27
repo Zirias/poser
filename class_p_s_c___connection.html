@@ -137,9 +137,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a6f1b5c17582f4557ac13dd12f40c8968"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a6f1b5c17582f4557ac13dd12f40c8968">PSC_Connection_remotePort</a> (const <a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:a6f1b5c17582f4557ac13dd12f40c8968"><td class="mdescLeft">&#160;</td><td class="mdescRight">The remote port.  <br /></td></tr>
 <tr class="separator:a6f1b5c17582f4557ac13dd12f40c8968"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad590845f523a0af6c750d910298c73bc"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ad590845f523a0af6c750d910298c73bc">PSC_Connection_write</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, const uint8_t *buf, size_t sz, void *id)</td></tr>
-<tr class="memdesc:ad590845f523a0af6c750d910298c73bc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send data to the peer.  <br /></td></tr>
-<tr class="separator:ad590845f523a0af6c750d910298c73bc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad3732ad982546596e59fa3e5a4ced9c0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0">PSC_Connection_sendAsync</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, const uint8_t *buf, size_t sz, void *id)</td></tr>
+<tr class="memdesc:ad3732ad982546596e59fa3e5a4ced9c0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send data to the peer.  <br /></td></tr>
+<tr class="separator:ad3732ad982546596e59fa3e5a4ced9c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ae96ca60b0dce6b2ff4d052ee3408089b">PSC_Connection_activate</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Activate connection.  <br /></td></tr>
 <tr class="separator:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -216,7 +216,8 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Close connection. </p>
-<p>This initiates closing the connection. If TLS is enabled, the TLS shutdown is performed immediately. A closed event is fired and the connection is scheduled for deletion after all events were handled, which will also close the socket.</p>
+<p>This initiates closing the connection. If TLS is enabled, the TLS shutdown is initiated immediately, and completed asynchronously if necessary.</p>
+<p>A closed event is fired (either immediately or after completing the TLS shutdown) and then, the connection is scheduled for deletion after all events were handled, which will also close the socket.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
@@ -489,7 +490,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Data sent. </p>
-<p>This event fires when data passed to <a class="el" href="class_p_s_c___connection.html#ad590845f523a0af6c750d910298c73bc" title="Send data to the peer.">PSC_Connection_write()</a> was sent. It only fires when an "id" object was passed with the data. This object is passed back via event args, so you can identify which write completed.</p>
+<p>This event fires when data passed to <a class="el" href="class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0" title="Send data to the peer.">PSC_Connection_sendAsync()</a> was sent. It only fires when an "id" object was passed with the data. This object is passed back via event args, so you can identify which write completed.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
@@ -612,59 +613,14 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
-<a id="aa4bb2ba561b3c5ea842b947bc4b5f393" name="aa4bb2ba561b3c5ea842b947bc4b5f393"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aa4bb2ba561b3c5ea842b947bc4b5f393">&#9670;&#160;</a></span>PSC_Connection_setData()</h2>
+<a id="ad3732ad982546596e59fa3e5a4ced9c0" name="ad3732ad982546596e59fa3e5a4ced9c0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad3732ad982546596e59fa3e5a4ced9c0">&#9670;&#160;</a></span>PSC_Connection_sendAsync()</h2>
 
 <div class="memitem">
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">void PSC_Connection_setData </td>
-          <td>(</td>
-          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
-          <td class="paramname"><em>self</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">void *&#160;</td>
-          <td class="paramname"><em>data</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype">void(*)(void *)&#160;</td>
-          <td class="paramname"><em>deleter</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>Attach a data object. </p>
-<p>Attach some custom data to the connection.</p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
-    <tr><td class="paramname">data</td><td>the data to attach </td></tr>
-    <tr><td class="paramname">deleter</td><td>if not NULL, called on the data when the connection is destroyed or some different data is attached </td></tr>
-  </table>
-  </dd>
-</dl>
-
-</div>
-</div>
-<a id="ad590845f523a0af6c750d910298c73bc" name="ad590845f523a0af6c750d910298c73bc"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad590845f523a0af6c750d910298c73bc">&#9670;&#160;</a></span>PSC_Connection_write()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">int PSC_Connection_write </td>
+          <td class="memname">int PSC_Connection_sendAsync </td>
           <td>(</td>
           <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
           <td class="paramname"><em>self</em>, </td>
@@ -710,6 +666,51 @@ Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>-1 on immediate error, 0 when sending is scheduled </dd></dl>
+
+</div>
+</div>
+<a id="aa4bb2ba561b3c5ea842b947bc4b5f393" name="aa4bb2ba561b3c5ea842b947bc4b5f393"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa4bb2ba561b3c5ea842b947bc4b5f393">&#9670;&#160;</a></span>PSC_Connection_setData()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Connection_setData </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *&#160;</td>
+          <td class="paramname"><em>data</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void(*)(void *)&#160;</td>
+          <td class="paramname"><em>deleter</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Attach a data object. </p>
+<p>Attach some custom data to the connection.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+    <tr><td class="paramname">data</td><td>the data to attach </td></tr>
+    <tr><td class="paramname">deleter</td><td>if not NULL, called on the data when the connection is destroyed or some different data is attached </td></tr>
+  </table>
+  </dd>
+</dl>
 
 </div>
 </div>

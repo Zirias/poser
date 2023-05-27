@@ -15,6 +15,6 @@ var class_p_s_c___connection =
     [ "PSC_Connection_remoteAddr", "class_p_s_c___connection.html#a42fe18bb601b8de86e4d096938638166", null ],
     [ "PSC_Connection_remoteHost", "class_p_s_c___connection.html#ae317929908010b9dc05be1afd8dc7106", null ],
     [ "PSC_Connection_remotePort", "class_p_s_c___connection.html#a6f1b5c17582f4557ac13dd12f40c8968", null ],
-    [ "PSC_Connection_setData", "class_p_s_c___connection.html#aa4bb2ba561b3c5ea842b947bc4b5f393", null ],
-    [ "PSC_Connection_write", "class_p_s_c___connection.html#ad590845f523a0af6c750d910298c73bc", null ]
+    [ "PSC_Connection_sendAsync", "class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0", null ],
+    [ "PSC_Connection_setData", "class_p_s_c___connection.html#aa4bb2ba561b3c5ea842b947bc4b5f393", null ]
 ];
