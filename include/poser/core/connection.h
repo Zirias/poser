@@ -77,8 +77,8 @@ PSC_Connection_dataReceived(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
 /** Data sent.
- * This event fires when data passed to PSC_Connection_write() was sent. It
- * only fires when an "id" object was passed with the data. This object is
+ * This event fires when data passed to PSC_Connection_sendAsync() was sent.
+ * It only fires when an "id" object was passed with the data. This object is
  * passed back via event args, so you can identify which write completed.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
@@ -155,7 +155,7 @@ PSC_Connection_remotePort(const PSC_Connection *self)
  * @returns -1 on immediate error, 0 when sending is scheduled
  */
 DECLEXPORT int
-PSC_Connection_write(PSC_Connection *self,
+PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
     CMETHOD ATTR_NONNULL((2));
 

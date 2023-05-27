@@ -52,7 +52,7 @@ static void connected(void *receiver, void *sender, void *args) {
 
     // Send "hello" to the client, also pass some id object, so we get a
     // "dataSent" event for it:
-    PSC_Connection_write(client, hellomsg, sizeof hellomsg - 1, client);
+    PSC_Connection_sendAsync(client, hellomsg, sizeof hellomsg - 1, client);
 }
 
 static void startup(void *receiver, void *sender, void *args) {
