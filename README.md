@@ -8,6 +8,25 @@ that must scale to thousands of concurrent clients.
 
 Currently, only the `core` part is implemented.
 
+## Dynamic library versioning
+
+Dynamic libraries in poser will follow a simple versioning scheme:
+
+* A full library version consists of `major.minor.revision`, e.g.
+  `libposercore.so.1.0.0` has major version 1, minor version 0 and revision 0.
+* The major version is the *ABI* version. It will only be bumped when a change
+  breaks the ABI (introduces changes that are not backwards-compatible).
+* The minor version is the *Feature* version. It will be bumped whenever new
+  features are added in a backwards-compatible way.
+* The revision will be bumped when a change fixes some issue, not touching
+  API/ABI at all.
+* The `SONAME` property of a dynamic library will only contain the major/ABI
+  version (e.g. `libposercore.so.1`).
+
+So, updating a library with the same major/ABI version will never break
+consumers. Using consumers built against a newer minor/Feature version with an
+older version of a library *might* result in unresolved symbols.
+
 ## libposercore
 
 This is the core part offering basic functionality needed for every service:
@@ -98,4 +117,31 @@ int main(void) {
 
 Reference documentation is available at https://zirias.github.io/poser/ and
 can be built from the source using `doxygen`.
+
+### Threading model
+
+`libposercore` implements a service loop doing I/O multiplexing on a single
+thread. Different components are mostly "wired" using `PSC_Event`, which is
+not aware of threads and just calls any registered event handler directly.
+
+A thread pool is offered (and used internally as well) to offload either jobs
+that might block, or jobs that could be CPU intensive, because the main loop
+should always iterate quickly to serve all peers in a timely manner.
+
+For a thread job, you can pass some data which will be properly locked
+automatically at job start and end. But if you pass any "poser" objects there,
+be aware that executing any actions on them outside the main thread is **not**
+a safe thing to do! As a rule of thumb, treat them as read-only (`const`)
+inside your thread job.
+
+A notable exception is scheduling another thread job, this **is** a safe thing
+to do from any thread.
+
+Whether logging is safe depends on the log writer you use. The standard log
+writers offered either log to a file (which *should* be thread-safe on almost
+any platform) or to syslog (which is thread-safe). When logging is set to
+asynchronous mode (which is recommended to do after daemonizing and handled
+automatically when you use `PSC_RunOpts_enableDefaultLogging()`), any log
+writer is always called on some worker thread, so if you use your custom log
+writer, make sure it is thread-safe!
 
