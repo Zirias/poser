@@ -97,6 +97,17 @@ $(document).ready(function(){initNavTree('index.html',''); initResizable(); });
 <p>It only uses standard POSIX APIs, therefore it is not suitable for services that must scale to thousands of concurrent clients.</p>
 <p>Currently, only the <code>core</code> part is implemented.</p>
 <h1><a class="anchor" id="autotoc_md1"></a>
+Dynamic library versioning</h1>
+<p>Dynamic libraries in poser will follow a simple versioning scheme:</p>
+<ul>
+<li>A full library version consists of <code>major.minor.revision</code>, e.g. <code>libposercore.so.1.0.0</code> has major version 1, minor version 0 and revision 0.</li>
+<li>The major version is the <em>ABI</em> version. It will only be bumped when a change breaks the ABI (introduces changes that are not backwards-compatible).</li>
+<li>The minor version is the <em>Feature</em> version. It will be bumped whenever new features are added in a backwards-compatible way.</li>
+<li>The revision will be bumped when a change fixes some issue, not touching API/ABI at all.</li>
+<li>The <code>SONAME</code> property of a dynamic library will only contain the major/ABI version (e.g. <code>libposercore.so.1</code>).</li>
+</ul>
+<p>So, updating a library with the same major/ABI version will never break consumers. Using consumers built against a newer minor/Feature version with an older version of a library <em>might</em> result in unresolved symbols.</p>
+<h1><a class="anchor" id="autotoc_md2"></a>
 libposercore</h1>
 <p>This is the core part offering basic functionality needed for every service:</p>
 <ul>
@@ -110,7 +121,7 @@ libposercore</h1>
 <li>Optional TLS support</li>
 <li>A few utility functions and classes</li>
 </ul>
-<h2><a class="anchor" id="autotoc_md2"></a>
+<h2><a class="anchor" id="autotoc_md3"></a>
 Quick start</h2>
 <p>A typical structure for a service looks like this minimal example implementing a TCP server that just writes "Hello!" to every client:</p>
 <div class="fragment"><div class="line"><span class="preprocessor">#include &lt;poser/core.h&gt;</span></div>
@@ -179,7 +190,14 @@ Quick start</h2>
 <div class="ttc" id="aclass_p_s_c___connection_html"><div class="ttname"><a href="class_p_s_c___connection.html">PSC_Connection</a></div><div class="ttdoc">A socket connection.</div></div>
 <div class="ttc" id="aclass_p_s_c___server_html"><div class="ttname"><a href="class_p_s_c___server.html">PSC_Server</a></div><div class="ttdoc">A server listening on a socket and accepting connections.</div></div>
 <div class="ttc" id="aclass_p_s_c___tcp_server_opts_html"><div class="ttname"><a href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></div><div class="ttdoc">Options for creating a TCP server.</div></div>
-</div><!-- fragment --><p>Reference documentation is available at <a href="https://zirias.github.io/poser/">https://zirias.github.io/poser/</a> and can be built from the source using <code>doxygen</code>. </p>
+</div><!-- fragment --><p>Reference documentation is available at <a href="https://zirias.github.io/poser/">https://zirias.github.io/poser/</a> and can be built from the source using <code>doxygen</code>.</p>
+<h2><a class="anchor" id="autotoc_md4"></a>
+Threading model</h2>
+<p><code>libposercore</code> implements a service loop doing I/O multiplexing on a single thread. Different components are mostly "wired" using <code><a class="el" href="class_p_s_c___event.html" title="A simple event class.">PSC_Event</a></code>, which is not aware of threads and just calls any registered event handler directly.</p>
+<p>A thread pool is offered (and used internally as well) to offload either jobs that might block, or jobs that could be CPU intensive, because the main loop should always iterate quickly to serve all peers in a timely manner.</p>
+<p>For a thread job, you can pass some data which will be properly locked automatically at job start and end. But if you pass any "poser" objects there, be aware that executing any actions on them outside the main thread is <b>not</b> a safe thing to do! As a rule of thumb, treat them as read-only (<code>const</code>) inside your thread job.</p>
+<p>A notable exception is scheduling another thread job, this <b>is</b> a safe thing to do from any thread.</p>
+<p>Whether logging is safe depends on the log writer you use. The standard log writers offered either log to a file (which <em>should</em> be thread-safe on almost any platform) or to syslog (which is thread-safe). When logging is set to asynchronous mode (which is recommended to do after daemonizing and handled automatically when you use <code>PSC_RunOpts_enableDefaultLogging()</code>), any log writer is always called on some worker thread, so if you use your custom log writer, make sure it is thread-safe! </p>
 </div></div><!-- PageDoc -->
 </div><!-- contents -->
 </div><!-- doc-content -->
