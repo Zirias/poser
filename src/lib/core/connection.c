@@ -99,6 +99,7 @@ struct PSC_Connection
     int tls_connect_ticks;
     int tls_read_st;
     int tls_write_st;
+    int tls_shutdown_st;
     int tls_readagain;
 #endif
     int blacklisthits;
@@ -154,7 +155,8 @@ static void wantreadwrite(PSC_Connection *self)
 		self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_read_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_write_st == SSL_ERROR_WANT_WRITE ||
-		((self->wrbuflen || self->nrecs) && !self->tls_connect_ticks)
+		((self->wrbuflen || self->nrecs)
+		&& !self->tls_connect_ticks && !self->tls_shutdown_st)
 #else
 		self->wrbuflen || self->nrecs
 #endif
@@ -172,6 +174,7 @@ static void wantreadwrite(PSC_Connection *self)
 		self->tls_connect_st == SSL_ERROR_WANT_READ ||
 		self->tls_read_st == SSL_ERROR_WANT_READ ||
 		self->tls_write_st == SSL_ERROR_WANT_READ ||
+		self->tls_shutdown_st == SSL_ERROR_WANT_READ ||
 #endif
 		(!self->waiting && !self->args.handling)))
     {
@@ -529,7 +532,9 @@ static void readConnection(void *receiver, void *sender, void *args)
 	    PSC_Connection_remoteAddr(self));
 
 #ifdef WITH_TLS
-    if (self->tls_connect_st == SSL_ERROR_WANT_READ) dohandshake(self);
+    if (self->tls_shutdown_st == SSL_ERROR_WANT_READ)
+	PSC_Connection_close(self, 0);
+    else if (self->tls_connect_st == SSL_ERROR_WANT_READ) dohandshake(self);
     else if (self->tls_write_st == SSL_ERROR_WANT_READ) dowrite(self);
     else
 #endif
@@ -633,6 +638,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_connect_ticks = 0;
     self->tls_read_st = 0;
     self->tls_write_st = 0;
+    self->tls_shutdown_st = 0;
     self->tls_readagain = 0;
 #endif
     self->blacklisthits = opts->blacklisthits;
@@ -823,17 +829,27 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 {
     if (self->deleteScheduled) return;
-#ifdef WITH__TLS
-    if (self->tls && !self->connecting && !self->tls_connect_st)
-    {
-	SSL_shutdown(self->tls);
-    }
-#endif
     if (blacklist && self->blacklisthits && self->resolveArgs.addrlen)
     {
 	PSC_Connection_blacklistAddress(self->blacklisthits,
 		self->resolveArgs.addrlen, &self->resolveArgs.sa);
     }
+#ifdef WITH__TLS
+    if (self->tls && !self->connecting && !self->tls_connect_st)
+    {
+	self->tls_shutdown_st = 0;
+	int rc = SSL_shutdown(self->tls);
+	if (rc == 0) rc = SSL_shutdown(self->tls);
+	long err = 0;
+	if (rc < 0 && (err = SSL_get_error(self->tls, rc))
+		== SSL_ERROR_WANT_READ)
+	{
+	    self->tls_shutdown_st = err;
+	    wantreadwrite();
+	    return;
+	}
+    }
+#endif
     PSC_Event_raise(self->closed, 0, self->connecting ? 0 : self);
     deleteLater(self);
 }

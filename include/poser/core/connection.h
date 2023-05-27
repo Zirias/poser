@@ -183,9 +183,11 @@ PSC_Connection_confirmDataReceived(PSC_Connection *self)
 
 /** Close connection.
  * This initiates closing the connection. If TLS is enabled, the TLS shutdown
- * is performed immediately. A closed event is fired and the connection is
- * scheduled for deletion after all events were handled, which will also close
- * the socket.
+ * is initiated immediately, and completed asynchronously if necessary.
+ *
+ * A closed event is fired (either immediately or after completing the TLS
+ * shutdown) and then, the connection is scheduled for deletion after all
+ * events were handled, which will also close the socket.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  * @param blacklist (0) or (1): also blacklist the socket address, so it won't
