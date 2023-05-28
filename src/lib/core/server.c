@@ -48,7 +48,6 @@ struct PSC_TcpServerOpts
 #endif
     int port;
     int numerichosts;
-    int connwait;
 };
 
 struct PSC_UnixServerOpts
@@ -57,7 +56,6 @@ struct PSC_UnixServerOpts
     int uid;
     int gid;
     int mode;
-    int connwait;
 };
 
 static char hostbuf[NI_MAXHOST];
@@ -93,7 +91,6 @@ struct PSC_Server
     size_t connsize;
     size_t nsocks;
     int numericHosts;
-    int connwait;
 #ifdef WITH_TLS
     int tls;
 #endif
@@ -176,7 +173,7 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	.tls_key = self->key,
 	.tls_mode = self->tls ? TM_SERVER : TM_NONE,
 #endif
-	.createmode = self->connwait ? CCM_WAIT : CCM_NORMAL
+	.createmode = CCM_NORMAL
     };
 #ifdef WITH_TLS
     if (self->tls)
@@ -213,7 +210,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 #endif
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
-    if (opts->tls)
+    if (opts && opts->tls)
     {
 	if (!(certfile = fopen(opts->certfile, "r")))
 	{
@@ -256,10 +253,9 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->path = path;
     self->conncapa = CONNCHUNK;
     self->connsize = 0;
-    self->numericHosts = opts->numerichosts;
-    self->connwait = opts->connwait;
+    self->numericHosts = opts ? opts->numerichosts : 0;
 #ifdef WITH_TLS
-    self->tls = opts->tls;
+    self->tls = opts ? opts->tls : 0;
     self->cert = cert;
     self->key = key;
 #endif
@@ -332,11 +328,6 @@ SOEXPORT void PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
     self->numerichosts = 1;
 }
 
-SOEXPORT void PSC_TcpServerOpts_connWait(PSC_TcpServerOpts *self)
-{
-    self->connwait = 1;
-}
-
 SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)
 {
     if (!self) return;
@@ -356,7 +347,6 @@ SOEXPORT PSC_UnixServerOpts *PSC_UnixServerOpts_create(const char *name)
     self->uid = -1;
     self->gid = -1;
     self->mode = 0600;
-    self->connwait = 0;
     return self;
 }
 
@@ -370,11 +360,6 @@ SOEXPORT void PSC_UnixServerOpts_owner(PSC_UnixServerOpts *self,
 SOEXPORT void PSC_UnixServerOpts_mode(PSC_UnixServerOpts *self, int mode)
 {
     self->mode = mode;
-}
-
-SOEXPORT void PSC_UnixServerOpts_connWait(PSC_UnixServerOpts *self)
-{
-    self->connwait = 1;
 }
 
 SOEXPORT void PSC_UnixServerOpts_destroy(PSC_UnixServerOpts *self)
@@ -586,10 +571,7 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 	}
     }
 
-    PSC_TcpServerOpts tcpOpts = {
-	.connwait = opts->connwait
-    };
-    PSC_Server *self = PSC_Server_create(&tcpOpts, 1, &sock,
+    PSC_Server *self = PSC_Server_create(0, 1, &sock,
 	    PSC_copystr(addr.sun_path));
     return self;
 }

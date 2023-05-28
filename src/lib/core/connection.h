@@ -13,7 +13,6 @@
 typedef enum ConnectionCreateMode
 {
     CCM_NORMAL,
-    CCM_WAIT,
     CCM_CONNECTING
 } ConnectionCreateMode;
 

@@ -91,7 +91,7 @@ struct PSC_Connection
     RemoteAddrResolveArgs resolveArgs;
     int fd;
     int connecting;
-    int waiting;
+    int paused;
     int port;
 #ifdef WITH_TLS
     int tls_is_client;
@@ -176,7 +176,7 @@ static void wantreadwrite(PSC_Connection *self)
 		self->tls_write_st == SSL_ERROR_WANT_READ ||
 		self->tls_shutdown_st == SSL_ERROR_WANT_READ ||
 #endif
-		(!self->waiting && !self->args.handling)))
+		(!self->paused && !self->args.handling)))
     {
 	PSC_Service_registerRead(self->fd);
     }
@@ -575,7 +575,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
-    self->waiting = (opts->createmode == CCM_WAIT);
+    self->paused = 0;
     self->port = 0;
     self->addr = 0;
     self->name = 0;
@@ -666,7 +666,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	PSC_Event_register(PSC_Service_eventsDone(), self, handshakenow, 0);
     }
 #endif
-    else if (opts->createmode == CCM_NORMAL)
+    else
     {
 	PSC_Service_registerRead(fd);
     }
@@ -808,22 +808,29 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
     return 0;
 }
 
-SOEXPORT void PSC_Connection_activate(PSC_Connection *self)
+SOEXPORT void PSC_Connection_pause(PSC_Connection *self)
 {
-    if (self->args.handling) return;
-    self->waiting = 0;
+    ++self->paused;
     wantreadwrite(self);
+}
+
+SOEXPORT int PSC_Connection_resume(PSC_Connection *self)
+{
+    if (!self->paused) return -1;
+    if (--self->paused) return 0;
+    wantreadwrite(self);
+    return 1;
 }
 
 SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 {
     if (!self->args.handling) return -1;
     if (--self->args.handling) return 0;
-    PSC_Connection_activate(self);
+    wantreadwrite(self);
 #ifdef WITH_TLS
     if (self->tls_readagain) doread(self);
 #endif
-    return 0;
+    return 1;
 }
 
 SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)

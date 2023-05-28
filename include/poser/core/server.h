@@ -78,16 +78,6 @@ DECLEXPORT void
 PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
     CMETHOD;
 
-/** Wait before reading from newly accepted connections.
- * When set, a PSC_Connection for a new client will not immediately start
- * reading data, but wait for PSC_Connection_activate() to be called.
- * @memberof PSC_TcpServerOpts
- * @param self the PSC_TcpServerOpts
- */
-DECLEXPORT void
-PSC_TcpServerOpts_connWait(PSC_TcpServerOpts *self)
-    CMETHOD;
-
 /** PSC_TcpServerOpts destructor.
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts
@@ -125,16 +115,6 @@ PSC_UnixServerOpts_owner(PSC_UnixServerOpts *self, int uid, int gid)
  */
 DECLEXPORT void
 PSC_UnixServerOpts_mode(PSC_UnixServerOpts *self, int mode)
-    CMETHOD;
-
-/** Wait before reading from newly accepted connections.
- * When set, a PSC_Connection for a new client will not immediately start
- * reading data, but wait for PSC_Connection_activate() to be called.
- * @memberof PSC_UnixServerOpts
- * @param self the PSC_UnixServerOpts
- */
-DECLEXPORT void
-PSC_UnixServerOpts_connWait(PSC_UnixServerOpts *self)
     CMETHOD;
 
 /** PSC_UnixServerOpts destructor.

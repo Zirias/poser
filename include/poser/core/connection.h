@@ -159,23 +159,42 @@ PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
     CMETHOD ATTR_NONNULL((2));
 
-/** Activate connection.
- * When a new connection is obtained from a PSC_Server which is configured for
- * connWait, it will only start receiving data after calling this.
+/** Pause receiving data.
+ * Stop receiving further data unless PSC_Connection_resume() is called. For
+ * each call to PSC_Connection_pause(), a corresponding call to
+ * PSC_Connection_resume() is necessary.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  */
 DECLEXPORT void
-PSC_Connection_activate(PSC_Connection *self)
+PSC_Connection_pause(PSC_Connection *self)
+    CMETHOD;
+
+/** Resume receiving data.
+ * Allow receiving of new data again after calling PSC_Connection_pause().
+ * Must be called the same number of times to actually resume receiving.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns 1 when receiving was resumed, 0 when still paused, -1 when
+ *          receiving wasn't paused
+ */
+DECLEXPORT int
+PSC_Connection_resume(PSC_Connection *self)
     CMETHOD;
 
 /** Confirm receiving data is completed.
  * This reactivates reading from the connection after it was paused by calling
  * PSC_EADataReceived_markHandling() in a data received event handler, to
- * signal the buffer is still being processed.
+ * signal the buffer is still being processed. For every event handler setting
+ * the mark, a call to this function is needed to actually resume receiving.
+ *
+ * Note this is independent from the PSC_Connection_pause() mechanism. A
+ * PSC_Connection will only receive data when it isn't paused and no
+ * PSC_EADataReceived is marked as being handled.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
- * @returns 0 on success, -1 if reading wasn't paused
+ * @returns 1 when receiving was resumed, 0 when still paused, -1 when
+ *          receiving wasn't paused
  */
 DECLEXPORT int
 PSC_Connection_confirmDataReceived(PSC_Connection *self)
@@ -243,7 +262,9 @@ PSC_EADataReceived_size(const PSC_EADataReceived *self)
 
 /** Mark received data as being handled.
  * Calling this makes the PSC_Connection stop receiving further data unless
- * PSC_Connection_confirmDataReceived() is called.
+ * PSC_Connection_confirmDataReceived() is called. Each call to this function
+ * requires a corresponding call to PSC_Connection_confirmDataReceived() to
+ * actually resume receiving.
  * @memberof PSC_EADataReceived
  * @param self the PSC_EADataReceived
  */
