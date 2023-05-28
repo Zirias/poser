@@ -7,6 +7,7 @@
 #include <poser/decl.h>
 
 #include <poser/core/proto.h>
+#include <stddef.h>
 
 /** A server listening on a socket and accepting connections.
  * This class will open one or multiple listening sockets and handle incoming
@@ -47,6 +48,17 @@ PSC_TcpServerOpts_create(int port)
 DECLEXPORT void
 PSC_TcpServerOpts_bind(PSC_TcpServerOpts *self, const char *bindhost)
     CMETHOD ATTR_NONNULL((2));
+
+/** Set read buffer size.
+ * Sets the size of the buffer used for connections accepted from this server,
+ * in bytes. The default value is 16 kiB.
+ * @memberof PSC_TcpServerOpts
+ * @param self the PSC_TcpServerOpts
+ * @param sz the size of the read buffer, must be > 0
+ */
+DECLEXPORT void
+PSC_TcpSeverOpts_readBufSize(PSC_TcpServerOpts *self, size_t sz)
+    CMETHOD;
 
 /** Enable TLS for the server.
  * Causes TLS to be enabled for any incoming connection, using a server
@@ -94,6 +106,17 @@ PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self);
 DECLEXPORT PSC_UnixServerOpts *
 PSC_UnixServerOpts_create(const char *name)
     ATTR_RETNONNULL ATTR_NONNULL((1));
+
+/** Set read buffer size.
+ * Sets the size of the buffer used for connections accepted from this server,
+ * in bytes. The default value is 16 kiB.
+ * @memberof PSC_UnixServerOpts
+ * @param self the PSC_UnixServerOpts
+ * @param sz the size of the read buffer, must be > 0
+ */
+DECLEXPORT void
+PSC_UnixSeverOpts_readBufSize(PSC_UnixServerOpts *self, size_t sz)
+    CMETHOD;
 
 /** Set ownership of the UNIX socket.
  * When set, an attempt is made to change ownership of the socket.

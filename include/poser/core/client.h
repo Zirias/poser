@@ -8,6 +8,7 @@
 #include <poser/decl.h>
 
 #include <poser/core/proto.h>
+#include <stddef.h>
 
 C_CLASS_DECL(PSC_Connection);
 
@@ -15,6 +16,11 @@ C_CLASS_DECL(PSC_Connection);
  * @class PSC_TcpClientOpts client.h <poser/core/client.h>
  */
 C_CLASS_DECL(PSC_TcpClientOpts);
+
+/** Options for creating a UNIX socket client.
+ * @class PSC_UnixClientOpts client.h <poser/core/client.h>
+ */
+C_CLASS_DECL(PSC_UnixClientOpts);
 
 /** Handler for completed async client creation.
  * This will be called once PSC_Connection_createTcpAsync created a
@@ -36,6 +42,17 @@ typedef void (*PSC_ClientCreatedHandler)(
 DECLEXPORT PSC_TcpClientOpts *
 PSC_TcpClientOpts_create(const char *remotehost, int port)
     ATTR_RETNONNULL ATTR_NONNULL((1));
+
+/** Set read buffer size.
+ * Sets the size of the buffer used for reading from the connection, in bytes.
+ * The default value is 16 kiB.
+ * @memberof PSC_TcpClientOpts
+ * @param self the PSC_TcpClientOpts
+ * @param sz the size of the read buffer, must be > 0
+ */
+DECLEXPORT void
+PSC_TcpClientOpts_readBufSize(PSC_TcpClientOpts *self, size_t sz)
+    CMETHOD;
 
 /** Enable TLS for the connection.
  * Enables TLS for the connection to be created, optionally using a client
@@ -99,6 +116,34 @@ PSC_TcpClientOpts_setBlacklistHits(PSC_TcpClientOpts *self, int blacklistHits)
 DECLEXPORT void
 PSC_TcpClientOpts_destroy(PSC_TcpClientOpts *self);
 
+/** PSC_UnixClientOpts constructor.
+ * Creates an options object initialized to default values.
+ * @memberof PSC_UnixClientOpts
+ * @param sockname the name/path of the local socket to connect to
+ * @returns a newly created options object
+ */
+DECLEXPORT PSC_UnixClientOpts *
+PSC_UnixClientOpts_create(const char *sockname)
+    ATTR_RETNONNULL ATTR_NONNULL((1));
+
+/** Set read buffer size.
+ * Sets the size of the buffer used for reading from the connection, in bytes.
+ * The default value is 16 kiB.
+ * @memberof PSC_UnixClientOpts
+ * @param self the PSC_UnixClientOpts
+ * @param sz the size of the read buffer, must be > 0
+ */
+DECLEXPORT void
+PSC_UnixClientOpts_readBufSize(PSC_UnixClientOpts *self, size_t sz)
+    CMETHOD;
+
+/** PSC_UnixClientOpts destructor
+ * @memberof PSC_UnixClientOpts
+ * @param self the PSC_UnixClientOpts
+ */
+DECLEXPORT void
+PSC_UnixClientOpts_destroy(PSC_UnixClientOpts *self);
+
 /** Create a connection as a TCP client.
  * The created connection will be in a "connecting" state. To know when it is
  * successfully connected, you must listen on the PSC_Connection_connected()
@@ -137,11 +182,11 @@ PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
  * successfully connected, you must listen on the PSC_Connection_connected()
  * event.
  * @memberof PSC_Connection
- * @param sockname the name/path of the local socket to connect to
+ * @param opts UNIX client options
  * @returns a newly created connection object, or NULL when creation failed
  */
 DECLEXPORT PSC_Connection *
-PSC_Connection_createUnixClient(const char *sockname)
+PSC_Connection_createUnixClient(const PSC_UnixClientOpts *opts)
     ATTR_NONNULL((1));
 
 #endif

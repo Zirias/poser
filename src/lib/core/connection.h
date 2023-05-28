@@ -10,6 +10,14 @@
 #include <openssl/x509.h>
 #endif
 
+#ifndef WRBUFSZ
+#define WRBUFSZ (16*1024)
+#endif
+
+#ifndef DEFRDBUFSZ
+#define DEFRDBUFSZ WRBUFSZ
+#endif
+
 typedef enum ConnectionCreateMode
 {
     CCM_NORMAL,
@@ -25,6 +33,7 @@ typedef enum TlsMode
 
 typedef struct ConnOpts
 {
+    size_t rdbufsz;
 #ifdef WITH_TLS
     X509 *tls_cert;
     EVP_PKEY *tls_key;

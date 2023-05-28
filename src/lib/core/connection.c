@@ -23,16 +23,15 @@
 #include <openssl/ssl.h>
 #endif
 
-#define CONNBUFSZ 16*1024
 #define NWRITERECS 16
 #define CONNTICKS 6
 #define RESOLVTICKS 6
 
 struct PSC_EADataReceived
 {
+    size_t size;
     uint8_t *buf;
     int handling;
-    uint16_t size;
 };
 
 static char hostbuf[NI_MAXHOST];
@@ -85,6 +84,7 @@ struct PSC_Connection
     char *name;
     void *data;
     void (*deleter)(void *);
+    size_t rdbufsz;
     WriteRecord writerecs[NWRITERECS];
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
@@ -108,8 +108,8 @@ struct PSC_Connection
     uint8_t deleteScheduled;
     uint8_t nrecs;
     uint8_t nnotify;
-    uint8_t wrbuf[CONNBUFSZ];
-    uint8_t rdbuf[CONNBUFSZ];
+    uint8_t wrbuf[WRBUFSZ];
+    uint8_t rdbuf[];
 };
 
 void PSC_Connection_blacklistAddress(int hits,
@@ -269,13 +269,13 @@ static void dowrite(PSC_Connection *self)
     if (self->nrecs && !self->wrbuflen)
     {
 	uint8_t recno = 0;
-	for (; recno < self->nrecs && self->wrbuflen < CONNBUFSZ; ++recno)
+	for (; recno < self->nrecs && self->wrbuflen < WRBUFSZ; ++recno)
 	{
 	    WriteRecord *rec = self->writerecs + recno;
 	    size_t chunklen = rec->wrbuflen - rec->wrbufpos;
-	    if (chunklen + self->wrbuflen > CONNBUFSZ)
+	    if (chunklen + self->wrbuflen > WRBUFSZ)
 	    {
-		chunklen = CONNBUFSZ - self->wrbuflen;
+		chunklen = WRBUFSZ - self->wrbuflen;
 	    }
 	    memcpy(self->wrbuf + self->wrbuflen, rec->wrbuf + rec->wrbufpos,
 		    chunklen);
@@ -457,13 +457,14 @@ static void doread(PSC_Connection *self)
 	{
 	    self->tls_readagain = 0;
 	    size_t readsz = 0;
-	    int ret = SSL_read_ex(self->tls, self->rdbuf, CONNBUFSZ, &readsz);
+	    int ret = SSL_read_ex(self->tls, self->rdbuf,
+		    self->rdbufsz, &readsz);
 	    if (ret > 0)
 	    {
 		self->tls_read_st = 0;
 		self->args.size = readsz;
 		PSC_Event_raise(self->dataReceived, 0, &self->args);
-		if (readsz == CONNBUFSZ) self->tls_readagain = 1;
+		if (readsz == self->rdbufsz) self->tls_readagain = 1;
 		PSC_Log_fmt(PSC_L_DEBUG,
 			"connection: done reading from %s",
 			PSC_Connection_remoteAddr(self));
@@ -497,10 +498,10 @@ static void doread(PSC_Connection *self)
 #endif
     {
 	errno = 0;
-	int rc = read(self->fd, self->rdbuf, CONNBUFSZ);
+	ssize_t rc = read(self->fd, self->rdbuf, self->rdbufsz);
 	if (rc > 0)
 	{
-	    self->args.size = rc;
+	    self->args.size = (size_t)rc;
 	    PSC_Event_raise(self->dataReceived, 0, &self->args);
 	    wantreadwrite(self);
 	}
@@ -566,12 +567,13 @@ static void deleteConnection(void *receiver, void *sender, void *args)
 
 SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 {
-    PSC_Connection *self = PSC_malloc(sizeof *self);
+    PSC_Connection *self = PSC_malloc(sizeof *self + opts->rdbufsz);
     self->connected = PSC_Event_create(self);
     self->closed = PSC_Event_create(self);
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
     self->nameResolved = PSC_Event_create(self);
+    self->rdbufsz = opts->rdbufsz;
     self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
@@ -965,7 +967,7 @@ SOEXPORT const uint8_t *PSC_EADataReceived_buf(const PSC_EADataReceived *self)
     return self->buf;
 }
 
-SOEXPORT uint16_t PSC_EADataReceived_size(const PSC_EADataReceived *self)
+SOEXPORT size_t PSC_EADataReceived_size(const PSC_EADataReceived *self)
 {
     return self->size;
 }

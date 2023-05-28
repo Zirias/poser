@@ -27,7 +27,7 @@
 
 struct PSC_TcpClientOpts
 {
-    char *remotehost;
+    size_t rdbufsz;
 #ifdef WITH_TLS
     char *tls_certfile;
     char *tls_keyfile;
@@ -41,6 +41,13 @@ struct PSC_TcpClientOpts
 #endif
     int blacklisthits;
     int refcnt;
+    char remotehost[];
+};
+
+struct PSC_UnixClientOpts
+{
+    size_t rdbufsz;
+    char sockname[];
 };
 
 typedef struct BlacklistEntry
@@ -126,6 +133,7 @@ static PSC_Connection *createFromAddrinfo(
 	return 0;
     }
     ConnOpts copts = {
+	.rdbufsz = opts->rdbufsz,
 #ifdef WITH_TLS
 	.tls_cert = cert,
 	.tls_key = key,
@@ -255,12 +263,21 @@ static void resolveDone(void *receiver, void *sender, void *args)
 SOEXPORT PSC_TcpClientOpts *PSC_TcpClientOpts_create(
 	const char *remotehost, int port)
 {
-    PSC_TcpClientOpts *self = PSC_malloc(sizeof *self);
+    size_t remotehostsz = strlen(remotehost) + 1;
+    PSC_TcpClientOpts *self = PSC_malloc(sizeof *self + remotehostsz);
     memset(self, 0, sizeof *self);
-    self->remotehost = PSC_copystr(remotehost);
+    self->rdbufsz = DEFRDBUFSZ;
     self->port = port;
     self->refcnt = 1;
+    memcpy(self->remotehost, remotehost, remotehostsz);
     return self;
+}
+
+SOEXPORT void PSC_TcpClientOpts_readBufSize(PSC_TcpClientOpts *self,
+	size_t sz)
+{
+    if (!sz) return;
+    self->rdbufsz = sz;
 }
 
 SOEXPORT void PSC_TcpClientOpts_enableTls(PSC_TcpClientOpts *self,
@@ -309,11 +326,31 @@ SOEXPORT void PSC_TcpClientOpts_destroy(PSC_TcpClientOpts *self)
 {
     if (!self) return;
     if (--self->refcnt) return;
-    free(self->remotehost);
 #ifdef WITH_TLS
     free(self->tls_certfile);
     free(self->tls_keyfile);
 #endif
+    free(self);
+}
+
+SOEXPORT PSC_UnixClientOpts *PSC_UnixClientOpts_create(const char *sockname)
+{
+    size_t socknamesz = strlen(sockname) + 1;
+    PSC_UnixClientOpts *self = PSC_malloc(sizeof *self + socknamesz);
+    self->rdbufsz = DEFRDBUFSZ;
+    memcpy(self->sockname, sockname, socknamesz);
+    return self;
+}
+
+SOEXPORT void PSC_UnixClientOpts_readBufSize(PSC_UnixClientOpts *self,
+	size_t sz)
+{
+    if (!sz) return;
+    self->rdbufsz = sz;
+}
+
+SOEXPORT void PSC_UnixClientOpts_destroy(PSC_UnixClientOpts *self)
+{
     free(self);
 }
 
@@ -354,7 +391,8 @@ SOEXPORT int PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
     return 0;
 }
 
-SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(const char *sockname)
+SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(
+	const PSC_UnixClientOpts *opts)
 {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0)
@@ -366,7 +404,7 @@ SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(const char *sockname)
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof addr);
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, sockname, sizeof addr.sun_path - 1);
+    strncpy(addr.sun_path, opts->sockname, sizeof addr.sun_path - 1);
 
     fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     errno = 0;
@@ -379,6 +417,7 @@ SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(const char *sockname)
 	return 0;
     }
     ConnOpts copts = {
+	.rdbufsz = opts->rdbufsz,
 	.createmode = CCM_CONNECTING
     };
     PSC_Connection *conn = PSC_Connection_create(fd, &copts);

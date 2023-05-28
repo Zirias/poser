@@ -42,6 +42,7 @@ struct PSC_TcpServerOpts
 #endif
     size_t bh_capa;
     size_t bh_count;
+    size_t rdbufsz;
     PSC_Proto proto;
 #ifdef WITH_TLS
     int tls;
@@ -53,6 +54,7 @@ struct PSC_TcpServerOpts
 struct PSC_UnixServerOpts
 {
     char *name;
+    size_t rdbufsz;
     int uid;
     int gid;
     int mode;
@@ -90,6 +92,7 @@ struct PSC_Server
     size_t conncapa;
     size_t connsize;
     size_t nsocks;
+    size_t rdbufsz;
     int numericHosts;
 #ifdef WITH_TLS
     int tls;
@@ -168,6 +171,7 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 		self->conncapa * sizeof *self->conn);
     }
     ConnOpts co = {
+	.rdbufsz = self->rdbufsz,
 #ifdef WITH_TLS
 	.tls_cert = self->cert,
 	.tls_key = self->key,
@@ -210,7 +214,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 #endif
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
-    if (opts && opts->tls)
+    if (opts->tls)
     {
 	if (!(certfile = fopen(opts->certfile, "r")))
 	{
@@ -253,9 +257,10 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->path = path;
     self->conncapa = CONNCHUNK;
     self->connsize = 0;
-    self->numericHosts = opts ? opts->numerichosts : 0;
+    self->rdbufsz = opts->rdbufsz;
+    self->numericHosts = opts->numerichosts;
 #ifdef WITH_TLS
-    self->tls = opts ? opts->tls : 0;
+    self->tls = opts->tls;
     self->cert = cert;
     self->key = key;
 #endif
@@ -285,6 +290,7 @@ SOEXPORT PSC_TcpServerOpts *PSC_TcpServerOpts_create(int port)
 {
     PSC_TcpServerOpts *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
+    self->rdbufsz = DEFRDBUFSZ;
     self->port = port;
     return self;
 }
@@ -299,6 +305,13 @@ SOEXPORT void PSC_TcpServerOpts_bind(PSC_TcpServerOpts *self,
 		self->bh_capa * sizeof *self->bindhosts);
     }
     self->bindhosts[self->bh_count++] = PSC_copystr(bindhost);
+}
+
+SOEXPORT void PSC_TcpServerOpts_readBufSize(PSC_TcpServerOpts *self,
+	size_t sz)
+{
+    if (!sz) return;
+    self->rdbufsz = sz;
 }
 
 SOEXPORT void PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
@@ -344,10 +357,18 @@ SOEXPORT PSC_UnixServerOpts *PSC_UnixServerOpts_create(const char *name)
 {
     PSC_UnixServerOpts *self = PSC_malloc(sizeof *self);
     self->name = PSC_copystr(name);
+    self->rdbufsz = DEFRDBUFSZ;
     self->uid = -1;
     self->gid = -1;
     self->mode = 0600;
     return self;
+}
+
+SOEXPORT void PSC_UnixServerOpts_readBufSize(PSC_UnixServerOpts *self,
+	size_t sz)
+{
+    if (!sz) return;
+    self->rdbufsz = sz;
 }
 
 SOEXPORT void PSC_UnixServerOpts_owner(PSC_UnixServerOpts *self,
@@ -570,8 +591,10 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 		    "server: cannot set desired socket ownership");
 	}
     }
-
-    PSC_Server *self = PSC_Server_create(0, 1, &sock,
+    PSC_TcpServerOpts tcpopts = {
+	.rdbufsz = opts->rdbufsz
+    };
+    PSC_Server *self = PSC_Server_create(&tcpopts, 1, &sock,
 	    PSC_copystr(addr.sun_path));
     return self;
 }

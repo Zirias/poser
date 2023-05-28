@@ -256,7 +256,7 @@ PSC_EADataReceived_buf(const PSC_EADataReceived *self)
  * @param self the PSC_EADataReceived
  * @returns the size of the data
  */
-DECLEXPORT uint16_t
+DECLEXPORT size_t
 PSC_EADataReceived_size(const PSC_EADataReceived *self)
     CMETHOD;
 
