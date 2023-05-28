@@ -32,6 +32,17 @@ C_CLASS_DECL(PSC_EADataReceived);
 
 C_CLASS_DECL(PSC_Event);
 
+/** Callback to find the end of a text message.
+ * When receiving in text mode, this is called to find the end of the message.
+ * It should return the position where the message ends (which means the first
+ * position that should NOT be included in a string passed in a
+ * PSC_Connection_dataReceived() event), or NULL if no end was found in the
+ * given string.
+ * @param str the string to search for a message end
+ * @returns a pointer to the end of the message, or NULL if not found
+ */
+typedef const char *(*PSC_MessageEndLocator)(const char *str);
+
 /** Connection successfully connected.
  * This event fires as soon as a connection is fully connected and therefore
  * ready to communicate. Note this never fires on connections obtained from a
@@ -130,6 +141,56 @@ DECLEXPORT int
 PSC_Connection_remotePort(const PSC_Connection *self)
     CMETHOD ATTR_PURE;
 
+/** Configure for receiving binary data.
+ * This is the default mode of a newly created PSC_Connection.
+ *
+ * The optional expected argument can be used when the protocol requires the
+ * peer to send an exact amount of bytes next. When it is set to a non-zero
+ * value, the next PSC_Connection_dataReceived() event will have exactly this
+ * size. It must not be larger than the size of the receive buffer configured
+ * for the PSC_Connection, otherwise this call will fail.
+ *
+ * When expected is set to 0 (the default), any amount of data received will
+ * instantly be passed in the next PSC_Connection_dataReceived() event.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param expected how many bytes to receive next, or 0 for any amount
+ * @returns 0 on success, -1 on failure
+ */
+DECLEXPORT int
+PSC_Connection_receiveBinary(PSC_Connection *self, size_t expected)
+    CMETHOD;
+
+/** Configure for receiving text.
+ * Use this when implementing a text-based protocol.
+ *
+ * When configured for receiving text, the PSC_EADataReceived event argument
+ * will contain a pointer to a nul-terminated C string. The string will end
+ * when either an actual nul-byte was encountered in the received data, or the
+ * given locator found an end position, or the receiving buffer was full.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param endmark a string that marks the end of a protocol message
+ */
+DECLEXPORT void
+PSC_Connection_receiveText(PSC_Connection *self, PSC_MessageEndLocator locator)
+    CMETHOD ATTR_NONNULL((2));
+
+/** Configure for receiving lines.
+ * Use this when implementing a typical line-based protocol.
+ *
+ * When configured for receiving lines, the PSC_EADataReceived event argument
+ * will contain a pointer to a nul-terminated C string. The string will end
+ * when either an actual nul-byte was enocuntered in the received data, or one
+ * of "\r\n", "\r" or "\n" was found (which will be included), or the
+ * receiving buffer was full.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ */
+DECLEXPORT void
+PSC_Connection_receiveLine(PSC_Connection *self)
+    CMETHOD;
+
 /** Send data to the peer.
  * The data passed is scheduled for sending and sent as soon as the socket is
  * ready for sending. If an id is given, a PSC_Connection_dataSent() event
@@ -157,6 +218,22 @@ PSC_Connection_remotePort(const PSC_Connection *self)
 DECLEXPORT int
 PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
+    CMETHOD ATTR_NONNULL((2));
+
+/** Send text to the peer.
+ * For text-based protocols, this is a convenient alternative to
+ * PSC_Connection_sendAsync(), taking a nul-terminated C string instead of a
+ * binary buffer and a size. Otherwise, it works exactly the same, so here as
+ * well, be careful not to pass a pointer to an object with automatic storage
+ * duration!
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @param text the text to send
+ * @param id optional identifier object
+ * @returns -1 on immediate error, 0 when sending is scheduled
+ */
+DECLEXPORT int
+PSC_Connection_sendTextAsync(PSC_Connection *self, const char *text, void *id)
     CMETHOD ATTR_NONNULL((2));
 
 /** Pause receiving data.
@@ -241,23 +318,36 @@ PSC_Connection_data(const PSC_Connection *self)
     CMETHOD ATTR_PURE;
 
 /** The data received.
- * Get a pointer to the data received on a connection.
+ * Get a pointer to the data received on a connection. This is used when
+ * receiving in binary mode. In text mode, it returns NULL.
  * @memberof PSC_EADataReceived
  * @param self the PSC_EADataReceived
  * @returns a pointer to received data
  */
 DECLEXPORT const uint8_t *
 PSC_EADataReceived_buf(const PSC_EADataReceived *self)
-    CMETHOD ATTR_RETNONNULL;
+    CMETHOD;
 
 /** The size of the data received.
- * Get the size of the received data (in bytes).
+ * Get the size of the received data (in bytes). This is used when receiving
+ * in binary mode. In text mode, it returns 0.
  * @memberof PSC_EADataReceived
  * @param self the PSC_EADataReceived
  * @returns the size of the data
  */
 DECLEXPORT size_t
 PSC_EADataReceived_size(const PSC_EADataReceived *self)
+    CMETHOD;
+
+/** The text received.
+ * Get a pointer to the text received on a connection. This is used when
+ * receiving in text mode. In binary mode, it returns NULL.
+ * @memberof PSC_EADataReceived
+ * @param self the PSC_EADataReceived
+ * @returns a pointer to received text
+ */
+DECLEXPORT const char *
+PSC_EADataReceived_text(const PSC_EADataReceived *self)
     CMETHOD;
 
 /** Mark received data as being handled.

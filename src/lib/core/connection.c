@@ -31,6 +31,7 @@ struct PSC_EADataReceived
 {
     size_t size;
     uint8_t *buf;
+    char *text;
     int handling;
 };
 
@@ -71,6 +72,7 @@ static int tls_nservers = 0;
 
 struct PSC_Connection
 {
+    PSC_MessageEndLocator rdlocator;
     PSC_Event *connected;
     PSC_Event *closed;
     PSC_Event *dataReceived;
@@ -85,6 +87,9 @@ struct PSC_Connection
     void *data;
     void (*deleter)(void *);
     size_t rdbufsz;
+    size_t rdbufused;
+    size_t rdbufpos;
+    size_t rdexpect;
     WriteRecord writerecs[NWRITERECS];
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
@@ -108,6 +113,7 @@ struct PSC_Connection
     uint8_t deleteScheduled;
     uint8_t nrecs;
     uint8_t nnotify;
+    char rdtextsave;
     uint8_t wrbuf[WRBUFSZ];
     uint8_t rdbuf[];
 };
@@ -131,6 +137,8 @@ static void resolveRemoteAddrFinished(
 	void *receiver, void *sender, void *args);
 static void resolveRemoteAddrProc(void *arg);
 static void writeConnection(void *receiver, void *sender, void *args);
+static const char *locateeol(const char *str) ATTR_NONNULL((1));
+static void raisereceivedevents(PSC_Connection *self) CMETHOD;
 
 static void checkPendingConnection(void *receiver, void *sender, void *args)
 {
@@ -446,6 +454,85 @@ static void writeConnection(void *receiver, void *sender, void *args)
     }
 }
 
+static const char *locateeol(const char *str)
+{
+    const char *result = strstr(str, "\r\n");
+    if (result) return result + 2;
+    result = strchr(str, '\n');
+    if (!result) result = strchr(str, '\r');
+    if (result) return result + 1;
+    return 0;
+}
+
+static void raisereceivedevents(PSC_Connection *self)
+{
+    while (!self->args.handling && self->rdbufused)
+    {
+	if (self->rdtextsave)
+	{
+	    self->rdbuf[self->rdbufpos] = self->rdtextsave;
+	    self->rdtextsave = 0;
+	}
+	size_t len = 0;
+	if (self->rdlocator)
+	{
+	    while (self->rdbufpos < self->rdbufused &&
+		    !self->rdbuf[self->rdbufpos]) ++self->rdbufpos;
+	    if (self->rdbufpos == self->rdbufused)
+	    {
+		self->rdbufused = 0;
+		self->rdbufpos = 0;
+		break;
+	    }
+	    char *str = (char *)(self->rdbuf + self->rdbufpos);
+	    const char *end = self->rdlocator(str);
+	    if (end)
+	    {
+		len = end - str;
+		if (len > self->rdbufused - self->rdbufpos) len = 0;
+	    }
+	    else if (self->rdbufpos || self->rdbufused < self->rdbufsz) break;
+	    else
+	    {
+		len = strlen(str);
+	    }
+	    self->rdtextsave = str[len];
+	    str[len] = 0;
+	    self->args.size = 0;
+	    self->args.buf = 0;
+	    self->args.text = str;
+	}
+	else
+	{
+	    if (self->rdexpect)
+	    {
+		len = self->rdexpect;
+		if (len > (self->rdbufused - self->rdbufpos)) break;
+	    }
+	    else len = self->rdbufused - self->rdbufpos;
+	    self->args.size = len;
+	    self->args.buf = self->rdbuf + self->rdbufpos;
+	    self->args.text = 0;
+	}
+	PSC_Event_raise(self->dataReceived, 0, &self->args);
+	self->rdbufpos += len;
+	if (self->rdbufpos == self->rdbufused)
+	{
+	    self->rdbufused = 0;
+	    self->rdbufpos = 0;
+	}
+    }
+    if (self->rdbufused && (self->rdlocator
+		|| (self->rdbufused - self->rdbufpos) < self->rdexpect))
+    {
+	memmove(self->rdbuf, self->rdbuf + self->rdbufpos,
+		self->rdbufused - self->rdbufpos);
+	self->rdbufused -= self->rdbufpos;
+	self->rdbufpos = 0;
+	self->rdbuf[self->rdbufused] = 0;
+    }
+}
+
 static void doread(PSC_Connection *self)
 {
     PSC_Log_fmt(PSC_L_DEBUG, "connection: reading from %s",
@@ -457,14 +544,16 @@ static void doread(PSC_Connection *self)
 	{
 	    self->tls_readagain = 0;
 	    size_t readsz = 0;
-	    int ret = SSL_read_ex(self->tls, self->rdbuf,
-		    self->rdbufsz, &readsz);
+	    size_t wantsz = self->rdbufsz - self->rdbufused;
+	    int ret = SSL_read_ex(self->tls, self->rdbuf + self->rdbufused,
+		    wantsz, &readsz);
 	    if (ret > 0)
 	    {
 		self->tls_read_st = 0;
-		self->args.size = readsz;
-		PSC_Event_raise(self->dataReceived, 0, &self->args);
-		if (readsz == self->rdbufsz) self->tls_readagain = 1;
+		self->rdbufused += readsz;
+		self->rdbuf[self->rdbufused] = 0;
+		raisereceivedevents(self);
+		if (readsz == wantsz) self->tls_readagain = 1;
 		PSC_Log_fmt(PSC_L_DEBUG,
 			"connection: done reading from %s",
 			PSC_Connection_remoteAddr(self));
@@ -498,11 +587,13 @@ static void doread(PSC_Connection *self)
 #endif
     {
 	errno = 0;
-	ssize_t rc = read(self->fd, self->rdbuf, self->rdbufsz);
+	ssize_t rc = read(self->fd, self->rdbuf + self->rdbufused,
+		self->rdbufsz - self->rdbufused);
 	if (rc > 0)
 	{
-	    self->args.size = (size_t)rc;
-	    PSC_Event_raise(self->dataReceived, 0, &self->args);
+	    self->rdbufused += rc;
+	    self->rdbuf[self->rdbufused] = 0;
+	    raisereceivedevents(self);
 	    wantreadwrite(self);
 	}
 	else if (errno == EWOULDBLOCK || errno == EAGAIN)
@@ -567,13 +658,16 @@ static void deleteConnection(void *receiver, void *sender, void *args)
 
 SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 {
-    PSC_Connection *self = PSC_malloc(sizeof *self + opts->rdbufsz);
+    PSC_Connection *self = PSC_malloc(sizeof *self + opts->rdbufsz + 1);
+    self->rdlocator = 0;
     self->connected = PSC_Event_create(self);
     self->closed = PSC_Event_create(self);
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
     self->nameResolved = PSC_Event_create(self);
     self->rdbufsz = opts->rdbufsz;
+    self->rdbufused = 0;
+    self->rdbufpos = 0;
     self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
@@ -644,13 +738,14 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_readagain = 0;
 #endif
     self->blacklisthits = opts->blacklisthits;
-    self->args.buf = self->rdbuf;
     self->args.handling = 0;
     self->deleteScheduled = 0;
     self->wrbuflen = 0;
     self->wrbufpos = 0;
     self->nrecs = 0;
     self->nnotify = 0;
+    self->rdtextsave = 0;
+    self->rdbuf[self->rdbufsz] = 0; // for receiving in text mode
     PSC_Event_register(PSC_Service_readyRead(), self, readConnection, fd);
     PSC_Event_register(PSC_Service_readyWrite(), self, writeConnection, fd);
     if (opts->createmode == CCM_CONNECTING)
@@ -714,6 +809,26 @@ SOEXPORT const char *PSC_Connection_remoteHost(const PSC_Connection *self)
 SOEXPORT int PSC_Connection_remotePort(const PSC_Connection *self)
 {
     return self->port;
+}
+
+SOEXPORT int PSC_Connection_receiveBinary(PSC_Connection *self,
+	size_t expected)
+{
+    if (expected > self->rdbufsz) return -1;
+    self->rdlocator = 0;
+    self->rdexpect = expected;
+    return 0;
+}
+
+SOEXPORT void PSC_Connection_receiveText(PSC_Connection *self,
+	PSC_MessageEndLocator locator)
+{
+    self->rdlocator = locator;
+}
+
+SOEXPORT void PSC_Connection_receiveLine(PSC_Connection *self)
+{
+    self->rdlocator = locateeol;
 }
 
 static void resolveRemoteAddrProc(void *arg)
@@ -810,6 +925,13 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
     return 0;
 }
 
+SOEXPORT int PSC_Connection_sendTextAsync(PSC_Connection *self,
+	const char *text, void *id)
+{
+    return PSC_Connection_sendAsync(self, (const uint8_t *)text,
+	    strlen(text), id);
+}
+
 SOEXPORT void PSC_Connection_pause(PSC_Connection *self)
 {
     ++self->paused;
@@ -828,6 +950,7 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 {
     if (!self->args.handling) return -1;
     if (--self->args.handling) return 0;
+    raisereceivedevents(self);
     wantreadwrite(self);
 #ifdef WITH_TLS
     if (self->tls_readagain) doread(self);
@@ -970,6 +1093,11 @@ SOEXPORT const uint8_t *PSC_EADataReceived_buf(const PSC_EADataReceived *self)
 SOEXPORT size_t PSC_EADataReceived_size(const PSC_EADataReceived *self)
 {
     return self->size;
+}
+
+SOEXPORT const char *PSC_EADataReceived_text(const PSC_EADataReceived *self)
+{
+    return self->text;
 }
 
 SOEXPORT void PSC_EADataReceived_markHandling(PSC_EADataReceived *self)
