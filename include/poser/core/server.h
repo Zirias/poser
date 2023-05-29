@@ -192,6 +192,30 @@ DECLEXPORT PSC_Event *
 PSC_Server_clientDisconnected(PSC_Server *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Disable the server.
+ * This disables accepting new connections while still listening. It's
+ * implemented by immediately closing any new connection with a linger timeout
+ * of 0, which should be signaled as an error to the client trying to connect.
+ * For a TCP server, it means immediately sending an RST packet.
+ *
+ * Note this does not affect already existing connections.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ */
+DECLEXPORT void
+PSC_Server_disable(PSC_Server *self)
+    CMETHOD;
+
+/** Enable the server.
+ * This enables accepting new connections again after PSC_Server_disable() was
+ * called.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ */
+DECLEXPORT void
+PSC_Server_enable(PSC_Server *self)
+    CMETHOD;
+
 /** PSC_Server destructor.
  * This will close all active client connections and stop listening.
  * @memberof PSC_Server

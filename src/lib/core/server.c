@@ -93,6 +93,7 @@ struct PSC_Server
     size_t connsize;
     size_t nsocks;
     size_t rdbufsz;
+    int disabled;
     int numericHosts;
 #ifdef WITH_TLS
     int tls;
@@ -161,6 +162,14 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     if (connfd < 0)
     {
 	PSC_Log_msg(PSC_L_WARNING, "server: failed to accept connection");
+	return;
+    }
+    if (self->disabled)
+    {
+	struct linger l = { 1, 0 };
+	setsockopt(connfd, SOL_SOCKET, SO_LINGER, &l, sizeof l);
+	close(connfd);
+	PSC_Log_msg(PSC_L_DEBUG, "server: rejected connection while disabled");
 	return;
     }
     fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK);
@@ -259,6 +268,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->connsize = 0;
     self->rdbufsz = opts->rdbufsz;
     self->numericHosts = opts->numerichosts;
+    self->disabled = 0;
 #ifdef WITH_TLS
     self->tls = opts->tls;
     self->cert = cert;
@@ -607,6 +617,16 @@ SOEXPORT PSC_Event *PSC_Server_clientConnected(PSC_Server *self)
 SOEXPORT PSC_Event *PSC_Server_clientDisconnected(PSC_Server *self)
 {
     return self->clientDisconnected;
+}
+
+SOEXPORT void PSC_Server_disable(PSC_Server *self)
+{
+    self->disabled = 1;
+}
+
+SOEXPORT void PSC_Server_enable(PSC_Server *self)
+{
+    self->disabled = 0;
 }
 
 SOEXPORT void PSC_Server_destroy(PSC_Server *self)
