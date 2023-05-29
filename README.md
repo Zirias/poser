@@ -51,14 +51,13 @@ a TCP server that just writes "Hello!" to every client:
 
 ```c
 #include <poser/core.h>
-#include <stddef.h>
+#include <stdlib.h>
 
 static PSC_Server *server;
-static const uint8_t hellomsg[] = "Hello!\n";
 
 static void sent(void *receiver, void *sender, void *args) {
     // Close the connection after it sent our message:
-    Connection_close(sender, 0);
+    PSC_Connection_close(sender, 0);
 }
 
 static void connected(void *receiver, void *sender, void *args) {
@@ -71,7 +70,7 @@ static void connected(void *receiver, void *sender, void *args) {
 
     // Send "hello" to the client, also pass some id object, so we get a
     // "dataSent" event for it:
-    PSC_Connection_sendAsync(client, hellomsg, sizeof hellomsg - 1, client);
+    PSC_Connection_sendTextAsync(client, "Hello!\n", client);
 }
 
 static void startup(void *receiver, void *sender, void *args) {
