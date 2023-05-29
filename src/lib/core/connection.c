@@ -489,7 +489,10 @@ static void raisereceivedevents(PSC_Connection *self)
 	    if (end)
 	    {
 		len = end - str;
-		if (len > self->rdbufused - self->rdbufpos) len = 0;
+		if (len > self->rdbufused - self->rdbufpos)
+		{
+		    len = self->rdbufused - self->rdbufpos;
+		}
 	    }
 	    else if (self->rdbufpos || self->rdbufused < self->rdbufsz) break;
 	    else
