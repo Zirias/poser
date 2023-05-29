@@ -90,6 +90,8 @@ $(document).ready(function(){initNavTree('connection_8h.html',''); initResizable
 </div>
 
 <div class="header">
+  <div class="summary">
+<a href="#typedef-members">Typedefs</a>  </div>
   <div class="headertitle"><div class="title">connection.h File Reference</div></div>
 </div><!--header-->
 <div class="contents">
@@ -101,9 +103,40 @@ $(document).ready(function(){initNavTree('connection_8h.html',''); initResizable
 <code>#include &lt;stdint.h&gt;</code><br />
 </div>
 <p><a href="connection_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:a4ee29c6c80f8fe484928f9a11b528e21"><td class="memItemLeft" align="right" valign="top">typedef const char *(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="connection_8h.html#a4ee29c6c80f8fe484928f9a11b528e21">PSC_MessageEndLocator</a>) (const char *str)</td></tr>
+<tr class="memdesc:a4ee29c6c80f8fe484928f9a11b528e21"><td class="mdescLeft">&#160;</td><td class="mdescRight">Callback to find the end of a text message.  <br /></td></tr>
+<tr class="separator:a4ee29c6c80f8fe484928f9a11b528e21"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>declarations for the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> class </p>
-</div></div><!-- contents -->
+</div><h2 class="groupheader">Typedef Documentation</h2>
+<a id="a4ee29c6c80f8fe484928f9a11b528e21" name="a4ee29c6c80f8fe484928f9a11b528e21"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4ee29c6c80f8fe484928f9a11b528e21">&#9670;&#160;</a></span>PSC_MessageEndLocator</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef const char *(* PSC_MessageEndLocator) (const char *str)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Callback to find the end of a text message. </p>
+<p>When receiving in text mode, this is called to find the end of the message. It should return the position where the message ends (which means the first position that should NOT be included in a string passed in a PSC_Connection_dataReceived() event), or NULL if no end was found in the given string. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">str</td><td>the string to search for a message end </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>a pointer to the end of the message, or NULL if not found </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->

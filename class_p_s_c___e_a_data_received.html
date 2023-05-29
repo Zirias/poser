@@ -107,9 +107,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a2ec69a48f4646be0939efde77e64e341"><td class="memItemLeft" align="right" valign="top">const uint8_t *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___e_a_data_received.html#a2ec69a48f4646be0939efde77e64e341">PSC_EADataReceived_buf</a> (const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *self)</td></tr>
 <tr class="memdesc:a2ec69a48f4646be0939efde77e64e341"><td class="mdescLeft">&#160;</td><td class="mdescRight">The data received.  <br /></td></tr>
 <tr class="separator:a2ec69a48f4646be0939efde77e64e341"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a4eea2b3eb711a3d429af3f2981afde72"><td class="memItemLeft" align="right" valign="top">uint16_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___e_a_data_received.html#a4eea2b3eb711a3d429af3f2981afde72">PSC_EADataReceived_size</a> (const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *self)</td></tr>
-<tr class="memdesc:a4eea2b3eb711a3d429af3f2981afde72"><td class="mdescLeft">&#160;</td><td class="mdescRight">The size of the data received.  <br /></td></tr>
-<tr class="separator:a4eea2b3eb711a3d429af3f2981afde72"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1859f22f53fae08a7f346548599e2ba6"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___e_a_data_received.html#a1859f22f53fae08a7f346548599e2ba6">PSC_EADataReceived_size</a> (const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *self)</td></tr>
+<tr class="memdesc:a1859f22f53fae08a7f346548599e2ba6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The size of the data received.  <br /></td></tr>
+<tr class="separator:a1859f22f53fae08a7f346548599e2ba6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a72343198f9f84b4b2f629fa4382e7d9d"><td class="memItemLeft" align="right" valign="top">const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___e_a_data_received.html#a72343198f9f84b4b2f629fa4382e7d9d">PSC_EADataReceived_text</a> (const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *self)</td></tr>
+<tr class="memdesc:a72343198f9f84b4b2f629fa4382e7d9d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The text received.  <br /></td></tr>
+<tr class="separator:a72343198f9f84b4b2f629fa4382e7d9d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:af083a96dab038d0a4ce53a5a65fd29a8"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___e_a_data_received.html#af083a96dab038d0a4ce53a5a65fd29a8">PSC_EADataReceived_markHandling</a> (<a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *self)</td></tr>
 <tr class="memdesc:af083a96dab038d0a4ce53a5a65fd29a8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Mark received data as being handled.  <br /></td></tr>
 <tr class="separator:af083a96dab038d0a4ce53a5a65fd29a8"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -134,7 +137,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>The data received. </p>
-<p>Get a pointer to the data received on a connection.</p>
+<p>Get a pointer to the data received on a connection. This is used when receiving in binary mode. In text mode, it returns NULL.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> </td></tr>
@@ -162,7 +165,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Mark received data as being handled. </p>
-<p>Calling this makes the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> stop receiving further data unless PSC_Connection_confirmDataReceived() is called.</p>
+<p>Calling this makes the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> stop receiving further data unless PSC_Connection_confirmDataReceived() is called. Each call to this function requires a corresponding call to PSC_Connection_confirmDataReceived() to actually resume receiving.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> </td></tr>
@@ -172,14 +175,14 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
-<a id="a4eea2b3eb711a3d429af3f2981afde72" name="a4eea2b3eb711a3d429af3f2981afde72"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a4eea2b3eb711a3d429af3f2981afde72">&#9670;&#160;</a></span>PSC_EADataReceived_size()</h2>
+<a id="a1859f22f53fae08a7f346548599e2ba6" name="a1859f22f53fae08a7f346548599e2ba6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1859f22f53fae08a7f346548599e2ba6">&#9670;&#160;</a></span>PSC_EADataReceived_size()</h2>
 
 <div class="memitem">
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">uint16_t PSC_EADataReceived_size </td>
+          <td class="memname">size_t PSC_EADataReceived_size </td>
           <td>(</td>
           <td class="paramtype">const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *&#160;</td>
           <td class="paramname"><em>self</em></td><td>)</td>
@@ -189,7 +192,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>The size of the data received. </p>
-<p>Get the size of the received data (in bytes).</p>
+<p>Get the size of the received data (in bytes). This is used when receiving in binary mode. In text mode, it returns 0.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> </td></tr>
@@ -197,6 +200,34 @@ Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>the size of the data </dd></dl>
+
+</div>
+</div>
+<a id="a72343198f9f84b4b2f629fa4382e7d9d" name="a72343198f9f84b4b2f629fa4382e7d9d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a72343198f9f84b4b2f629fa4382e7d9d">&#9670;&#160;</a></span>PSC_EADataReceived_text()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const char * PSC_EADataReceived_text </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="class_p_s_c___e_a_data_received.html">PSC_EADataReceived</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The text received. </p>
+<p>Get a pointer to the text received on a connection. This is used when receiving in text mode. In binary mode, it returns NULL.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>a pointer to received text </dd></dl>
 
 </div>
 </div>

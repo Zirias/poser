@@ -125,14 +125,13 @@ libposercore</h1>
 Quick start</h2>
 <p>A typical structure for a service looks like this minimal example implementing a TCP server that just writes "Hello!" to every client:</p>
 <div class="fragment"><div class="line"><span class="preprocessor">#include &lt;poser/core.h&gt;</span></div>
-<div class="line"><span class="preprocessor">#include &lt;stddef.h&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;stdlib.h&gt;</span></div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <a class="code hl_class" href="class_p_s_c___server.html">PSC_Server</a> *server;</div>
-<div class="line"><span class="keyword">static</span> <span class="keyword">const</span> uint8_t hellomsg[] = <span class="stringliteral">&quot;Hello!\n&quot;</span>;</div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> sent(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
 <div class="line">    <span class="comment">// Close the connection after it sent our message:</span></div>
-<div class="line">    Connection_close(sender, 0);</div>
+<div class="line">    PSC_Connection_close(sender, 0);</div>
 <div class="line">}</div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> connected(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>
@@ -145,7 +144,7 @@ Quick start</h2>
 <div class="line"> </div>
 <div class="line">    <span class="comment">// Send &quot;hello&quot; to the client, also pass some id object, so we get a</span></div>
 <div class="line">    <span class="comment">// &quot;dataSent&quot; event for it:</span></div>
-<div class="line">    PSC_Connection_sendAsync(client, hellomsg, <span class="keyword">sizeof</span> hellomsg - 1, client);</div>
+<div class="line">    PSC_Connection_sendTextAsync(client, <span class="stringliteral">&quot;Hello!\n&quot;</span>, client);</div>
 <div class="line">}</div>
 <div class="line"> </div>
 <div class="line"><span class="keyword">static</span> <span class="keywordtype">void</span> startup(<span class="keywordtype">void</span> *receiver, <span class="keywordtype">void</span> *sender, <span class="keywordtype">void</span> *args) {</div>

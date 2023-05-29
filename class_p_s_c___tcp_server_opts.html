@@ -110,6 +110,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a268c01db0bdf96443dbd0167075a798b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#a268c01db0bdf96443dbd0167075a798b">PSC_TcpServerOpts_bind</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, const char *bindhost)</td></tr>
 <tr class="memdesc:a268c01db0bdf96443dbd0167075a798b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind to a specific hostname or address.  <br /></td></tr>
 <tr class="separator:a268c01db0bdf96443dbd0167075a798b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad6dcf7dd0293c0265f02087a28ff2180"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#ad6dcf7dd0293c0265f02087a28ff2180">PSC_TcpServerOpts_readBufSize</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, size_t sz)</td></tr>
+<tr class="memdesc:ad6dcf7dd0293c0265f02087a28ff2180"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set read buffer size.  <br /></td></tr>
+<tr class="separator:ad6dcf7dd0293c0265f02087a28ff2180"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#aca0749bd4589bb9ca8bc41e405f6fe51">PSC_TcpServerOpts_enableTls</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, const char *certfile, const char *keyfile)</td></tr>
 <tr class="memdesc:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable TLS for the server.  <br /></td></tr>
 <tr class="separator:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -119,9 +122,6 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:ad9270fc7a549b2231acf4cc2264ecb9c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#ad9270fc7a549b2231acf4cc2264ecb9c">PSC_TcpServerOpts_numericHosts</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self)</td></tr>
 <tr class="memdesc:ad9270fc7a549b2231acf4cc2264ecb9c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Only use numeric hosts, don't attempt to resolve addresses.  <br /></td></tr>
 <tr class="separator:ad9270fc7a549b2231acf4cc2264ecb9c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af0e04bfc8284f7d026664525676b553f"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#af0e04bfc8284f7d026664525676b553f">PSC_TcpServerOpts_connWait</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self)</td></tr>
-<tr class="memdesc:af0e04bfc8284f7d026664525676b553f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Wait before reading from newly accepted connections.  <br /></td></tr>
-<tr class="separator:af0e04bfc8284f7d026664525676b553f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:abf332b84079a921e0e58a08da8e668d6"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#abf332b84079a921e0e58a08da8e668d6">PSC_TcpServerOpts_destroy</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self)</td></tr>
 <tr class="memdesc:abf332b84079a921e0e58a08da8e668d6"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> destructor.  <br /></td></tr>
 <tr class="separator:abf332b84079a921e0e58a08da8e668d6"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -161,33 +161,6 @@ Public Member Functions</h2></td></tr>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
     <tr><td class="paramname">bindhost</td><td>hostname or address to bind to </td></tr>
-  </table>
-  </dd>
-</dl>
-
-</div>
-</div>
-<a id="af0e04bfc8284f7d026664525676b553f" name="af0e04bfc8284f7d026664525676b553f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af0e04bfc8284f7d026664525676b553f">&#9670;&#160;</a></span>PSC_TcpServerOpts_connWait()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">void PSC_TcpServerOpts_connWait </td>
-          <td>(</td>
-          <td class="paramtype"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *&#160;</td>
-          <td class="paramname"><em>self</em></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>Wait before reading from newly accepted connections. </p>
-<p>When set, a <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> for a new client will not immediately start reading data, but wait for PSC_Connection_activate() to be called.</p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
   </table>
   </dd>
 </dl>
@@ -313,6 +286,44 @@ Public Member Functions</h2></td></tr>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ad6dcf7dd0293c0265f02087a28ff2180" name="ad6dcf7dd0293c0265f02087a28ff2180"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad6dcf7dd0293c0265f02087a28ff2180">&#9670;&#160;</a></span>PSC_TcpServerOpts_readBufSize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_TcpServerOpts_readBufSize </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_t&#160;</td>
+          <td class="paramname"><em>sz</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set read buffer size. </p>
+<p>Sets the size of the buffer used for connections accepted from this server, in bytes. The default value is 16 kiB.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
+    <tr><td class="paramname">sz</td><td>the size of the read buffer, must be &gt; 0 </td></tr>
   </table>
   </dd>
 </dl>

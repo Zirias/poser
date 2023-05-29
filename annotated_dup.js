@@ -20,5 +20,6 @@ var annotated_dup =
     [ "PSC_ThreadJob", "class_p_s_c___thread_job.html", "class_p_s_c___thread_job" ],
     [ "PSC_ThreadOpts", "class_p_s_c___thread_opts.html", null ],
     [ "PSC_ThreadPool", "class_p_s_c___thread_pool.html", null ],
+    [ "PSC_UnixClientOpts", "class_p_s_c___unix_client_opts.html", "class_p_s_c___unix_client_opts" ],
     [ "PSC_UnixServerOpts", "class_p_s_c___unix_server_opts.html", "class_p_s_c___unix_server_opts" ]
 ];

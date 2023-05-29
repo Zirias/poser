@@ -107,15 +107,15 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a0e3baba3577a3023f39f99a1cb3eb7a6"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#a0e3baba3577a3023f39f99a1cb3eb7a6">PSC_UnixServerOpts_create</a> (const char *name)</td></tr>
 <tr class="memdesc:a0e3baba3577a3023f39f99a1cb3eb7a6"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="class_p_s_c___unix_server_opts.html" title="Options for creating a local UNIX server.">PSC_UnixServerOpts</a> constructor.  <br /></td></tr>
 <tr class="separator:a0e3baba3577a3023f39f99a1cb3eb7a6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abe44cfa47647615652dd0178bad1a81c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#abe44cfa47647615652dd0178bad1a81c">PSC_UnixSeverOpts_readBufSize</a> (<a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *self, size_t sz)</td></tr>
+<tr class="memdesc:abe44cfa47647615652dd0178bad1a81c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set read buffer size.  <br /></td></tr>
+<tr class="separator:abe44cfa47647615652dd0178bad1a81c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:acf444d91d38f864458e67e3a6a15e68c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#acf444d91d38f864458e67e3a6a15e68c">PSC_UnixServerOpts_owner</a> (<a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *self, int uid, int gid)</td></tr>
 <tr class="memdesc:acf444d91d38f864458e67e3a6a15e68c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set ownership of the UNIX socket.  <br /></td></tr>
 <tr class="separator:acf444d91d38f864458e67e3a6a15e68c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac5825c48ebeb8a232e5cc77f449baa53"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#ac5825c48ebeb8a232e5cc77f449baa53">PSC_UnixServerOpts_mode</a> (<a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *self, int mode)</td></tr>
 <tr class="memdesc:ac5825c48ebeb8a232e5cc77f449baa53"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set access mode for the UNIX socket.  <br /></td></tr>
 <tr class="separator:ac5825c48ebeb8a232e5cc77f449baa53"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2c295e7b387ec5b106045f5cef26782b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#a2c295e7b387ec5b106045f5cef26782b">PSC_UnixServerOpts_connWait</a> (<a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *self)</td></tr>
-<tr class="memdesc:a2c295e7b387ec5b106045f5cef26782b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Wait before reading from newly accepted connections.  <br /></td></tr>
-<tr class="separator:a2c295e7b387ec5b106045f5cef26782b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:abfcf85bb3ecb5e422c125e5ddce87a68"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___unix_server_opts.html#abfcf85bb3ecb5e422c125e5ddce87a68">PSC_UnixServerOpts_destroy</a> (<a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *self)</td></tr>
 <tr class="memdesc:abfcf85bb3ecb5e422c125e5ddce87a68"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="class_p_s_c___unix_server_opts.html" title="Options for creating a local UNIX server.">PSC_UnixServerOpts</a> destructor.  <br /></td></tr>
 <tr class="separator:abfcf85bb3ecb5e422c125e5ddce87a68"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -123,33 +123,6 @@ Public Member Functions</h2></td></tr>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>Options for creating a local UNIX server. </p>
 </div><h2 class="groupheader">Member Function Documentation</h2>
-<a id="a2c295e7b387ec5b106045f5cef26782b" name="a2c295e7b387ec5b106045f5cef26782b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2c295e7b387ec5b106045f5cef26782b">&#9670;&#160;</a></span>PSC_UnixServerOpts_connWait()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">void PSC_UnixServerOpts_connWait </td>
-          <td>(</td>
-          <td class="paramtype"><a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *&#160;</td>
-          <td class="paramname"><em>self</em></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>Wait before reading from newly accepted connections. </p>
-<p>When set, a <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> for a new client will not immediately start reading data, but wait for PSC_Connection_activate() to be called.</p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___unix_server_opts.html" title="Options for creating a local UNIX server.">PSC_UnixServerOpts</a> </td></tr>
-  </table>
-  </dd>
-</dl>
-
-</div>
-</div>
 <a id="a0e3baba3577a3023f39f99a1cb3eb7a6" name="a0e3baba3577a3023f39f99a1cb3eb7a6"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a0e3baba3577a3023f39f99a1cb3eb7a6">&#9670;&#160;</a></span>PSC_UnixServerOpts_create()</h2>
 
@@ -281,6 +254,44 @@ Public Member Functions</h2></td></tr>
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___unix_server_opts.html" title="Options for creating a local UNIX server.">PSC_UnixServerOpts</a> </td></tr>
     <tr><td class="paramname">uid</td><td>desired owner for the socket, -1 for no change </td></tr>
     <tr><td class="paramname">gid</td><td>desired group for the socket, -1 for no change </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="abe44cfa47647615652dd0178bad1a81c" name="abe44cfa47647615652dd0178bad1a81c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abe44cfa47647615652dd0178bad1a81c">&#9670;&#160;</a></span>PSC_UnixSeverOpts_readBufSize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_UnixSeverOpts_readBufSize </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___unix_server_opts.html">PSC_UnixServerOpts</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_t&#160;</td>
+          <td class="paramname"><em>sz</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set read buffer size. </p>
+<p>Sets the size of the buffer used for connections accepted from this server, in bytes. The default value is 16 kiB.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___unix_server_opts.html" title="Options for creating a local UNIX server.">PSC_UnixServerOpts</a> </td></tr>
+    <tr><td class="paramname">sz</td><td>the size of the read buffer, must be &gt; 0 </td></tr>
   </table>
   </dd>
 </dl>

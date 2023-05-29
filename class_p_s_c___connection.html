@@ -110,9 +110,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:ac275c11b6b1ee6d5dd080b550bd77f10"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ac275c11b6b1ee6d5dd080b550bd77f10">PSC_Connection_createTcpClientAsync</a> (const <a class="el" href="class_p_s_c___tcp_client_opts.html">PSC_TcpClientOpts</a> *opts, void *receiver, <a class="el" href="client_8h.html#a34b1cd67585e52bb64572a7026da1f28">PSC_ClientCreatedHandler</a> callback)</td></tr>
 <tr class="memdesc:ac275c11b6b1ee6d5dd080b550bd77f10"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a connection as a TCP client asynchronously.  <br /></td></tr>
 <tr class="separator:ac275c11b6b1ee6d5dd080b550bd77f10"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2e481037ffbc27fd812546e75d655d2f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a2e481037ffbc27fd812546e75d655d2f">PSC_Connection_createUnixClient</a> (const char *sockname)</td></tr>
-<tr class="memdesc:a2e481037ffbc27fd812546e75d655d2f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a connection as a UNIX socket client.  <br /></td></tr>
-<tr class="separator:a2e481037ffbc27fd812546e75d655d2f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5c19a776b5d60fe90924ba0cd5f3b557"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a5c19a776b5d60fe90924ba0cd5f3b557">PSC_Connection_createUnixClient</a> (const <a class="el" href="class_p_s_c___unix_client_opts.html">PSC_UnixClientOpts</a> *opts)</td></tr>
+<tr class="memdesc:a5c19a776b5d60fe90924ba0cd5f3b557"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a connection as a UNIX socket client.  <br /></td></tr>
+<tr class="separator:a5c19a776b5d60fe90924ba0cd5f3b557"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:acf7f97c40fcbbc5a894e190dc4df9a97"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#acf7f97c40fcbbc5a894e190dc4df9a97">PSC_Connection_connected</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:acf7f97c40fcbbc5a894e190dc4df9a97"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connection successfully connected.  <br /></td></tr>
 <tr class="separator:acf7f97c40fcbbc5a894e190dc4df9a97"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -137,12 +137,27 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a6f1b5c17582f4557ac13dd12f40c8968"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a6f1b5c17582f4557ac13dd12f40c8968">PSC_Connection_remotePort</a> (const <a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:a6f1b5c17582f4557ac13dd12f40c8968"><td class="mdescLeft">&#160;</td><td class="mdescRight">The remote port.  <br /></td></tr>
 <tr class="separator:a6f1b5c17582f4557ac13dd12f40c8968"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad3252d9e8102f88d2903ea852d41b939"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ad3252d9e8102f88d2903ea852d41b939">PSC_Connection_receiveBinary</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, size_t expected)</td></tr>
+<tr class="memdesc:ad3252d9e8102f88d2903ea852d41b939"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure for receiving binary data.  <br /></td></tr>
+<tr class="separator:ad3252d9e8102f88d2903ea852d41b939"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4ece18c7321475d655054652cee607b6"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a4ece18c7321475d655054652cee607b6">PSC_Connection_receiveText</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, <a class="el" href="connection_8h.html#a4ee29c6c80f8fe484928f9a11b528e21">PSC_MessageEndLocator</a> locator)</td></tr>
+<tr class="memdesc:a4ece18c7321475d655054652cee607b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure for receiving text.  <br /></td></tr>
+<tr class="separator:a4ece18c7321475d655054652cee607b6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1244ccd45d5dcb6cecb380b50736cc71"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a1244ccd45d5dcb6cecb380b50736cc71">PSC_Connection_receiveLine</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
+<tr class="memdesc:a1244ccd45d5dcb6cecb380b50736cc71"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure for receiving lines.  <br /></td></tr>
+<tr class="separator:a1244ccd45d5dcb6cecb380b50736cc71"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ad3732ad982546596e59fa3e5a4ced9c0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0">PSC_Connection_sendAsync</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, const uint8_t *buf, size_t sz, void *id)</td></tr>
 <tr class="memdesc:ad3732ad982546596e59fa3e5a4ced9c0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send data to the peer.  <br /></td></tr>
 <tr class="separator:ad3732ad982546596e59fa3e5a4ced9c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ae96ca60b0dce6b2ff4d052ee3408089b">PSC_Connection_activate</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
-<tr class="memdesc:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Activate connection.  <br /></td></tr>
-<tr class="separator:ae96ca60b0dce6b2ff4d052ee3408089b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adeca898db47fce9110b040e787a6a674"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#adeca898db47fce9110b040e787a6a674">PSC_Connection_sendTextAsync</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self, const char *text, void *id)</td></tr>
+<tr class="memdesc:adeca898db47fce9110b040e787a6a674"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send text to the peer.  <br /></td></tr>
+<tr class="separator:adeca898db47fce9110b040e787a6a674"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a10a78ef04aa8b6c4bc64b7a8d4f033bc"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc">PSC_Connection_pause</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
+<tr class="memdesc:a10a78ef04aa8b6c4bc64b7a8d4f033bc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Pause receiving data.  <br /></td></tr>
+<tr class="separator:a10a78ef04aa8b6c4bc64b7a8d4f033bc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abc5e0ae07734761d5d374abf9ae1d668"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#abc5e0ae07734761d5d374abf9ae1d668">PSC_Connection_resume</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
+<tr class="memdesc:abc5e0ae07734761d5d374abf9ae1d668"><td class="mdescLeft">&#160;</td><td class="mdescRight">Resume receiving data.  <br /></td></tr>
+<tr class="separator:abc5e0ae07734761d5d374abf9ae1d668"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac19d32171732b6e46ff9725866de52fe"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ac19d32171732b6e46ff9725866de52fe">PSC_Connection_confirmDataReceived</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:ac19d32171732b6e46ff9725866de52fe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Confirm receiving data is completed.  <br /></td></tr>
 <tr class="separator:ac19d32171732b6e46ff9725866de52fe"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -162,33 +177,6 @@ Public Member Functions</h2></td></tr>
 <p>A connection cannot be created directly. It's either created as a client, or obtained from a <a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> when a client connected there.</p>
 <p>There's no destructor either, a connection destroys itself after being closed and having done the necessary cleanup. Note that it automatically closes on any errors, so if you need to know about it, you should listen on the <a class="el" href="class_p_s_c___connection.html#a60bc164b82ab3832d020151abc22db43" title="Connection closed.">PSC_Connection_closed()</a> event. </p>
 </div><h2 class="groupheader">Member Function Documentation</h2>
-<a id="ae96ca60b0dce6b2ff4d052ee3408089b" name="ae96ca60b0dce6b2ff4d052ee3408089b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae96ca60b0dce6b2ff4d052ee3408089b">&#9670;&#160;</a></span>PSC_Connection_activate()</h2>
-
-<div class="memitem">
-<div class="memproto">
-      <table class="memname">
-        <tr>
-          <td class="memname">void PSC_Connection_activate </td>
-          <td>(</td>
-          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
-          <td class="paramname"><em>self</em></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-<p>Activate connection. </p>
-<p>When a new connection is obtained from a <a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> which is configured for connWait, it will only start receiving data after calling this.</p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
-  </table>
-  </dd>
-</dl>
-
-</div>
-</div>
 <a id="a311792388715f0480114db1134e1a0fd" name="a311792388715f0480114db1134e1a0fd"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a311792388715f0480114db1134e1a0fd">&#9670;&#160;</a></span>PSC_Connection_close()</h2>
 
@@ -274,14 +262,15 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Confirm receiving data is completed. </p>
-<p>This reactivates reading from the connection after it was paused by calling PSC_EADataReceived_markHandling() in a data received event handler, to signal the buffer is still being processed.</p>
+<p>This reactivates reading from the connection after it was paused by calling PSC_EADataReceived_markHandling() in a data received event handler, to signal the buffer is still being processed. For every event handler setting the mark, a call to this function is needed to actually resume receiving.</p>
+<p>Note this is independent from the <a class="el" href="class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc" title="Pause receiving data.">PSC_Connection_pause()</a> mechanism. A <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> will only receive data when it isn't paused and no <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> is marked as being handled.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
   </table>
   </dd>
 </dl>
-<dl class="section return"><dt>Returns</dt><dd>0 on success, -1 if reading wasn't paused </dd></dl>
+<dl class="section return"><dt>Returns</dt><dd>1 when receiving was resumed, 0 when still paused, -1 when receiving wasn't paused </dd></dl>
 
 </div>
 </div>
@@ -388,8 +377,8 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
-<a id="a2e481037ffbc27fd812546e75d655d2f" name="a2e481037ffbc27fd812546e75d655d2f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2e481037ffbc27fd812546e75d655d2f">&#9670;&#160;</a></span>PSC_Connection_createUnixClient()</h2>
+<a id="a5c19a776b5d60fe90924ba0cd5f3b557" name="a5c19a776b5d60fe90924ba0cd5f3b557"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5c19a776b5d60fe90924ba0cd5f3b557">&#9670;&#160;</a></span>PSC_Connection_createUnixClient()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -397,8 +386,8 @@ Public Member Functions</h2></td></tr>
         <tr>
           <td class="memname"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> * PSC_Connection_createUnixClient </td>
           <td>(</td>
-          <td class="paramtype">const char *&#160;</td>
-          <td class="paramname"><em>sockname</em></td><td>)</td>
+          <td class="paramtype">const <a class="el" href="class_p_s_c___unix_client_opts.html">PSC_UnixClientOpts</a> *&#160;</td>
+          <td class="paramname"><em>opts</em></td><td>)</td>
           <td></td>
         </tr>
       </table>
@@ -408,7 +397,7 @@ Public Member Functions</h2></td></tr>
 <p>The created connection will be in a "connecting" state. To know when it is successfully connected, you must listen on the <a class="el" href="class_p_s_c___connection.html#acf7f97c40fcbbc5a894e190dc4df9a97" title="Connection successfully connected.">PSC_Connection_connected()</a> event.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">sockname</td><td>the name/path of the local socket to connect to </td></tr>
+    <tr><td class="paramname">opts</td><td>UNIX client options </td></tr>
   </table>
   </dd>
 </dl>
@@ -529,6 +518,141 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
+<a id="a10a78ef04aa8b6c4bc64b7a8d4f033bc" name="a10a78ef04aa8b6c4bc64b7a8d4f033bc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a10a78ef04aa8b6c4bc64b7a8d4f033bc">&#9670;&#160;</a></span>PSC_Connection_pause()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Connection_pause </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Pause receiving data. </p>
+<p>Stop receiving further data unless <a class="el" href="class_p_s_c___connection.html#abc5e0ae07734761d5d374abf9ae1d668" title="Resume receiving data.">PSC_Connection_resume()</a> is called. For each call to <a class="el" href="class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc" title="Pause receiving data.">PSC_Connection_pause()</a>, a corresponding call to <a class="el" href="class_p_s_c___connection.html#abc5e0ae07734761d5d374abf9ae1d668" title="Resume receiving data.">PSC_Connection_resume()</a> is necessary.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ad3252d9e8102f88d2903ea852d41b939" name="ad3252d9e8102f88d2903ea852d41b939"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad3252d9e8102f88d2903ea852d41b939">&#9670;&#160;</a></span>PSC_Connection_receiveBinary()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_Connection_receiveBinary </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_t&#160;</td>
+          <td class="paramname"><em>expected</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure for receiving binary data. </p>
+<p>This is the default mode of a newly created <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a>.</p>
+<p>The optional expected argument can be used when the protocol requires the peer to send an exact amount of bytes next. When it is set to a non-zero value, the next <a class="el" href="class_p_s_c___connection.html#a71d758d0cb15f46d06ab86ab070e4927" title="Data received.">PSC_Connection_dataReceived()</a> event will have exactly this size. It must not be larger than the size of the receive buffer configured for the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a>, otherwise this call will fail.</p>
+<p>When expected is set to 0 (the default), any amount of data received will instantly be passed in the next <a class="el" href="class_p_s_c___connection.html#a71d758d0cb15f46d06ab86ab070e4927" title="Data received.">PSC_Connection_dataReceived()</a> event.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+    <tr><td class="paramname">expected</td><td>how many bytes to receive next, or 0 for any amount </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, -1 on failure </dd></dl>
+
+</div>
+</div>
+<a id="a1244ccd45d5dcb6cecb380b50736cc71" name="a1244ccd45d5dcb6cecb380b50736cc71"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1244ccd45d5dcb6cecb380b50736cc71">&#9670;&#160;</a></span>PSC_Connection_receiveLine()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Connection_receiveLine </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure for receiving lines. </p>
+<p>Use this when implementing a typical line-based protocol.</p>
+<p>When configured for receiving lines, the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> event argument will contain a pointer to a nul-terminated C string. The string will end when either an actual nul-byte was enocuntered in the received data, or one of "\r\n", "\r" or "\n" was found (which will be included), or the receiving buffer was full.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a4ece18c7321475d655054652cee607b6" name="a4ece18c7321475d655054652cee607b6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4ece18c7321475d655054652cee607b6">&#9670;&#160;</a></span>PSC_Connection_receiveText()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Connection_receiveText </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="connection_8h.html#a4ee29c6c80f8fe484928f9a11b528e21">PSC_MessageEndLocator</a>&#160;</td>
+          <td class="paramname"><em>locator</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure for receiving text. </p>
+<p>Use this when implementing a text-based protocol.</p>
+<p>When configured for receiving text, the <a class="el" href="class_p_s_c___e_a_data_received.html" title="Event arguments for data received on a connection.">PSC_EADataReceived</a> event argument will contain a pointer to a nul-terminated C string. The string will end when either an actual nul-byte was encountered in the received data, or the given locator found an end position, or the receiving buffer was full.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+    <tr><td class="paramname">locator</td><td>callback function to find the end of the message </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
 <a id="a42fe18bb601b8de86e4d096938638166" name="a42fe18bb601b8de86e4d096938638166"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a42fe18bb601b8de86e4d096938638166">&#9670;&#160;</a></span>PSC_Connection_remoteAddr()</h2>
 
@@ -613,6 +737,34 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
+<a id="abc5e0ae07734761d5d374abf9ae1d668" name="abc5e0ae07734761d5d374abf9ae1d668"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abc5e0ae07734761d5d374abf9ae1d668">&#9670;&#160;</a></span>PSC_Connection_resume()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_Connection_resume </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Resume receiving data. </p>
+<p>Allow receiving of new data again after calling <a class="el" href="class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc" title="Pause receiving data.">PSC_Connection_pause()</a>. Must be called the same number of times to actually resume receiving.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>1 when receiving was resumed, 0 when still paused, -1 when receiving wasn't paused </dd></dl>
+
+</div>
+</div>
 <a id="ad3732ad982546596e59fa3e5a4ced9c0" name="ad3732ad982546596e59fa3e5a4ced9c0"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#ad3732ad982546596e59fa3e5a4ced9c0">&#9670;&#160;</a></span>PSC_Connection_sendAsync()</h2>
 
@@ -661,6 +813,52 @@ Public Member Functions</h2></td></tr>
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
     <tr><td class="paramname">buf</td><td>pointer to the data </td></tr>
     <tr><td class="paramname">sz</td><td>size of the data </td></tr>
+    <tr><td class="paramname">id</td><td>optional identifier object </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>-1 on immediate error, 0 when sending is scheduled </dd></dl>
+
+</div>
+</div>
+<a id="adeca898db47fce9110b040e787a6a674" name="adeca898db47fce9110b040e787a6a674"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adeca898db47fce9110b040e787a6a674">&#9670;&#160;</a></span>PSC_Connection_sendTextAsync()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_Connection_sendTextAsync </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *&#160;</td>
+          <td class="paramname"><em>text</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *&#160;</td>
+          <td class="paramname"><em>id</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Send text to the peer. </p>
+<p>For text-based protocols, this is a convenient alternative to <a class="el" href="class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0" title="Send data to the peer.">PSC_Connection_sendAsync()</a>, taking a nul-terminated C string instead of a binary buffer and a size. Otherwise, it works exactly the same, so here as well, be careful not to pass a pointer to an object with automatic storage duration!</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+    <tr><td class="paramname">text</td><td>the text to send </td></tr>
     <tr><td class="paramname">id</td><td>optional identifier object </td></tr>
   </table>
   </dd>
