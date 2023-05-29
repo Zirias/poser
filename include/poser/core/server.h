@@ -57,7 +57,7 @@ PSC_TcpServerOpts_bind(PSC_TcpServerOpts *self, const char *bindhost)
  * @param sz the size of the read buffer, must be > 0
  */
 DECLEXPORT void
-PSC_TcpSeverOpts_readBufSize(PSC_TcpServerOpts *self, size_t sz)
+PSC_TcpServerOpts_readBufSize(PSC_TcpServerOpts *self, size_t sz)
     CMETHOD;
 
 /** Enable TLS for the server.
