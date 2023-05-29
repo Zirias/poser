@@ -116,6 +116,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:ac587f04f84814d3bef8cda60bdc0a7bb"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___server.html#ac587f04f84814d3bef8cda60bdc0a7bb">PSC_Server_clientDisconnected</a> (<a class="el" href="class_p_s_c___server.html">PSC_Server</a> *self)</td></tr>
 <tr class="memdesc:ac587f04f84814d3bef8cda60bdc0a7bb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Client disconnected.  <br /></td></tr>
 <tr class="separator:ac587f04f84814d3bef8cda60bdc0a7bb"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a01cfb7d7b2cf8b43a5a104f864711159"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___server.html#a01cfb7d7b2cf8b43a5a104f864711159">PSC_Server_disable</a> (<a class="el" href="class_p_s_c___server.html">PSC_Server</a> *self)</td></tr>
+<tr class="memdesc:a01cfb7d7b2cf8b43a5a104f864711159"><td class="mdescLeft">&#160;</td><td class="mdescRight">Disable the server.  <br /></td></tr>
+<tr class="separator:a01cfb7d7b2cf8b43a5a104f864711159"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a892197bff8672929eb6cfc2fd3e0812d"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___server.html#a892197bff8672929eb6cfc2fd3e0812d">PSC_Server_enable</a> (<a class="el" href="class_p_s_c___server.html">PSC_Server</a> *self)</td></tr>
+<tr class="memdesc:a892197bff8672929eb6cfc2fd3e0812d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable the server.  <br /></td></tr>
+<tr class="separator:a892197bff8672929eb6cfc2fd3e0812d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4062c09551b15328f8b6b1685d4c3a5c"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___server.html#a4062c09551b15328f8b6b1685d4c3a5c">PSC_Server_destroy</a> (<a class="el" href="class_p_s_c___server.html">PSC_Server</a> *self)</td></tr>
 <tr class="memdesc:a4062c09551b15328f8b6b1685d4c3a5c"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> destructor.  <br /></td></tr>
 <tr class="separator:a4062c09551b15328f8b6b1685d4c3a5c"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -253,6 +259,61 @@ Public Member Functions</h2></td></tr>
 
 <p><a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> destructor. </p>
 <p>This will close all active client connections and stop listening.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a01cfb7d7b2cf8b43a5a104f864711159" name="a01cfb7d7b2cf8b43a5a104f864711159"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a01cfb7d7b2cf8b43a5a104f864711159">&#9670;&#160;</a></span>PSC_Server_disable()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Server_disable </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___server.html">PSC_Server</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Disable the server. </p>
+<p>This disables accepting new connections while still listening. It's implemented by immediately closing any new connection with a linger timeout of 0, which should be signaled as an error to the client trying to connect. For a TCP server, it means immediately sending an RST packet.</p>
+<p>Note this does not affect already existing connections.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a892197bff8672929eb6cfc2fd3e0812d" name="a892197bff8672929eb6cfc2fd3e0812d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a892197bff8672929eb6cfc2fd3e0812d">&#9670;&#160;</a></span>PSC_Server_enable()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_Server_enable </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___server.html">PSC_Server</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Enable the server. </p>
+<p>This enables accepting new connections again after <a class="el" href="class_p_s_c___server.html#a01cfb7d7b2cf8b43a5a104f864711159" title="Disable the server.">PSC_Server_disable()</a> was called.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___server.html" title="A server listening on a socket and accepting connections.">PSC_Server</a> </td></tr>
