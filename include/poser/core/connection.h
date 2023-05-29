@@ -170,7 +170,7 @@ PSC_Connection_receiveBinary(PSC_Connection *self, size_t expected)
  * given locator found an end position, or the receiving buffer was full.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
- * @param endmark a string that marks the end of a protocol message
+ * @param locator callback function to find the end of the message
  */
 DECLEXPORT void
 PSC_Connection_receiveText(PSC_Connection *self, PSC_MessageEndLocator locator)
