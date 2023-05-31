@@ -671,6 +671,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
     self->rdbufpos = 0;
+    self->rdexpect = 0;
     self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
