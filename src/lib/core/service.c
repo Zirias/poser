@@ -356,6 +356,7 @@ static int serviceLoop(int isRun)
 	    }
 	}
     }
+    PSC_Event_raise(&eventsDone, 0, 0);
 
 shutdown:
     running = 0;
