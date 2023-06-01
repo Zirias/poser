@@ -1,0 +1,25 @@
+var class_p_s_c___connection =
+[
+    [ "PSC_Connection_close", "class_p_s_c___connection.html#a311792388715f0480114db1134e1a0fd", null ],
+    [ "PSC_Connection_closed", "class_p_s_c___connection.html#a60bc164b82ab3832d020151abc22db43", null ],
+    [ "PSC_Connection_confirmDataReceived", "class_p_s_c___connection.html#ac19d32171732b6e46ff9725866de52fe", null ],
+    [ "PSC_Connection_connected", "class_p_s_c___connection.html#acf7f97c40fcbbc5a894e190dc4df9a97", null ],
+    [ "PSC_Connection_createTcpClient", "class_p_s_c___connection.html#a62e8dd543cc192eed52612df071743c6", null ],
+    [ "PSC_Connection_createTcpClientAsync", "class_p_s_c___connection.html#ac275c11b6b1ee6d5dd080b550bd77f10", null ],
+    [ "PSC_Connection_createUnixClient", "class_p_s_c___connection.html#a5c19a776b5d60fe90924ba0cd5f3b557", null ],
+    [ "PSC_Connection_data", "class_p_s_c___connection.html#a055d6483985ff7ccec0bfa832b84b6a0", null ],
+    [ "PSC_Connection_dataReceived", "class_p_s_c___connection.html#a71d758d0cb15f46d06ab86ab070e4927", null ],
+    [ "PSC_Connection_dataSent", "class_p_s_c___connection.html#afddf59b4ff29b1bee16ba4ba3b97837d", null ],
+    [ "PSC_Connection_nameResolved", "class_p_s_c___connection.html#ad1630fef0429d2fee71022ff5a59fd99", null ],
+    [ "PSC_Connection_pause", "class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc", null ],
+    [ "PSC_Connection_receiveBinary", "class_p_s_c___connection.html#ad3252d9e8102f88d2903ea852d41b939", null ],
+    [ "PSC_Connection_receiveLine", "class_p_s_c___connection.html#a1244ccd45d5dcb6cecb380b50736cc71", null ],
+    [ "PSC_Connection_receiveText", "class_p_s_c___connection.html#a4ece18c7321475d655054652cee607b6", null ],
+    [ "PSC_Connection_remoteAddr", "class_p_s_c___connection.html#a42fe18bb601b8de86e4d096938638166", null ],
+    [ "PSC_Connection_remoteHost", "class_p_s_c___connection.html#ae317929908010b9dc05be1afd8dc7106", null ],
+    [ "PSC_Connection_remotePort", "class_p_s_c___connection.html#a6f1b5c17582f4557ac13dd12f40c8968", null ],
+    [ "PSC_Connection_resume", "class_p_s_c___connection.html#abc5e0ae07734761d5d374abf9ae1d668", null ],
+    [ "PSC_Connection_sendAsync", "class_p_s_c___connection.html#ad3732ad982546596e59fa3e5a4ced9c0", null ],
+    [ "PSC_Connection_sendTextAsync", "class_p_s_c___connection.html#adeca898db47fce9110b040e787a6a674", null ],
+    [ "PSC_Connection_setData", "class_p_s_c___connection.html#aa4bb2ba561b3c5ea842b947bc4b5f393", null ]
+];
