@@ -2,10 +2,10 @@
 
 #include "event.h"
 #include "runopts.h"
+#include "service.h"
 
 #include <poser/core/daemon.h>
 #include <poser/core/log.h>
-#include <poser/core/service.h>
 #include <poser/core/threadpool.h>
 
 #include <grp.h>
@@ -466,5 +466,10 @@ SOEXPORT void PSC_Service_panic(const char *msg)
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
 {
     self->rc = rc;
+}
+
+SOLOCAL int PSC_Service_shutsdown(void)
+{
+    return shutdownRef >= 0;
 }
 

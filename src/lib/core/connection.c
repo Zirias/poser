@@ -1,11 +1,11 @@
 #define _DEFAULT_SOURCE
 
 #include "connection.h"
+#include "service.h"
 
 #include <poser/core/client.h>
 #include <poser/core/event.h>
 #include <poser/core/log.h>
-#include <poser/core/service.h>
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
 
@@ -975,14 +975,17 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
     {
 	self->tls_shutdown_st = 0;
 	int rc = SSL_shutdown(self->tls);
-	if (rc == 0) rc = SSL_shutdown(self->tls);
-	long err = 0;
-	if (rc < 0 && (err = SSL_get_error(self->tls, rc))
-		== SSL_ERROR_WANT_READ)
+	if (!PSC_Service_shutsdown())
 	{
-	    self->tls_shutdown_st = err;
-	    wantreadwrite(self);
-	    return;
+	    if (rc == 0) rc = SSL_shutdown(self->tls);
+	    long err = 0;
+	    if (rc < 0 && (err = SSL_get_error(self->tls, rc))
+		    == SSL_ERROR_WANT_READ)
+	    {
+		self->tls_shutdown_st = err;
+		wantreadwrite(self);
+		return;
+	    }
 	}
     }
 #endif
@@ -1031,19 +1034,6 @@ static void deleteLater(PSC_Connection *self)
 SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 {
     if (!self) return;
-    if (self->deleteScheduled)
-    {
-	if (self->deleteScheduled == 1) return;
-	PSC_Event_unregister(PSC_Service_eventsDone(), self,
-		deleteConnection, 0);
-    }
-    else
-    {
-#ifdef WITH_TLS
-	if (self->tls) SSL_shutdown(self->tls);
-#endif
-	cleanForDelete(self);
-    }
 
     for (uint8_t notno = 0; notno < self->nnotify; ++notno)
     {
@@ -1059,6 +1049,22 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 	    PSC_Event_raise(self->dataSent, 0, self->writerecs[recno].id);
 	}
     }
+
+    if (self->deleteScheduled)
+    {
+	if (self->deleteScheduled == 1) return;
+	PSC_Event_unregister(PSC_Service_eventsDone(), self,
+		deleteConnection, 0);
+    }
+    else
+    {
+#ifdef WITH_TLS
+	if (self->tls) SSL_shutdown(self->tls);
+#endif
+	PSC_Event_raise(self->closed, 0, self->connecting ? 0 : self);
+	cleanForDelete(self);
+    }
+
 #ifdef WITH_TLS
     SSL_free(self->tls);
     if (self->tls_is_client)
