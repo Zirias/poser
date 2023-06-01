@@ -970,7 +970,7 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 	PSC_Connection_blacklistAddress(self->blacklisthits,
 		self->resolveArgs.addrlen, &self->resolveArgs.sa);
     }
-#ifdef WITH__TLS
+#ifdef WITH_TLS
     if (self->tls && !self->connecting && !self->tls_connect_st)
     {
 	self->tls_shutdown_st = 0;
@@ -981,7 +981,7 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 		== SSL_ERROR_WANT_READ)
 	{
 	    self->tls_shutdown_st = err;
-	    wantreadwrite();
+	    wantreadwrite(self);
 	    return;
 	}
     }
