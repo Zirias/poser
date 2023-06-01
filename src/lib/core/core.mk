@@ -36,7 +36,7 @@ posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
 posercore_V_MAJ:=		1
 posercore_V_MIN:=		0
-posercore_V_REV:=		0
+posercore_V_REV:=		1
 
 ifeq ($(WITH_TLS),1)
   ifneq ($(OPENSSLINC)$(OPENSSLLIB),)
