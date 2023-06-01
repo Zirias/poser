@@ -105,7 +105,6 @@ struct PSC_Connection
     int tls_read_st;
     int tls_write_st;
     int tls_shutdown_st;
-    int tls_shutdown_lock;
     int tls_readagain;
 #endif
     int blacklisthits;
@@ -128,7 +127,6 @@ static void wantreadwrite(PSC_Connection *self) CMETHOD;
 static void checkPendingTls(void *receiver, void *sender, void *args);
 static void dohandshake(PSC_Connection *self) CMETHOD;
 static void handshakenow(void *receiver, void *sender, void *args);
-static void svshutdown(void *receiver, void *sender, void *args);
 #endif
 static void dowrite(PSC_Connection *self) CMETHOD;
 static void deleteConnection(void *receiver, void *sender, void *args);
@@ -741,9 +739,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_read_st = 0;
     self->tls_write_st = 0;
     self->tls_shutdown_st = 0;
-    self->tls_shutdown_lock = 0;
     self->tls_readagain = 0;
-    PSC_Event_register(PSC_Service_shutdown(), self, svshutdown, 0);
 #endif
     self->blacklisthits = opts->blacklisthits;
     self->args.handling = 0;
@@ -966,22 +962,6 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
     return 1;
 }
 
-#ifdef WITH_TLS
-static void svshutdown(void *receiver, void *sender, void *args)
-{
-    (void)sender;
-    (void)args;
-
-    PSC_Connection *self = receiver;
-
-    if (!self->tls_shutdown_lock)
-    {
-	PSC_Service_shutdownLock();
-	self->tls_shutdown_lock = 1;
-    }
-}
-#endif
-
 SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 {
     if (self->deleteScheduled) return;
@@ -1003,11 +983,6 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 	    self->tls_shutdown_st = err;
 	    wantreadwrite(self);
 	    return;
-	}
-	if (self->tls_shutdown_lock)
-	{
-	    PSC_Service_shutdownUnlock();
-	    self->tls_shutdown_lock = 0;
 	}
     }
 #endif
@@ -1103,7 +1078,6 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 	}
     }
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
-    PSC_Event_unregister(PSC_Service_shutdown(), self, svshutdown, 0);
 #endif
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingConnection, 0);
     PSC_Event_unregister(PSC_Service_readyRead(), self,
