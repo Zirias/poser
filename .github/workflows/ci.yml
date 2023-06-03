@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CI_CFLAGS: -O2 -std=c11 -Wall -Wextra -Wshadow -Werror -pedantic
+    steps:
+    - uses: actions/checkout@v3
+    - name: submodules
+      run: git submodule update --init
+    - name: make
+      run: make -j4 CFLAGS="${CI_CFLAGS}"
