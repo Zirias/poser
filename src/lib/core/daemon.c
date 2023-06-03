@@ -271,7 +271,10 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 
     PSC_Log_msg(PSC_L_INFO, "forked into background");
     rc = dmain(data);
-    if (rc != EXIT_SUCCESS) (void)write(STDERR_FILENO, "\0", 1);
+    if (rc != EXIT_SUCCESS && write(STDERR_FILENO, "\0", 1) < 1)
+    {
+	PSC_Log_msg(PSC_L_WARNING, "daemon: cannot notify parent process");
+    }
     if (pf)
     {
 	fclose(pf);
