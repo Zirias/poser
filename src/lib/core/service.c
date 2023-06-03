@@ -207,7 +207,7 @@ static int serviceLoop(int isRun)
     {
 	if (opts->daemonize)
 	{
-	    chown(opts->pidfile, opts->uid, opts->gid);
+	    (void)chown(opts->pidfile, opts->uid, opts->gid);
 	}
 	if (opts->gid != -1)
 	{

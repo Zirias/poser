@@ -162,15 +162,24 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 	{
 	    char buf[256];
 	    ssize_t sz;
+	    ssize_t wrc;
+	    size_t bp;
 	    while ((sz = read(pfd[0], buf, sizeof buf)) > 0)
 	    {
+		bp = 0;
 		if (!buf[sz-1])
 		{
 		    drc = EXIT_FAILURE;
-		    if (sz > 1) write(STDERR_FILENO, buf, sz-1);
+		    if (sz > 1) do
+		    {
+			wrc = write(STDERR_FILENO, buf+bp, sz-bp-1);
+		    } while (wrc >= 0 && (bp += wrc) < (size_t)sz - 1);
 		    break;
 		}
-		write(STDERR_FILENO, buf, sz);
+		do
+		{
+		    wrc = write(STDERR_FILENO, buf+bp, sz-bp);
+		} while (wrc >= 0 && (bp += wrc) < (size_t)sz);
 	    }
 	    close(pfd[0]);
 	}
@@ -262,7 +271,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 
     PSC_Log_msg(PSC_L_INFO, "forked into background");
     rc = dmain(data);
-    if (rc != EXIT_SUCCESS) write(STDERR_FILENO, "\0", 1);
+    if (rc != EXIT_SUCCESS) (void)write(STDERR_FILENO, "\0", 1);
     if (pf)
     {
 	fclose(pf);

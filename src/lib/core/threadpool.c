@@ -127,7 +127,7 @@ static void *worker(void *arg)
 	if (t->stoprq) break;
 	if (!setjmp(panicjmp)) t->job->proc(t->job->arg);
 	else t->job->panicmsg = panicmsg;
-	write(t->pipefd[1], "0", 1);
+	(void)write(t->pipefd[1], "0", 1);
 	pthread_mutex_lock(&t->donelock);
 	pthread_cond_signal(&t->done);
 	pthread_mutex_unlock(&t->donelock);
@@ -270,7 +270,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     Thread *t = receiver;
     PSC_Service_unregisterRead(t->pipefd[0]);
     char buf[2];
-    read(t->pipefd[0], buf, sizeof buf);
+    (void)read(t->pipefd[0], buf, sizeof buf);
     pthread_cond_wait(&t->done, &t->donelock);
     if (t->job->panicmsg)
     {
