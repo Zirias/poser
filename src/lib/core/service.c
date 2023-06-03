@@ -207,20 +207,26 @@ static int serviceLoop(int isRun)
     {
 	if (opts->daemonize)
 	{
-	    (void)chown(opts->pidfile, opts->uid, opts->gid);
+	    if (chown(opts->pidfile, opts->uid, opts->gid) < 0)
+	    {
+		PSC_Log_msg(PSC_L_WARNING,
+			"service: cannot change owner of pidfile");
+	    }
 	}
 	if (opts->gid != -1)
 	{
 	    gid_t gid = opts->gid;
 	    if (setgroups(1, &gid) < 0 || setgid(gid) < 0)
 	    {
-		PSC_Log_msg(PSC_L_ERROR, "cannot set specified group");
+		PSC_Log_msg(PSC_L_ERROR,
+			"service: cannot set specified group");
 		return rc;
 	    }
 	}
 	if (setuid(opts->uid) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set specified user");
+	    PSC_Log_msg(PSC_L_ERROR,
+		    "service: cannot set specified user");
 	    return rc;
 	}
     }

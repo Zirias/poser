@@ -127,7 +127,11 @@ static void *worker(void *arg)
 	if (t->stoprq) break;
 	if (!setjmp(panicjmp)) t->job->proc(t->job->arg);
 	else t->job->panicmsg = panicmsg;
-	(void)write(t->pipefd[1], "0", 1);
+	if (write(t->pipefd[1], "0", 1) < 1)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "threadpool: can't notify main thread");
+	    return 0;
+	}
 	pthread_mutex_lock(&t->donelock);
 	pthread_cond_signal(&t->done);
 	pthread_mutex_unlock(&t->donelock);
@@ -270,7 +274,10 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     Thread *t = receiver;
     PSC_Service_unregisterRead(t->pipefd[0]);
     char buf[2];
-    (void)read(t->pipefd[0], buf, sizeof buf);
+    if (read(t->pipefd[0], buf, sizeof buf) <= 0)
+    {
+	PSC_Service_panic("threadpool: error reading internal pipe");
+    }
     pthread_cond_wait(&t->done, &t->donelock);
     if (t->job->panicmsg)
     {
