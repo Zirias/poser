@@ -24,6 +24,7 @@
 
 #ifdef WITH_TLS
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 #endif
 
 #ifndef MAXSOCKS
@@ -88,6 +89,7 @@ struct PSC_Server
 #ifdef WITH_TLS
     X509 *cert;
     EVP_PKEY *key;
+    SSL_CTX *tls_ctx;
 #endif
     size_t conncapa;
     size_t connsize;
@@ -182,6 +184,7 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     ConnOpts co = {
 	.rdbufsz = self->rdbufsz,
 #ifdef WITH_TLS
+	.tls_ctx = self->tls_ctx,
 	.tls_cert = self->cert,
 	.tls_key = self->key,
 	.tls_mode = self->tls ? TM_SERVER : TM_NONE,
@@ -220,11 +223,18 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     FILE *keyfile = 0;
     X509 *cert = 0;
     EVP_PKEY *key = 0;
+    SSL_CTX *tls_ctx = 0;
 #endif
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
     if (opts->tls)
     {
+	if (!(tls_ctx = SSL_CTX_new(TLS_server_method())))
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "server: error creating TLS context");
+	    goto error;
+	}
+	SSL_CTX_set_min_proto_version(tls_ctx, TLS1_2_VERSION);
 	if (!(certfile = fopen(opts->certfile, "r")))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
@@ -273,6 +283,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->tls = opts->tls;
     self->cert = cert;
     self->key = key;
+    self->tls_ctx = tls_ctx;
 #endif
     self->nsocks = nsocks;
     memcpy(self->socks, socks, nsocks * sizeof *socks);
@@ -287,6 +298,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 
 error:
 #ifdef WITH_TLS
+    SSL_CTX_free(tls_ctx);
     EVP_PKEY_free(key);
     X509_free(cert);
     if (keyfile) fclose(keyfile);
@@ -656,6 +668,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 #ifdef WITH_TLS
     EVP_PKEY_free(self->key);
     X509_free(self->cert);
+    SSL_CTX_free(self->tls_ctx);
 #endif
     free(self);
 }

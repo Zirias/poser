@@ -35,6 +35,7 @@ typedef struct ConnOpts
 {
     size_t rdbufsz;
 #ifdef WITH_TLS
+    SSL_CTX *tls_ctx;
     X509 *tls_cert;
     EVP_PKEY *tls_key;
     const char *tls_hostname;

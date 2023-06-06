@@ -1,9 +1,9 @@
 #define _DEFAULT_SOURCE
 
+#include "client.h"
 #include "connection.h"
 #include "service.h"
 
-#include <poser/core/client.h>
 #include <poser/core/event.h>
 #include <poser/core/log.h>
 #include <poser/core/threadpool.h>
@@ -63,13 +63,6 @@ typedef struct RemoteAddrResolveArgs
     char name[NI_MAXHOST];
 } RemoteAddrResolveArgs;
 
-#ifdef WITH_TLS
-static SSL_CTX *tls_client_ctx = 0;
-static SSL_CTX *tls_server_ctx = 0;
-static int tls_nclients = 0;
-static int tls_nservers = 0;
-#endif
-
 struct PSC_Connection
 {
     PSC_MessageEndLocator rdlocator;
@@ -117,9 +110,6 @@ struct PSC_Connection
     uint8_t wrbuf[WRBUFSZ];
     uint8_t rdbuf[];
 };
-
-void PSC_Connection_blacklistAddress(int hits,
-	socklen_t len, struct sockaddr *addr) ATTR_NONNULL((3));
 
 static void checkPendingConnection(void *receiver, void *sender, void *args);
 static void wantreadwrite(PSC_Connection *self) CMETHOD;
@@ -685,17 +675,10 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_is_client = 0;
     if (opts->tls_mode != TM_NONE)
     {
+	self->tls = SSL_new(opts->tls_ctx);
 	if (opts->tls_mode == TM_CLIENT)
 	{
 	    self->tls_is_client = 1;
-	    if (!tls_client_ctx)
-	    {
-		tls_client_ctx = SSL_CTX_new(TLS_client_method());
-		SSL_CTX_set_default_verify_paths(tls_client_ctx);
-		SSL_CTX_set_verify(tls_client_ctx, SSL_VERIFY_PEER, 0);
-	    }
-	    ++tls_nclients;
-	    self->tls = SSL_new(tls_client_ctx);
 	    if (opts->tls_noverify)
 	    {
 		SSL_set_verify(self->tls, SSL_VERIFY_NONE, 0);
@@ -704,16 +687,6 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	    {
 		SSL_set1_host(self->tls, opts->tls_hostname);
 	    }
-	}
-	else
-	{
-	    if (!tls_server_ctx)
-	    {
-		tls_server_ctx = SSL_CTX_new(TLS_server_method());
-		SSL_CTX_set_min_proto_version(tls_server_ctx, TLS1_2_VERSION);
-	    }
-	    ++tls_nservers;
-	    self->tls = SSL_new(tls_server_ctx);
 	}
 	SSL_set_fd(self->tls, fd);
 	if (opts->tls_cert)
@@ -1067,23 +1040,8 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 
 #ifdef WITH_TLS
     SSL_free(self->tls);
-    if (self->tls_is_client)
-    {
-	if (tls_nclients && !--tls_nclients)
-	{
-	    SSL_CTX_free(tls_client_ctx);
-	    tls_client_ctx = 0;
-	}
-    }
-    else
-    {
-	if (tls_nservers && !--tls_nservers)
-	{
-	    SSL_CTX_free(tls_server_ctx);
-	    tls_server_ctx = 0;
-	}
-    }
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
+    if (self->tls_is_client) PSC_Connection_unreftlsctx();
 #endif
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingConnection, 0);
     PSC_Event_unregister(PSC_Service_readyRead(), self,

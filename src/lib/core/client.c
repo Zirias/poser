@@ -1,8 +1,8 @@
 #define _DEFAULT_SOURCE
 
+#include "client.h"
 #include "connection.h"
 
-#include <poser/core/client.h>
 #include <poser/core/event.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
@@ -21,6 +21,7 @@
 
 #ifdef WITH_TLS
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 #endif
 
 #define BLACKLISTSIZE 32
@@ -70,6 +71,37 @@ typedef struct ResolveJobData
 } ResolveJobData;
 
 static BlacklistEntry blacklist[BLACKLISTSIZE];
+
+#ifdef WITH_TLS
+static SSL_CTX *tls_ctx;
+static int tls_ctx_ref;
+
+static SSL_CTX *gettlsctx(void)
+{
+    if (!tls_ctx)
+    {
+	tls_ctx = SSL_CTX_new(TLS_client_method());
+	if (!tls_ctx)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "client: error creating TLS context");
+	    return 0;
+	}
+	SSL_CTX_set_default_verify_paths(tls_ctx);
+	SSL_CTX_set_verify(tls_ctx, SSL_VERIFY_PEER, 0);
+    }
+    ++tls_ctx_ref;
+    return tls_ctx;
+}
+
+SOLOCAL void PSC_Connection_unreftlsctx(void)
+{
+    if (!--tls_ctx_ref)
+    {
+	SSL_CTX_free(tls_ctx);
+	tls_ctx = 0;
+    }
+}
+#endif
 
 SOLOCAL void PSC_Connection_blacklistAddress(int hits,
 	socklen_t len, struct sockaddr *addr)
@@ -135,6 +167,7 @@ static PSC_Connection *createFromAddrinfo(
     ConnOpts copts = {
 	.rdbufsz = opts->rdbufsz,
 #ifdef WITH_TLS
+	.tls_ctx = opts->tls ? gettlsctx() : 0,
 	.tls_cert = cert,
 	.tls_key = key,
 	.tls_hostname = opts->remotehost,
