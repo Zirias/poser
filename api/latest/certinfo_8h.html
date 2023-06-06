@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen 1.9.6"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>poser: Member List</title>
+<title>poser: poser/core/certinfo.h File Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -64,7 +64,7 @@ $(function() {
 </div>
 <script type="text/javascript">
 /* @license magnet:?xt=urn:btih:d3d9a9a6595521f9666a5e94cc830dab83b65699&amp;dn=expat.txt MIT */
-$(document).ready(function(){initNavTree('class_p_s_c___tcp_server_opts.html',''); initResizable(); });
+$(document).ready(function(){initNavTree('certinfo_8h.html',''); initResizable(); });
 /* @license-end */
 </script>
 <div id="doc-content">
@@ -90,26 +90,58 @@ $(document).ready(function(){initNavTree('class_p_s_c___tcp_server_opts.html',''
 </div>
 
 <div class="header">
-  <div class="headertitle"><div class="title">PSC_TcpServerOpts Member List</div></div>
+  <div class="summary">
+<a href="#typedef-members">Typedefs</a>  </div>
+  <div class="headertitle"><div class="title">certinfo.h File Reference</div></div>
 </div><!--header-->
 <div class="contents">
 
-<p>This is the complete list of members for <a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a>, including all inherited members.</p>
-<table class="directory">
-  <tr class="even"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#a268c01db0bdf96443dbd0167075a798b">PSC_TcpServerOpts_bind</a>(PSC_TcpServerOpts *self, const char *bindhost)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="odd"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#a3c1b56b255015cf500a797b20d438f2c">PSC_TcpServerOpts_create</a>(int port)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="even"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#abf332b84079a921e0e58a08da8e668d6">PSC_TcpServerOpts_destroy</a>(PSC_TcpServerOpts *self)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="odd"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#aca0749bd4589bb9ca8bc41e405f6fe51">PSC_TcpServerOpts_enableTls</a>(PSC_TcpServerOpts *self, const char *certfile, const char *keyfile)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="even"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#ad9270fc7a549b2231acf4cc2264ecb9c">PSC_TcpServerOpts_numericHosts</a>(PSC_TcpServerOpts *self)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="odd"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#ad6dcf7dd0293c0265f02087a28ff2180">PSC_TcpServerOpts_readBufSize</a>(PSC_TcpServerOpts *self, size_t sz)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="even"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#a1a6c0476840f2fe487bf5ab713b37c4e">PSC_TcpServerOpts_requireClientCert</a>(PSC_TcpServerOpts *self, const char *cafile)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="odd"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#a891049d43e39495b7c2364628189bc84">PSC_TcpServerOpts_setProto</a>(PSC_TcpServerOpts *self, PSC_Proto proto)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-  <tr class="even"><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html#a0ae8e215fd0b49c68c2a026d15894d11">PSC_TcpServerOpts_validateClientCert</a>(PSC_TcpServerOpts *self, void *receiver, PSC_CertValidator validator)</td><td class="entry"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a></td><td class="entry"></td></tr>
-</table></div><!-- contents -->
+<p>declarations for the <a class="el" href="class_p_s_c___cert_info.html" title="Metadata of an X.509 certificate.">PSC_CertInfo</a> class  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;poser/decl.h&gt;</code><br />
+<code>#include &lt;stdint.h&gt;</code><br />
+</div>
+<p><a href="certinfo_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:afb0ad35b3a6e769dd14517f67e1816e1"><td class="memItemLeft" align="right" valign="top">typedef int(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="certinfo_8h.html#afb0ad35b3a6e769dd14517f67e1816e1">PSC_CertValidator</a>) (void *receiver, const <a class="el" href="class_p_s_c___cert_info.html">PSC_CertInfo</a> *info)</td></tr>
+<tr class="memdesc:afb0ad35b3a6e769dd14517f67e1816e1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Custom certificate validator.  <br /></td></tr>
+<tr class="separator:afb0ad35b3a6e769dd14517f67e1816e1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>declarations for the <a class="el" href="class_p_s_c___cert_info.html" title="Metadata of an X.509 certificate.">PSC_CertInfo</a> class </p>
+</div><h2 class="groupheader">Typedef Documentation</h2>
+<a id="afb0ad35b3a6e769dd14517f67e1816e1" name="afb0ad35b3a6e769dd14517f67e1816e1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afb0ad35b3a6e769dd14517f67e1816e1">&#9670;&#160;</a></span>PSC_CertValidator</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef int(* PSC_CertValidator) (void *receiver, const <a class="el" href="class_p_s_c___cert_info.html">PSC_CertInfo</a> *info)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Custom certificate validator. </p>
+<p>This can be used for custom logic whether a specific certificate should be accepted or not. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">receiver</td><td>the object handling the validation </td></tr>
+    <tr><td class="paramname">info</td><td>metadata of the certificate to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>1 if acceptable, 0 if not </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
+    <li class="navelem"><a class="el" href="dir_fcafcbfa9de4736844aedbb1b7b44002.html">poser</a></li><li class="navelem"><a class="el" href="dir_d92fb2959821f2a373ecc8d11d334660.html">core</a></li><li class="navelem"><a class="el" href="certinfo_8h.html">certinfo.h</a></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.9.6 </li>
   </ul>
 </div>

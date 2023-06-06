@@ -1,5 +1,6 @@
 var dir_d92fb2959821f2a373ecc8d11d334660 =
 [
+    [ "certinfo.h", "certinfo_8h.html", "certinfo_8h" ],
     [ "client.h", "client_8h.html", "client_8h" ],
     [ "connection.h", "connection_8h.html", "connection_8h" ],
     [ "daemon.h", "daemon_8h.html", "daemon_8h" ],

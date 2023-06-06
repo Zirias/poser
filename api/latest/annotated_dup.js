@@ -1,5 +1,6 @@
 var annotated_dup =
 [
+    [ "PSC_CertInfo", "class_p_s_c___cert_info.html", "class_p_s_c___cert_info" ],
     [ "PSC_Connection", "class_p_s_c___connection.html", "class_p_s_c___connection" ],
     [ "PSC_Daemon", "class_p_s_c___daemon.html", null ],
     [ "PSC_EADataReceived", "class_p_s_c___e_a_data_received.html", "class_p_s_c___e_a_data_received" ],

@@ -116,6 +116,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#aca0749bd4589bb9ca8bc41e405f6fe51">PSC_TcpServerOpts_enableTls</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, const char *certfile, const char *keyfile)</td></tr>
 <tr class="memdesc:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable TLS for the server.  <br /></td></tr>
 <tr class="separator:aca0749bd4589bb9ca8bc41e405f6fe51"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1a6c0476840f2fe487bf5ab713b37c4e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#a1a6c0476840f2fe487bf5ab713b37c4e">PSC_TcpServerOpts_requireClientCert</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, const char *cafile)</td></tr>
+<tr class="memdesc:a1a6c0476840f2fe487bf5ab713b37c4e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Request a certificate from connecting clients.  <br /></td></tr>
+<tr class="separator:a1a6c0476840f2fe487bf5ab713b37c4e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0ae8e215fd0b49c68c2a026d15894d11"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#a0ae8e215fd0b49c68c2a026d15894d11">PSC_TcpServerOpts_validateClientCert</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, void *receiver, <a class="el" href="certinfo_8h.html#afb0ad35b3a6e769dd14517f67e1816e1">PSC_CertValidator</a> validator)</td></tr>
+<tr class="memdesc:a0ae8e215fd0b49c68c2a026d15894d11"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure a custom validator for client certificates.  <br /></td></tr>
+<tr class="separator:a0ae8e215fd0b49c68c2a026d15894d11"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a891049d43e39495b7c2364628189bc84"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___tcp_server_opts.html#a891049d43e39495b7c2364628189bc84">PSC_TcpServerOpts_setProto</a> (<a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *self, <a class="el" href="proto_8h.html#a3cadc704f4e1ef1244168855a715b0ff">PSC_Proto</a> proto)</td></tr>
 <tr class="memdesc:a891049d43e39495b7c2364628189bc84"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set a specific protocol (IPv4 or IPv6).  <br /></td></tr>
 <tr class="separator:a891049d43e39495b7c2364628189bc84"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -330,6 +336,45 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
+<a id="a1a6c0476840f2fe487bf5ab713b37c4e" name="a1a6c0476840f2fe487bf5ab713b37c4e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1a6c0476840f2fe487bf5ab713b37c4e">&#9670;&#160;</a></span>PSC_TcpServerOpts_requireClientCert()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_TcpServerOpts_requireClientCert </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *&#160;</td>
+          <td class="paramname"><em>cafile</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Request a certificate from connecting clients. </p>
+<p>Causes the server to request a client certificate from every connecting client. If the client doesn't present a certificate, or the certificate is not signed by a CA present in the given CA file, handshake fails.</p>
+<p>If no CA file is given, any client certificate will fail validation unless a custom validation function is configured with <a class="el" href="class_p_s_c___tcp_server_opts.html#a0ae8e215fd0b49c68c2a026d15894d11" title="Configure a custom validator for client certificates.">PSC_TcpServerOpts_validateClientCert()</a>.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
+    <tr><td class="paramname">cafile</td><td>CA file (containing PEM certificates) </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
 <a id="a891049d43e39495b7c2364628189bc84" name="a891049d43e39495b7c2364628189bc84"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a891049d43e39495b7c2364628189bc84">&#9670;&#160;</a></span>PSC_TcpServerOpts_setProto()</h2>
 
@@ -361,6 +406,52 @@ Public Member Functions</h2></td></tr>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
     <tr><td class="paramname">proto</td><td>protocol the server should use </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a0ae8e215fd0b49c68c2a026d15894d11" name="a0ae8e215fd0b49c68c2a026d15894d11"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0ae8e215fd0b49c68c2a026d15894d11">&#9670;&#160;</a></span>PSC_TcpServerOpts_validateClientCert()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_TcpServerOpts_validateClientCert </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___tcp_server_opts.html">PSC_TcpServerOpts</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *&#160;</td>
+          <td class="paramname"><em>receiver</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="certinfo_8h.html#afb0ad35b3a6e769dd14517f67e1816e1">PSC_CertValidator</a>&#160;</td>
+          <td class="paramname"><em>validator</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure a custom validator for client certificates. </p>
+<p>When this is used, the given validator will be called after default validation of client certificates, so the application can still reject certificates based on custom logic.</p>
+<p>If a CA file is given, this callback will only be called after successful validation against the CA file.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___tcp_server_opts.html" title="Options for creating a TCP server.">PSC_TcpServerOpts</a> </td></tr>
+    <tr><td class="paramname">receiver</td><td>the object handling the validation (or 0 for static) </td></tr>
+    <tr><td class="paramname">validator</td><td>the custom validator function </td></tr>
   </table>
   </dd>
 </dl>
