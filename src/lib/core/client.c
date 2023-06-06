@@ -160,6 +160,10 @@ static PSC_Connection *createFromAddrinfo(
     if (fd < 0)
     {
 	freeaddrinfo(res0);
+#ifdef WITH_TLS
+	EVP_PKEY_free(key);
+	X509_free(cert);
+#endif
 	PSC_Log_fmt(PSC_L_ERROR, "client: cannot connect to `%s'",
 		opts->remotehost);
 	return 0;
@@ -204,7 +208,7 @@ static struct addrinfo *resolveAddress(const PSC_TcpClientOpts *opts)
 }
 
 #ifdef WITH_TLS
-static void fetchCert(X509 **cert, EVP_PKEY **key,
+static int fetchCert(X509 **cert, EVP_PKEY **key,
 	const PSC_TcpClientOpts *opts)
 {
     FILE *certfile = 0;
@@ -215,16 +219,16 @@ static void fetchCert(X509 **cert, EVP_PKEY **key,
     if (opts->tls_certfile && !opts->tls_keyfile)
     {
 	PSC_Log_msg(PSC_L_ERROR,
-		"client: certificate without private key, ignoring");
-	return;
+		"client: certificate without private key, aborting");
+	return -1;
     }
     if (opts->tls_keyfile && !opts->tls_certfile)
     {
 	PSC_Log_msg(PSC_L_ERROR,
-		"client: private key without certificate, ignoring");
-	return;
+		"client: private key without certificate, aborting");
+	return -1;
     }
-    if (!opts->tls_certfile) return;
+    if (!opts->tls_certfile) return 0;
     if (!(certfile = fopen(opts->tls_certfile, "r")))
     {
 	PSC_Log_fmt(PSC_L_ERROR,
@@ -255,23 +259,24 @@ static void fetchCert(X509 **cert, EVP_PKEY **key,
     }
     fclose(keyfile);
     fclose(certfile);
-    return;
+    return 0;
 
 error:
     EVP_PKEY_free(*key);
     X509_free(*cert);
     if (keyfile) fclose(keyfile);
     if (certfile) fclose(certfile);
+    return -1;
 }
 #endif
 
 static void doResolve(void *arg)
 {
     ResolveJobData *data = arg;
-    data->res0 = resolveAddress(data->opts);
 #ifdef WITH_TLS
-    fetchCert(&data->cert, &data->key, data->opts);
+    if (fetchCert(&data->cert, &data->key, data->opts) < 0) return;
 #endif
+    data->res0 = resolveAddress(data->opts);
 }
 
 static void resolveDone(void *receiver, void *sender, void *args)
@@ -390,14 +395,15 @@ SOEXPORT void PSC_UnixClientOpts_destroy(PSC_UnixClientOpts *self)
 SOEXPORT PSC_Connection *PSC_Connection_createTcpClient(
 	const PSC_TcpClientOpts *opts)
 {
-    struct addrinfo *res0 = resolveAddress(opts);
-    if (!res0) return 0;
+    struct addrinfo *res0;
 #ifdef WITH_TLS
     X509 *cert;
     EVP_PKEY *key;
-    fetchCert(&cert, &key, opts);
+    if (fetchCert(&cert, &key, opts) < 0) return 0;
+    if (!(res0 = resolveAddress(opts))) return 0;
     return createFromAddrinfo(opts, res0, cert, key);
 #else
+    if (!(res0 = resolveAddress(opts))) return 0;
     return createFromAddrinfo(opts, res0);
 #endif
 }
