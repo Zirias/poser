@@ -47,7 +47,6 @@ SOEXPORT const char *PSC_CertInfo_fingerprintStr(const PSC_CertInfo *self)
 	    sprintf(fppos, "%02hhx", fp[i]);
 	    fppos += 2;
 	}
-	*fppos = 0;
     }
     return self->fpstr;
 }
@@ -67,6 +66,7 @@ SOLOCAL void PSC_CertInfo_destroy(PSC_CertInfo *self)
 {
     if (!self) return;
     free(self->subject);
+    free(self->fpstr);
     free(self);
 }
 
