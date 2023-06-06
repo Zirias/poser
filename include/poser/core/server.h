@@ -73,6 +73,19 @@ PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
 	const char *certfile, const char *keyfile)
     CMETHOD ATTR_NONNULL((2)) ATTR_NONNULL((3));
 
+/** Request a certificate from connecting clients.
+ * Causes the server to request a client certificate from every connecting
+ * client. If the client doesn't present a certificate, or the certificate
+ * is not signed by a CA present in the given CA file, handshake fails.
+ * @memberof PSC_TcpServerOpts
+ * @param self the PSC_TcpServerOpts
+ * @param cafile CA file (containing PEM certificates)
+ */
+DECLEXPORT void
+PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
+	const char *cafile)
+    CMETHOD;
+
 /** Set a specific protocol (IPv4 or IPv6).
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts

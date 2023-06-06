@@ -40,6 +40,7 @@ struct PSC_TcpServerOpts
 #ifdef WITH_TLS
     char *certfile;
     char *keyfile;
+    char *cafile;
 #endif
     size_t bh_capa;
     size_t bh_count;
@@ -47,6 +48,7 @@ struct PSC_TcpServerOpts
     PSC_Proto proto;
 #ifdef WITH_TLS
     int tls;
+    int tls_client_cert;
 #endif
     int port;
     int numerichosts;
@@ -235,6 +237,20 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 	    goto error;
 	}
 	SSL_CTX_set_min_proto_version(tls_ctx, TLS1_2_VERSION);
+	if (opts->tls_client_cert)
+	{
+	    SSL_CTX_set_verify(tls_ctx,
+		    SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, 0);
+	    if (opts->cafile)
+	    {
+		if (!SSL_CTX_load_verify_locations(tls_ctx, opts->cafile, 0))
+		{
+		    PSC_Log_fmt(PSC_L_ERROR, "server: cannot load CA "
+			    "certificate(s) from `%s'", opts->cafile);
+		    goto error;
+		}
+	    }
+	}
 	if (!(certfile = fopen(opts->certfile, "r")))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
@@ -352,6 +368,19 @@ SOEXPORT void PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
 #endif
 }
 
+SOEXPORT void PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
+	const char *cafile)
+{
+#ifdef WITH_TLS
+    self->tls_client_cert = 1;
+    free(self->cafile);
+    self->cafile = PSC_copystr(cafile);
+#else
+    (void)cafile;
+    PSC_Service_panic("This version of libposercore does not support TLS!");
+#endif
+}
+
 SOEXPORT void PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self,
 	PSC_Proto proto)
 {
@@ -369,6 +398,7 @@ SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)
     for (size_t i = 0; i < self->bh_count; ++i) free(self->bindhosts[i]);
     free(self->bindhosts);
 #ifdef WITH_TLS
+    free(self->cafile);
     free(self->certfile);
     free(self->keyfile);
 #endif
