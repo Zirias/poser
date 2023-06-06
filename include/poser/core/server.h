@@ -74,6 +74,27 @@ PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
 	const char *certfile, const char *keyfile)
     CMETHOD ATTR_NONNULL((2)) ATTR_NONNULL((3));
 
+/** Enable checking of an optional client certificate.
+ * If the client presents a client certificate, enable checking it. When a CA
+ * file is given, the certificate must be issued from one of the CAs contained
+ * in it. When the client presents a client certificate that doesn't validate,
+ * handshake fails.
+ *
+ * If no CA file is given, any client certificate will fail validation unless
+ * a custom validation function is configured with
+ * PSC_TcpServerOpts_validateClientCert().
+ *
+ * To strictly require a client certificate, use
+ * PSC_TcpServerOpts_requireClientCert() instead.
+ * @memberof PSC_TcpServerOpts
+ * @param self the PSC_TcpServerOpts
+ * @param cafile CA file (containing PEM certificates)
+ */
+DECLEXPORT void
+PSC_TcpServerOpts_enableClientCert(PSC_TcpServerOpts *self,
+	const char *cafile)
+    CMETHOD;
+
 /** Request a certificate from connecting clients.
  * Causes the server to request a client certificate from every connecting
  * client. If the client doesn't present a certificate, or the certificate
@@ -82,6 +103,9 @@ PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
  * If no CA file is given, any client certificate will fail validation unless
  * a custom validation function is configured with
  * PSC_TcpServerOpts_validateClientCert().
+ *
+ * To optionally enable validation of a client certificate if presented, use
+ * PSC_TcpServerOpts_enableClientCert() instead.
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts
  * @param cafile CA file (containing PEM certificates)
@@ -94,10 +118,12 @@ PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
 /** Configure a custom validator for client certificates.
  * When this is used, the given validator will be called after default
  * validation of client certificates, so the application can still reject
- * certificates based on custom logic.
+ * or accept certificates based on custom logic.
  *
- * If a CA file is given, this callback will only be called after successful
- * validation against the CA file.
+ * One of PSC_TcpServerOpts_enableClientCert() or
+ * PSC_TcpServerOpts_requireClientCert() must be called for this to have any
+ * effect. If a CA file is given there, this callback will only be called
+ * after successful validation against the CA file.
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts
  * @param receiver the object handling the validation (or 0 for static)

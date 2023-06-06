@@ -35,6 +35,15 @@
 #define BINDCHUNK 8
 #define CONNCHUNK 8
 
+#ifdef WITH_TLS
+enum ccertmode
+{
+    TCCM_NONE,
+    TCCM_ENABLE,
+    TCCM_REQUIRE
+};
+#endif
+
 struct PSC_TcpServerOpts
 {
     char **bindhosts;
@@ -51,7 +60,7 @@ struct PSC_TcpServerOpts
     PSC_Proto proto;
 #ifdef WITH_TLS
     int tls;
-    int tls_client_cert;
+    enum ccertmode tls_client_cert;
 #endif
     int port;
     int numerichosts;
@@ -272,8 +281,13 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 	    goto error;
 	}
 	SSL_CTX_set_min_proto_version(tls_ctx, TLS1_2_VERSION);
-	if (opts->tls_client_cert)
+	if (opts->tls_client_cert != TCCM_NONE)
 	{
+	    int vmode = SSL_VERIFY_PEER;
+	    if (opts->tls_client_cert == TCCM_REQUIRE)
+	    {
+		vmode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+	    }
 	    if (opts->validator)
 	    {
 		if (!have_ctx_idx)
@@ -281,15 +295,9 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 		    ctx_idx = SSL_CTX_get_ex_new_index(0, 0, 0, 0, 0);
 		    have_ctx_idx = 1;
 		}
-		SSL_CTX_set_verify(tls_ctx,
-			SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-			ctxverifycallback);
+		SSL_CTX_set_verify(tls_ctx, vmode, ctxverifycallback);
 	    }
-	    else
-	    {
-		SSL_CTX_set_verify(tls_ctx,
-			SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, 0);
-	    }
+	    else SSL_CTX_set_verify(tls_ctx, vmode, 0);
 	    if (opts->cafile)
 	    {
 		if (!SSL_CTX_load_verify_locations(tls_ctx, opts->cafile, 0))
@@ -421,11 +429,25 @@ SOEXPORT void PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
 #endif
 }
 
+SOEXPORT void PSC_TcpServerOpts_enableClientCert(PSC_TcpServerOpts *self,
+	const char *cafile)
+{
+#ifdef WITH_TLS
+    self->tls_client_cert = TCCM_ENABLE;
+    free(self->cafile);
+    self->cafile = PSC_copystr(cafile);
+#else
+    (void)self;
+    (void)cafile;
+    PSC_Service_panic("This version of libposercore does not support TLS!");
+#endif
+}
+
 SOEXPORT void PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
 	const char *cafile)
 {
 #ifdef WITH_TLS
-    self->tls_client_cert = 1;
+    self->tls_client_cert = TCCM_REQUIRE;
     free(self->cafile);
     self->cafile = PSC_copystr(cafile);
 #else
