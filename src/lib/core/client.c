@@ -285,7 +285,14 @@ static void resolveDone(void *receiver, void *sender, void *args)
     (void)sender;
 
     ResolveJobData *data = args;
-    if (!data->res0) data->callback(data->receiver, 0);
+    if (!data->res0)
+    {
+#ifdef WITH_TLS
+	EVP_PKEY_free(data->key);
+	X509_free(data->cert);
+#endif
+	data->callback(data->receiver, 0);
+    }
 #ifdef WITH_TLS
     else data->callback(data->receiver,
 	    createFromAddrinfo(data->opts, data->res0,
@@ -400,7 +407,12 @@ SOEXPORT PSC_Connection *PSC_Connection_createTcpClient(
     X509 *cert;
     EVP_PKEY *key;
     if (fetchCert(&cert, &key, opts) < 0) return 0;
-    if (!(res0 = resolveAddress(opts))) return 0;
+    if (!(res0 = resolveAddress(opts)))
+    {
+	EVP_PKEY_free(key);
+	X509_free(cert);
+	return 0;
+    }
     return createFromAddrinfo(opts, res0, cert, key);
 #else
     if (!(res0 = resolveAddress(opts))) return 0;
