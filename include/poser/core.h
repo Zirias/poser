@@ -1,6 +1,7 @@
 #ifndef POSER_CORE_H
 #define POSER_CORE_H
 
+#include <poser/core/certinfo.h>
 #include <poser/core/client.h>
 #include <poser/core/connection.h>
 #include <poser/core/daemon.h>

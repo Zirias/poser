@@ -335,6 +335,7 @@ SOEXPORT void PSC_TcpClientOpts_enableTls(PSC_TcpClientOpts *self,
     free(self->tls_keyfile);
     self->tls_keyfile = PSC_copystr(keyfile);
 #else
+    (void)self;
     (void)certfile;
     (void)keyfile;
     PSC_Service_panic("This version of libposercore does not support TLS!");
@@ -346,6 +347,7 @@ SOEXPORT void PSC_TcpClientOpts_disableCertVerify(PSC_TcpClientOpts *self)
 #ifdef WITH_TLS
     self->noverify = 1;
 #else
+    (void)self;
     PSC_Service_panic("This version of libposercore does not support TLS!");
 #endif
 }

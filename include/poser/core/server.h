@@ -6,6 +6,7 @@
  */
 #include <poser/decl.h>
 
+#include <poser/core/certinfo.h>
 #include <poser/core/proto.h>
 #include <stddef.h>
 
@@ -77,6 +78,10 @@ PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
  * Causes the server to request a client certificate from every connecting
  * client. If the client doesn't present a certificate, or the certificate
  * is not signed by a CA present in the given CA file, handshake fails.
+ *
+ * If no CA file is given, any client certificate will fail validation unless
+ * a custom validation function is configured with
+ * PSC_TcpServerOpts_validateClientCert().
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts
  * @param cafile CA file (containing PEM certificates)
@@ -85,6 +90,23 @@ DECLEXPORT void
 PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
 	const char *cafile)
     CMETHOD;
+
+/** Configure a custom validator for client certificates.
+ * When this is used, the given validator will be called after default
+ * validation of client certificates, so the application can still reject
+ * certificates based on custom logic.
+ *
+ * If a CA file is given, this callback will only be called after successful
+ * validation against the CA file.
+ * @memberof PSC_TcpServerOpts
+ * @param self the PSC_TcpServerOpts
+ * @param receiver the object handling the validation (or 0 for static)
+ * @param validator the custom validator function
+ */
+DECLEXPORT void
+PSC_TcpServerOpts_validateClientCert(PSC_TcpServerOpts *self, void *receiver,
+	PSC_CertValidator validator)
+    CMETHOD ATTR_NONNULL((3));
 
 /** Set a specific protocol (IPv4 or IPv6).
  * @memberof PSC_TcpServerOpts

@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 
+#include "certinfo.h"
 #include "connection.h"
 
 #include <poser/core/event.h>
@@ -41,6 +42,8 @@ struct PSC_TcpServerOpts
     char *certfile;
     char *keyfile;
     char *cafile;
+    void *validatorObj;
+    PSC_CertValidator validator;
 #endif
     size_t bh_capa;
     size_t bh_count;
@@ -69,6 +72,18 @@ static char servbuf[NI_MAXSERV];
 static struct sockaddr_in sain;
 static struct sockaddr_in6 sain6;
 
+#ifdef WITH_TLS
+static int have_ctx_idx;
+static int ctx_idx;
+
+enum tlslevel
+{
+    TL_NONE,
+    TL_NORMAL,
+    TL_CLIENTCA
+};
+#endif
+
 enum saddrt
 {
     ST_UNIX,
@@ -92,6 +107,8 @@ struct PSC_Server
     X509 *cert;
     EVP_PKEY *key;
     SSL_CTX *tls_ctx;
+    void *validatorObj;
+    PSC_CertValidator validator;
 #endif
     size_t conncapa;
     size_t connsize;
@@ -100,13 +117,31 @@ struct PSC_Server
     int disabled;
     int numericHosts;
 #ifdef WITH_TLS
-    int tls;
+    enum tlslevel tls;
 #endif
     SockInfo socks[];
 };
 
 static void acceptConnection(void *receiver, void *sender, void *args);
 static void removeConnection(void *receiver, void *sender, void *args);
+
+#ifdef WITH_TLS
+static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
+{
+    PSC_Server *self = SSL_CTX_get_ex_data(SSL_get_SSL_CTX(
+		X509_STORE_CTX_get_ex_data(ctx,
+		    SSL_get_ex_data_X509_STORE_CTX_idx())), ctx_idx);
+
+    if (self->tls == TL_CLIENTCA && !preverify_ok) return 0;
+
+    X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
+    PSC_CertInfo *ci = PSC_CertInfo_create(cert);
+    int ok = self->validator(self->validatorObj, ci);
+    PSC_CertInfo_destroy(ci);
+
+    return ok;
+}
+#endif
 
 static void removeConnection(void *receiver, void *sender, void *args)
 {
@@ -189,12 +224,12 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	.tls_ctx = self->tls_ctx,
 	.tls_cert = self->cert,
 	.tls_key = self->key,
-	.tls_mode = self->tls ? TM_SERVER : TM_NONE,
+	.tls_mode = self->tls != TL_NONE ? TM_SERVER : TM_NONE,
 #endif
 	.createmode = CCM_NORMAL
     };
 #ifdef WITH_TLS
-    if (self->tls)
+    if (self->tls != TL_NONE)
     {
 	X509_up_ref(self->cert);
 	EVP_PKEY_up_ref(self->key);
@@ -239,8 +274,22 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 	SSL_CTX_set_min_proto_version(tls_ctx, TLS1_2_VERSION);
 	if (opts->tls_client_cert)
 	{
-	    SSL_CTX_set_verify(tls_ctx,
-		    SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, 0);
+	    if (opts->validator)
+	    {
+		if (!have_ctx_idx)
+		{
+		    ctx_idx = SSL_CTX_get_ex_new_index(0, 0, 0, 0, 0);
+		    have_ctx_idx = 1;
+		}
+		SSL_CTX_set_verify(tls_ctx,
+			SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+			ctxverifycallback);
+	    }
+	    else
+	    {
+		SSL_CTX_set_verify(tls_ctx,
+			SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, 0);
+	    }
 	    if (opts->cafile)
 	    {
 		if (!SSL_CTX_load_verify_locations(tls_ctx, opts->cafile, 0))
@@ -296,10 +345,13 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->numericHosts = opts->numerichosts;
     self->disabled = 0;
 #ifdef WITH_TLS
-    self->tls = opts->tls;
+    self->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
     self->cert = cert;
     self->key = key;
     self->tls_ctx = tls_ctx;
+    self->validatorObj = opts->validatorObj;
+    self->validator = opts->validator;
+    if (self->validator) SSL_CTX_set_ex_data(tls_ctx, ctx_idx, self);
 #endif
     self->nsocks = nsocks;
     memcpy(self->socks, socks, nsocks * sizeof *socks);
@@ -362,6 +414,7 @@ SOEXPORT void PSC_TcpServerOpts_enableTls(PSC_TcpServerOpts *self,
     free(self->keyfile);
     self->keyfile = PSC_copystr(keyfile);
 #else
+    (void)self;
     (void)certfile;
     (void)keyfile;
     PSC_Service_panic("This version of libposercore does not support TLS!");
@@ -376,7 +429,22 @@ SOEXPORT void PSC_TcpServerOpts_requireClientCert(PSC_TcpServerOpts *self,
     free(self->cafile);
     self->cafile = PSC_copystr(cafile);
 #else
+    (void)self;
     (void)cafile;
+    PSC_Service_panic("This version of libposercore does not support TLS!");
+#endif
+}
+
+SOEXPORT void PSC_TcpServerOpts_validateClientCert(PSC_TcpServerOpts *self,
+	void *receiver, PSC_CertValidator validator)
+{
+#ifdef WITH_TLS
+    self->validatorObj = receiver;
+    self->validator = validator;
+#else
+    (void)self;
+    (void)receiver;
+    (void)validator;
     PSC_Service_panic("This version of libposercore does not support TLS!");
 #endif
 }

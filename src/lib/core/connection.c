@@ -296,7 +296,9 @@ static void dowrite(PSC_Connection *self)
 	self->nnotify = notno;
     }
     for (notno = 0; notno < self->nnotify
-	    && !self->writenotify[notno].id; ++notno);
+	    && !self->writenotify[notno].id; ++notno)
+	;
+
 #ifdef WITH_TLS
     if (self->tls)
     {
