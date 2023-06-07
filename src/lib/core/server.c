@@ -137,6 +137,8 @@ static void removeConnection(void *receiver, void *sender, void *args);
 #ifdef WITH_TLS
 static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
 {
+    if (X509_STORE_CTX_get_error_depth(ctx) > 0) return preverify_ok;
+
     PSC_Server *self = SSL_CTX_get_ex_data(SSL_get_SSL_CTX(
 		X509_STORE_CTX_get_ex_data(ctx,
 		    SSL_get_ex_data_X509_STORE_CTX_idx())), ctx_idx);
