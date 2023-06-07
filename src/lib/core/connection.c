@@ -99,6 +99,7 @@ struct PSC_Connection
     int tls_write_st;
     int tls_shutdown_st;
     int tls_readagain;
+    int tls_noverify;
 #endif
     int blacklisthits;
     uint16_t wrbuflen;
@@ -215,11 +216,20 @@ static void dohandshake(PSC_Connection *self)
 	    long vres;
 	    if ((vres = SSL_get_verify_result(self->tls)) != X509_V_OK)
 	    {
-		PSC_Log_fmt(PSC_L_WARNING,
-			"connection: peer verification failed: %s",
-			X509_verify_cert_error_string(vres));
-		PSC_Connection_close(self, 1);
-		return;
+		if (self->tls_noverify)
+		{
+		    PSC_Log_fmt(PSC_L_INFO,
+			    "connection: peer verification failed: %s "
+			    "[ignored]", X509_verify_cert_error_string(vres));
+		}
+		else
+		{
+		    PSC_Log_fmt(PSC_L_WARNING,
+			    "connection: peer verification failed: %s",
+			    X509_verify_cert_error_string(vres));
+		    PSC_Connection_close(self, 1);
+		    return;
+		}
 	    }
 	    PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
 		    PSC_Connection_remoteAddr(self));
@@ -715,6 +725,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_write_st = 0;
     self->tls_shutdown_st = 0;
     self->tls_readagain = 0;
+    self->tls_noverify = opts->tls_noverify;
 #endif
     self->blacklisthits = opts->blacklisthits;
     self->args.handling = 0;
