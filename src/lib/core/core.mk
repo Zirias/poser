@@ -1,5 +1,6 @@
 posercore_MODULES:=		certinfo \
 				client \
+				config \
 				connection \
 				daemon \
 				event \
@@ -17,6 +18,7 @@ posercore_MODULES:=		certinfo \
 posercore_HEADERS_INSTALL:=	core \
 				core/certinfo \
 				core/client \
+				core/config \
 				core/connection \
 				core/daemon \
 				core/event \
