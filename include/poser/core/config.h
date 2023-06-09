@@ -66,31 +66,32 @@ DECLEXPORT void
 PSC_ConfigSection_destroy(PSC_ConfigSection *self);
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createString(const char *name, const char *defval)
+PSC_ConfigElement_createString(const char *name, const char *defval,
+	int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createInteger(const char *name, long defval)
+PSC_ConfigElement_createInteger(const char *name, long defval, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createFloat(const char *name, double defval)
+PSC_ConfigElement_createFloat(const char *name, double defval, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createBool(const char *name, int defval)
+PSC_ConfigElement_createBool(const char *name)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createSection(PSC_ConfigSection *section)
+PSC_ConfigElement_createSection(PSC_ConfigSection *section, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createList(PSC_ConfigElement *element)
+PSC_ConfigElement_createList(PSC_ConfigElement *element, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
-PSC_ConfigElement_createSectionList(PSC_ConfigSection *section)
+PSC_ConfigElement_createSectionList(PSC_ConfigSection *section, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT void

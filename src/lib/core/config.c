@@ -40,12 +40,12 @@ struct PSC_ConfigElement
 	char *defString;
 	long defInteger;
 	double defFloat;
-	int defBool;
 	PSC_ConfigSection *section;
 	PSC_ConfigElement *element;
     };
     ElemType type;
     int flag;
+    int required;
 };
 
 struct PSC_ConfigParserCtx
@@ -119,76 +119,80 @@ SOEXPORT void PSC_ConfigSection_destroy(PSC_ConfigSection *self)
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createString(const char *name,
-	const char *defval)
+	const char *defval, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->name = PSC_copystr(name);
     self->defString = PSC_copystr(defval);
     self->type = ET_STRING;
+    self->required = required;
     return self;
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createInteger(const char *name,
-	long defval)
+	long defval, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->name = PSC_copystr(name);
     self->defInteger = defval;
     self->type = ET_INTEGER;
+    self->required = required;
     return self;
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createFloat(const char *name,
-	double defval)
+	double defval, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->name = PSC_copystr(name);
     self->defFloat = defval;
     self->type = ET_FLOAT;
+    self->required = required;
     return self;
 }
 
-SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createBool(const char *name,
-	int defval)
+SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createBool(const char *name)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->name = PSC_copystr(name);
-    self->defBool = defval;
     self->type = ET_BOOL;
     return self;
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createSection(
-	PSC_ConfigSection *section)
+	PSC_ConfigSection *section, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->section = section;
     self->type = ET_SECTION;
+    self->required = required;
     return self;
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createList(
-	PSC_ConfigElement *element)
+	PSC_ConfigElement *element, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->element = element;
     self->type = ET_LIST;
+    self->required = required;
     return self;
 }
 
 SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createSectionList(
-	PSC_ConfigSection *section)
+	PSC_ConfigSection *section, int required)
 {
     PSC_ConfigElement *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->section = section;
     self->type = ET_SECTIONLIST;
+    self->required = required;
     return self;
 }
 
@@ -492,6 +496,7 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     for (int j = 0; j < noptflags; ++j)
     {
 	PSC_ConfigElement *e = optflags[j];
+	int req = e->required;
 	if (e->type == ET_LIST) e = e->element;
 	const char *argstr = e->argname;
 	if (!argstr) switch (e->type)
@@ -517,11 +522,11 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
 	    default:
 		;
 	}
-	PSC_StringBuilder_append(s, " [-");
+	PSC_StringBuilder_append(s, req ? " -" : " [-");
 	PSC_StringBuilder_appendChar(s, e->flag);
 	PSC_StringBuilder_appendChar(s, ' ');
 	PSC_StringBuilder_append(s, argstr);
-	PSC_StringBuilder_appendChar(s, ']');
+	if (!req) PSC_StringBuilder_appendChar(s, ']');
     }
 
     free(optflags);
