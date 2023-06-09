@@ -5,7 +5,6 @@
 #include <poser/core/list.h>
 #include <poser/core/service.h>
 #include <poser/core/stringbuilder.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -387,25 +386,36 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	    linepos = indent;
 	}
 	else linepos = 0;
-	size_t toklen = strcspn(cstr, "\t\n\v\f\r ");
+	size_t toklen = strcspn(cstr, " ");
 	size_t needed = toklen;
 	while (linepos + needed <= LINELEN)
 	{
 	    if (linepos > indent) line[linepos++] = ' ';
-	    memcpy(line+linepos, cstr, toklen);
-	    linepos += toklen;
-	    cstr += toklen;
-	    while (isspace(*cstr)) ++cstr;
+	    for (size_t i = 0; i < toklen; ++i)
+	    {
+		line[linepos++] = *cstr == '\t' ? ' ' : *cstr;
+		++cstr;
+	    }
+	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
-	    toklen = strcspn(cstr, "\t\n\v\f\r ");
+	    toklen = strcspn(cstr, " ");
 	    needed = toklen + 1;
 	}
 	if (linepos == indent)
 	{
-	    if (fprintf(out, "%*.*s\n", (int)(toklen+indent),
-		    (int)toklen, cstr) <= 0) goto done;
-	    cstr += toklen;
-	    while (isspace(*cstr)) ++cstr;
+	    char *longtok = PSC_malloc(toklen+indent+1);
+	    if (indent) memset(longtok, ' ', indent);
+	    char *ltp = longtok+indent;
+	    for (size_t i = 0; i < toklen; ++i)
+	    {
+		*ltp++ = *cstr == '\t' ? ' ' : *cstr;
+		++cstr;
+	    }
+	    *ltp = 0;
+	    int ltrc = fprintf(out, "%s\n", longtok);
+	    free(longtok);
+	    if (ltrc <= 0) goto done;
+	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
 	}
 	else
@@ -428,15 +438,66 @@ done:
     return rc;
 }
 
+static const char *argstr(const PSC_ConfigElement *e)
+{
+    const char *result = e->argname;
+    if (!result && e->flag < 0) switch (e->type)
+    {
+	case ET_LIST:
+	    result = e->element->name;
+	    break;
+
+	case ET_SECTION:
+	case ET_SECTIONLIST:
+	    result = e->section->name;
+	    break;
+
+	default:
+	    result = e->name;
+    }
+    if (!result) switch (e->type)
+    {
+	case ET_STRING:
+	    result = "string";
+	    break;
+
+	case ET_INTEGER:
+	    result = "integer";
+	    break;
+
+	case ET_FLOAT:
+	    result = "float";
+	    break;
+
+	case ET_LIST:
+	    result = argstr(e->element);
+	    break;
+
+	case ET_SECTION:
+	case ET_SECTIONLIST:
+	    result = "section";
+	    break;
+
+	default:
+	    ;
+    }
+    if (!result) result = "(null)";
+    return result;
+}
+
 SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
 {
     const char *svname = 0;
     char *boolflags = 0;
     PSC_ConfigElement **optflags = 0;
+    PSC_ConfigElement **reqposargs = 0;
+    PSC_ConfigElement **optposargs = 0;
     PSC_ListIterator *i = 0;
     PSC_StringBuilder *s = 0;
     int nboolflags = 0;
     int noptflags = 0;
+    int nreqposargs = 0;
+    int noptposargs = 0;
 
     for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
     {
@@ -454,7 +515,11 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     if (!svname) PSC_Service_panic(
 	    "Can't print usage without a configured args parser");
 
-    boolflags = PSC_malloc(PSC_List_size(self->root->elements));
+    size_t elemcount = PSC_List_size(self->root->elements);
+    boolflags = PSC_malloc(elemcount);
+    optflags = PSC_malloc(elemcount * sizeof *optflags);
+    reqposargs = PSC_malloc(elemcount * sizeof *reqposargs);
+    optposargs = PSC_malloc(elemcount * sizeof *optposargs);
     for (i = PSC_List_iterator(self->root->elements);
 	    PSC_ListIterator_moveNext(i);)
     {
@@ -463,24 +528,22 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
 	{
 	    boolflags[nboolflags++] = e->flag;
 	}
+	else if (e->type != ET_BOOL)
+	{
+	    if (e->flag > 0)
+	    {
+		optflags[noptflags++] = e;
+	    }
+	    else if (e->flag < 0)
+	    {
+		if (e->required) reqposargs[nreqposargs++] = e;
+		else optposargs[noptposargs++] = e;
+	    }
+	}
     }
     PSC_ListIterator_destroy(i);
     boolflags[nboolflags] = 0;
     if (nboolflags) qsort(boolflags, nboolflags, 1, compareflags);
-
-    optflags = PSC_malloc(PSC_List_size(self->root->elements)
-	    * sizeof *optflags);
-    for (i = PSC_List_iterator(self->root->elements);
-	    PSC_ListIterator_moveNext(i);)
-    {
-	PSC_ConfigElement *e = PSC_ListIterator_current(i);
-	if (e->type != ET_BOOL && e->flag > 0)
-	{
-	    optflags[noptflags++] = e;
-	}
-    }
-    PSC_ListIterator_destroy(i);
-    optflags[noptflags] = 0;
     if (noptflags) qsort(optflags, noptflags,
 	    sizeof *optflags, compareelements);
 
@@ -497,38 +560,46 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     {
 	PSC_ConfigElement *e = optflags[j];
 	int req = e->required;
-	if (e->type == ET_LIST) e = e->element;
-	const char *argstr = e->argname;
-	if (!argstr) switch (e->type)
-	{
-	    case ET_STRING:
-		argstr = "string";
-		break;
-
-	    case ET_INTEGER:
-		argstr = "integer";
-		break;
-
-	    case ET_FLOAT:
-		argstr = "float";
-		break;
-
-	    case ET_SECTION:
-	    case ET_SECTIONLIST:
-		argstr = e->section->name;
-		if (!argstr) argstr = "section";
-		break;
-
-	    default:
-		;
-	}
 	PSC_StringBuilder_append(s, req ? " -" : " [-");
 	PSC_StringBuilder_appendChar(s, e->flag);
-	PSC_StringBuilder_appendChar(s, ' ');
-	PSC_StringBuilder_append(s, argstr);
+	PSC_StringBuilder_appendChar(s, '\t');
+	PSC_StringBuilder_append(s, argstr(e));
+	if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+	{
+	    PSC_StringBuilder_append(s, "\t[-");
+	    PSC_StringBuilder_appendChar(s, e->flag);
+	    PSC_StringBuilder_append(s, "\t...]");
+	}
 	if (!req) PSC_StringBuilder_appendChar(s, ']');
     }
+    for (int j = 0; j < nreqposargs; ++j)
+    {
+	PSC_ConfigElement *e = reqposargs[j];
+	PSC_StringBuilder_appendChar(s, ' ');
+	PSC_StringBuilder_append(s, argstr(e));
+	if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+	{
+	    PSC_StringBuilder_append(s, " [");
+	    PSC_StringBuilder_append(s, argstr(e));
+	    PSC_StringBuilder_append(s, "\t...]");
+	}
+    }
+    for (int j = 0; j < noptposargs; ++j)
+    {
+	PSC_ConfigElement *e = optposargs[j];
+	PSC_StringBuilder_append(s, " [");
+	PSC_StringBuilder_append(s, argstr(e));
+	if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+	{
+	    PSC_StringBuilder_append(s, "\t[");
+	    PSC_StringBuilder_append(s, argstr(e));
+	    PSC_StringBuilder_append(s, "\t...]");
+	}
+	PSC_StringBuilder_appendChar(s, ']');
+    }
 
+    free(optposargs);
+    free(reqposargs);
     free(optflags);
     free(boolflags);
 
