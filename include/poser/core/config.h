@@ -78,6 +78,10 @@ PSC_ConfigElement_createFloat(const char *name, double defval)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT PSC_ConfigElement *
+PSC_ConfigElement_createBool(const char *name, int defval)
+    ATTR_RETNONNULL ATTR_NONNULL((1));
+
+DECLEXPORT PSC_ConfigElement *
 PSC_ConfigElement_createSection(PSC_ConfigSection *section)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
@@ -90,7 +94,8 @@ PSC_ConfigElement_createSectionList(PSC_ConfigSection *section)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
 DECLEXPORT void
-PSC_ConfigElement_setFlag(PSC_ConfigElement *self, int flag)
+PSC_ConfigElement_argInfo(PSC_ConfigElement *self, int flag,
+	const char *argname)
     CMETHOD;
 
 DECLEXPORT void
@@ -155,15 +160,15 @@ DECLEXPORT PSC_Config *
 PSC_ConfigParser_parse(const PSC_ConfigParser *self)
     CMETHOD;
 
-DECLEXPORT void
+DECLEXPORT int
 PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     CMETHOD;
 
-DECLEXPORT void
+DECLEXPORT int
 PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     CMETHOD;
 
-DECLEXPORT void
+DECLEXPORT int
 PSC_ConfigParser_sampleFile(const PSC_ConfigParser *self, FILE *out)
     CMETHOD;
 
