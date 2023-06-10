@@ -405,6 +405,7 @@ static void setoutputwidth(FILE *out)
 	    return;
 	}
     }
+#if defined(TIOCGWINSZ)
     struct winsize sz;
     if (ioctl(outfd, TIOCGWINSZ, &sz) >= 0)
     {
@@ -413,6 +414,16 @@ static void setoutputwidth(FILE *out)
 	else currlinelen = (size_t)sz.ws_col;
 	return;
     }
+#elif defined(TIOCGSIZE)
+    struct ttysize sz;
+    if (ioctl(outfd, TIOCGSIZE, &sz) >= 0)
+    {
+	if (sz.ts_cols < MINLINELEN) currlinelen = MINLINELEN;
+	else if (sz.ts_cols > MAXLINELEN) currlinelen = MAXLINELEN;
+	else currlinelen = (size_t)sz.ts_cols;
+	return;
+    }
+#endif
     currlinelen = DEFLINELEN;
 }
 
