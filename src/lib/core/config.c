@@ -366,6 +366,13 @@ static int compareelements(const void *a, const void *b)
     return (int)(*l)->flag - (int)(*r)->flag;
 }
 
+static int compareelemnames(const void *a, const void *b)
+{
+    const PSC_ConfigElement **l = (void *)a;
+    const PSC_ConfigElement **r = (void *)b;
+    return strcmp((*l)->name, (*r)->name);
+}
+
 static int printformatted(FILE *out, PSC_StringBuilder *str,
 	int indentfirst, int indentrest)
 {
@@ -386,7 +393,17 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	    linepos = indent;
 	}
 	else linepos = 0;
-	size_t toklen = strcspn(cstr, " ");
+	size_t toklen = strcspn(cstr, " \n");
+	if (toklen == 0)
+	{
+	    if (*cstr == '\n')
+	    {
+		if (fprintf(out, "\n") <= 0) goto done;
+		++cstr;
+		continue;
+	    }
+	    else break;
+	}
 	size_t needed = toklen;
 	while (linepos + needed <= LINELEN)
 	{
@@ -398,7 +415,7 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	    }
 	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
-	    toklen = strcspn(cstr, " ");
+	    toklen = strcspn(cstr, " \n");
 	    needed = toklen + 1;
 	}
 	if (linepos == indent)
@@ -418,17 +435,12 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
 	}
-	else
+	else if (linepos > indent)
 	{
 	    line[linepos] = 0;
 	    if (fprintf(out, "%s\n", line) <= 0) goto done;
 	}
 	indent = indentrest;
-    }
-    if (linepos > indent)
-    {
-	line[linepos] = 0;
-	if (fprintf(out, "%s\n", line) <= 0) goto done;
     }
 
     rc = 0;
@@ -467,6 +479,10 @@ static const char *argstr(const PSC_ConfigElement *e)
 
 	case ET_FLOAT:
 	    result = "float";
+	    break;
+
+	case ET_BOOL:
+	    result = e->name;
 	    break;
 
 	case ET_LIST:
@@ -604,6 +620,155 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     free(boolflags);
 
     return printformatted(out, s, 0, 8);
+}
+
+static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
+{
+    if (e->description)
+    {
+	PSC_StringBuilder_append(s, e->description);
+	return;
+    }
+    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "Enable ");
+    else PSC_StringBuilder_append(s, "Set ");
+    PSC_StringBuilder_append(s, argstr(e));
+}
+
+SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
+{
+    const char *svname = 0;
+    PSC_ConfigElement **shortflags = 0;
+    PSC_ConfigElement **longflags = 0;
+    PSC_ConfigElement **reqposargs = 0;
+    PSC_ConfigElement **optposargs = 0;
+    PSC_ListIterator *i = 0;
+    PSC_StringBuilder *s = 0;
+    int nshortflags = 0;
+    int nlongflags = 0;
+    int nreqposargs = 0;
+    int noptposargs = 0;
+    int rc = -1;
+
+    for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
+    {
+	ConcreteParser *p = PSC_ListIterator_current(i);
+	if (p->type == PT_ARGS)
+	{
+	    ArgData *ad = p->parserData;
+	    if (ad->argc > 0) svname = ad->argv[0];
+	    else svname = ad->defname;
+	    break;
+	}
+    }
+    PSC_ListIterator_destroy(i);
+
+    if (!svname) PSC_Service_panic(
+	    "Can't print help without a configured args parser");
+
+    size_t elemcount = PSC_List_size(self->root->elements);
+    shortflags = PSC_malloc(elemcount * sizeof *shortflags);
+    longflags = PSC_malloc(elemcount * sizeof *longflags);
+    reqposargs = PSC_malloc(elemcount * sizeof *reqposargs);
+    optposargs = PSC_malloc(elemcount * sizeof *optposargs);
+    for (i = PSC_List_iterator(self->root->elements);
+	    PSC_ListIterator_moveNext(i);)
+    {
+	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	if (e->flag > 0)
+	{
+	    shortflags[nshortflags++] = e;
+	}
+	else if (e->flag == 0)
+	{
+	    if (e->name) longflags[nlongflags++] = e;
+	}
+	else
+	{
+	    if (e->required) reqposargs[nreqposargs++] = e;
+	    else optposargs[noptposargs++] = e;
+	}
+    }
+    PSC_ListIterator_destroy(i);
+    if (nshortflags) qsort(shortflags, nshortflags,
+	    sizeof *shortflags, compareelements);
+    if (nlongflags) qsort(longflags, nlongflags,
+	    sizeof *longflags, compareelemnames);
+
+    if (PSC_ConfigParser_usage(self, out) < 0) goto done;
+
+    for (int j = 0; j < nshortflags; ++j)
+    {
+	PSC_ConfigElement *e = shortflags[j];
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, "\n-");
+	PSC_StringBuilder_appendChar(s, e->flag);
+	if (e->type != ET_BOOL)
+	{
+	    PSC_StringBuilder_appendChar(s, '\t');
+	    PSC_StringBuilder_append(s, argstr(e));
+	}
+	if (e->name)
+	{
+	    PSC_StringBuilder_append(s, ",\t--");
+	    PSC_StringBuilder_append(s, e->name);
+	    if (e->type != ET_BOOL)
+	    {
+		PSC_StringBuilder_appendChar(s, '=');
+		PSC_StringBuilder_append(s, argstr(e));
+	    }
+	}
+	if (printformatted(out, s, 4, 4) < 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 8, 8) < 0) goto done;
+    }
+
+    for (int j = 0; j < nlongflags; ++j)
+    {
+	PSC_ConfigElement *e = longflags[j];
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, "\n--");
+	PSC_StringBuilder_append(s, e->name);
+	if (e->type != ET_BOOL)
+	{
+	    PSC_StringBuilder_appendChar(s, '=');
+	    PSC_StringBuilder_append(s, argstr(e));
+	}
+	if (printformatted(out, s, 4, 4) < 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 8, 8) < 0) goto done;
+    }
+
+    for (int j = 0; j < nreqposargs; ++j)
+    {
+	PSC_ConfigElement *e = reqposargs[j];
+	const char *str = argstr(e);
+	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 8, 8) < 0) goto done;
+    }
+
+    for (int j = 0; j < noptposargs; ++j)
+    {
+	PSC_ConfigElement *e = optposargs[j];
+	const char *str = argstr(e);
+	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 8, 8) < 0) goto done;
+    }
+
+    rc = 0;
+
+done:
+    free(optposargs);
+    free(reqposargs);
+    free(longflags);
+    free(shortflags);
+
+    return rc;
 }
 
 SOEXPORT void PSC_ConfigParser_destroy(PSC_ConfigParser *self)
