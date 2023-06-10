@@ -1,5 +1,8 @@
+#define _DEFAULT_SOURCE
+
 #include "util.h"
 
+#include <errno.h>
 #include <poser/core/config.h>
 #include <poser/core/hashtable.h>
 #include <poser/core/list.h>
@@ -7,8 +10,15 @@
 #include <poser/core/stringbuilder.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
-#define LINELEN 79
+#define DEFLINELEN 80
+#define MINLINELEN 24
+#define MAXLINELEN 512
+
+static size_t currlinelen = DEFLINELEN;
 
 struct PSC_ConfigSection
 {
@@ -373,10 +383,43 @@ static int compareelemnames(const void *a, const void *b)
     return strcmp((*l)->name, (*r)->name);
 }
 
+static void setoutputwidth(FILE *out)
+{
+    int outfd = fileno(out);
+    if (!isatty(outfd))
+    {
+	currlinelen = DEFLINELEN;
+	return;
+    }
+    const char *envcols = getenv("COLUMNS");
+    if (envcols)
+    {
+	errno = 0;
+	char *endptr = 0;
+	long val = strtol(envcols, &endptr, 10);
+	if (!*endptr && !errno)
+	{
+	    if (val < MINLINELEN) currlinelen = MINLINELEN;
+	    else if (val > MAXLINELEN) currlinelen = MAXLINELEN;
+	    else currlinelen = (size_t)val;
+	    return;
+	}
+    }
+    struct winsize sz;
+    if (ioctl(outfd, TIOCGWINSZ, &sz) >= 0)
+    {
+	if (sz.ws_col < MINLINELEN) currlinelen = MINLINELEN;
+	else if (sz.ws_col > MAXLINELEN) currlinelen = MAXLINELEN;
+	else currlinelen = (size_t)sz.ws_col;
+	return;
+    }
+    currlinelen = DEFLINELEN;
+}
+
 static int printformatted(FILE *out, PSC_StringBuilder *str,
 	int indentfirst, int indentrest)
 {
-    char line[LINELEN+1];
+    char line[MAXLINELEN];
     int linepos = 0;
     int rc = -1;
     
@@ -405,7 +448,7 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	    else break;
 	}
 	size_t needed = toklen;
-	while (linepos + needed <= LINELEN)
+	while (linepos + needed < currlinelen)
 	{
 	    if (linepos > indent) line[linepos++] = ' ';
 	    for (size_t i = 0; i < toklen; ++i)
@@ -414,7 +457,7 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 		++cstr;
 	    }
 	    while (*cstr == ' ') ++cstr;
-	    if (!*cstr) break;
+	    if (!*cstr || *cstr == '\n') break;
 	    toklen = strcspn(cstr, " \n");
 	    needed = toklen + 1;
 	}
@@ -619,6 +662,7 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     free(optflags);
     free(boolflags);
 
+    setoutputwidth(out);
     return printformatted(out, s, 0, 8);
 }
 
