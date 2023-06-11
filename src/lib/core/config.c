@@ -383,6 +383,21 @@ static int compareelemnames(const void *a, const void *b)
     return strcmp((*l)->name, (*r)->name);
 }
 
+static int compareanyflag(const void *a, const void *b)
+{
+    char lf[2] = {0};
+    char rf[2] = {0};
+    const char *lfstr;
+    const char *rfstr;
+    const PSC_ConfigElement **l = (void *)a;
+    if ((*lf = (*l)->flag) > 0) lfstr = lf;
+    else lfstr = (*l)->name;
+    const PSC_ConfigElement **r = (void *)b;
+    if ((*rf = (*r)->flag) > 0) rfstr = rf;
+    else rfstr = (*r)->name;
+    return strcmp(lfstr, rfstr);
+}
+
 static void setoutputwidth(FILE *out)
 {
     int outfd = fileno(out);
@@ -428,7 +443,7 @@ static void setoutputwidth(FILE *out)
 }
 
 static int printformatted(FILE *out, PSC_StringBuilder *str,
-	int indentfirst, int indentrest)
+	int indentfirst, int indentrest, int compact)
 {
     char line[MAXLINELEN];
     int linepos = 0;
@@ -452,7 +467,7 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	{
 	    if (*cstr == '\n')
 	    {
-		if (fprintf(out, "\n") <= 0) goto done;
+		if (!compact && fprintf(out, "\n") <= 0) goto done;
 		++cstr;
 		continue;
 	    }
@@ -545,7 +560,8 @@ static const char *argstr(const PSC_ConfigElement *e)
 
 	case ET_SECTION:
 	case ET_SECTIONLIST:
-	    result = "section";
+	    result = e->section->name;
+	    if (!result) result = "section";
 	    break;
 
 	default:
@@ -613,8 +629,8 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     }
     PSC_ListIterator_destroy(i);
     boolflags[nboolflags] = 0;
-    if (nboolflags) qsort(boolflags, nboolflags, 1, compareflags);
-    if (noptflags) qsort(optflags, noptflags,
+    if (nboolflags > 1) qsort(boolflags, nboolflags, 1, compareflags);
+    if (noptflags > 1) qsort(optflags, noptflags,
 	    sizeof *optflags, compareelements);
 
     s = PSC_StringBuilder_create();
@@ -674,7 +690,7 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     free(boolflags);
 
     setoutputwidth(out);
-    return printformatted(out, s, 0, 8);
+    return printformatted(out, s, 0, 8, 0);
 }
 
 static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
@@ -687,6 +703,164 @@ static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
     if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "Enable ");
     else PSC_StringBuilder_append(s, "Set ");
     PSC_StringBuilder_append(s, argstr(e));
+}
+
+static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
+{
+    PSC_ConfigElement **reqposargs = 0;
+    PSC_ConfigElement **optposargs = 0;
+    PSC_ConfigElement **flags = 0;
+    PSC_ListIterator *i = 0;
+    PSC_StringBuilder *s = 0;
+    int nreqposargs = 0;
+    int noptposargs = 0;
+    int nflags = 0;
+    int nreqflags = 0;
+    int rc = -1;
+
+    size_t elemcount = PSC_List_size(sect->elements);
+    reqposargs = PSC_malloc(elemcount * sizeof *reqposargs);
+    optposargs = PSC_malloc(elemcount * sizeof *optposargs);
+    flags  = PSC_malloc(elemcount * sizeof *flags);
+
+    for (i = PSC_List_iterator(sect->elements);
+	    PSC_ListIterator_moveNext(i);)
+    {
+	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST) continue;
+	if (e->flag >= 0)
+	{
+	    flags[nflags++] = e;
+	    if (e->required) ++nreqflags;
+	}
+	else if (e->name)
+	{
+	    if (e->required) reqposargs[nreqposargs++] = e;
+	    else optposargs[noptposargs++] = e;
+	}
+    }
+    PSC_ListIterator_destroy(i);
+    if (nflags > 1) qsort(flags, nflags, sizeof *flags, compareanyflag);
+
+    if (!(nreqposargs + noptposargs + nflags)) goto success;
+
+    s = PSC_StringBuilder_create();
+    PSC_StringBuilder_append(s, "\nFormat: ");
+    int fmtpos = 0;
+    for (int j = 0; j < nreqposargs; ++j)
+    {
+	if (fmtpos) PSC_StringBuilder_appendChar(s, ':');
+	const PSC_ConfigElement *e = reqposargs[j];
+	PSC_StringBuilder_append(s, argstr(e));
+	++fmtpos;
+    }
+    if (noptposargs > 1 && nflags)
+    {
+	for (int j = 0; j < noptposargs; ++j)
+	{
+	    if (fmtpos) PSC_StringBuilder_appendChar(s, ':');
+	    const PSC_ConfigElement *e = optposargs[j];
+	    PSC_StringBuilder_appendChar(s, '[');
+	    PSC_StringBuilder_append(s, argstr(e));
+	    PSC_StringBuilder_appendChar(s, ']');
+	    ++fmtpos;
+	}
+    }
+    else if (noptposargs > 1 && !nflags)
+    {
+	for (int j = 0; j < noptposargs; ++j)
+	{
+	    PSC_StringBuilder_appendChar(s, '[');
+	    if (fmtpos) PSC_StringBuilder_appendChar(s, ':');
+	    const PSC_ConfigElement *e = optposargs[j];
+	    PSC_StringBuilder_append(s, argstr(e));
+	    ++fmtpos;
+	}
+	for (int j = 0; j < noptposargs; ++j)
+	{
+	    PSC_StringBuilder_appendChar(s, ']');
+	}
+    }
+    else if (noptposargs == 1)
+    {
+	PSC_StringBuilder_appendChar(s, '[');
+	if (fmtpos) PSC_StringBuilder_appendChar(s, ':');
+	PSC_StringBuilder_append(s, argstr(*optposargs));
+	PSC_StringBuilder_appendChar(s, ']');
+	++fmtpos;
+    }
+    if (nflags)
+    {
+	if (nreqflags)
+	{
+	    PSC_StringBuilder_append(s, fmtpos ? ":k=v" : "k=v");
+	    if (nreqflags > 1) PSC_StringBuilder_append(s, ":...");
+	    ++fmtpos;
+	}
+	if (nreqflags < nflags)
+	{
+	    PSC_StringBuilder_append(s, fmtpos ? "[:k=v" : "[k=v");
+	    if (nflags - nreqflags > 1) PSC_StringBuilder_append(s, "[:...]");
+	    PSC_StringBuilder_appendChar(s, ']');
+	}
+    }
+
+    if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+
+    for (int j = 0; j < nreqposargs; ++j)
+    {
+	PSC_ConfigElement *e = reqposargs[j];
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, argstr(e));
+	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 10, 10, 1) < 0) goto done;
+    }
+
+    for (int j = 0; j < noptposargs; ++j)
+    {
+	PSC_ConfigElement *e = optposargs[j];
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, argstr(e));
+	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	if (printformatted(out, s, 10, 10, 1) < 0) goto done;
+    }
+
+    if (nflags)
+    {
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s,
+		"k=v: key-value pair, any of the following:");
+	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	for (int j = 0; j < nflags; ++j)
+	{
+	    PSC_ConfigElement *e = flags[j];
+	    s = PSC_StringBuilder_create();
+	    if (e->flag > 0) PSC_StringBuilder_appendChar(s, e->flag);
+	    else PSC_StringBuilder_append(s, e->name);
+	    PSC_StringBuilder_appendChar(s, '=');
+	    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "[0|1]");
+	    else PSC_StringBuilder_append(s, argstr(e));
+	    if (e->required) PSC_StringBuilder_append(s, " {required}");
+	    if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	    s = PSC_StringBuilder_create();
+	    setdescstr(s, e);
+	    if (printformatted(out, s, 12, 12, 1) < 0) goto done;
+	}
+    }
+
+success:
+    rc = 0;
+
+done:
+    free(flags);
+    free(optposargs);
+    free(reqposargs);
+
+    return rc;
 }
 
 SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
@@ -702,6 +876,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     int nlongflags = 0;
     int nreqposargs = 0;
     int noptposargs = 0;
+    int havesubsect = 0;
     int rc = -1;
 
     for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
@@ -744,9 +919,9 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	}
     }
     PSC_ListIterator_destroy(i);
-    if (nshortflags) qsort(shortflags, nshortflags,
+    if (nshortflags > 1) qsort(shortflags, nshortflags,
 	    sizeof *shortflags, compareelements);
-    if (nlongflags) qsort(longflags, nlongflags,
+    if (nlongflags > 1) qsort(longflags, nlongflags,
 	    sizeof *longflags, compareelemnames);
 
     if (PSC_ConfigParser_usage(self, out) < 0) goto done;
@@ -764,7 +939,11 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	}
 	if (e->name)
 	{
-	    PSC_StringBuilder_append(s, ",\t--");
+	    PSC_StringBuilder_append(s, ", --");
+	    if (e->type == ET_BOOL)
+	    {
+		PSC_StringBuilder_append(s, "[no-]");
+	    }
 	    PSC_StringBuilder_append(s, e->name);
 	    if (e->type != ET_BOOL)
 	    {
@@ -772,10 +951,15 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		PSC_StringBuilder_append(s, argstr(e));
 	    }
 	}
-	if (printformatted(out, s, 4, 4) < 0) goto done;
+	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8) < 0) goto done;
+	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
+	{
+	    ++havesubsect;
+	    if (subsectionhelp(e->section, out) < 0) goto done;
+	}
     }
 
     for (int j = 0; j < nlongflags; ++j)
@@ -783,16 +967,25 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	PSC_ConfigElement *e = longflags[j];
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, "\n--");
+	if (e->type == ET_BOOL)
+	{
+	    PSC_StringBuilder_append(s, "[no-]");
+	}
 	PSC_StringBuilder_append(s, e->name);
 	if (e->type != ET_BOOL)
 	{
 	    PSC_StringBuilder_appendChar(s, '=');
 	    PSC_StringBuilder_append(s, argstr(e));
 	}
-	if (printformatted(out, s, 4, 4) < 0) goto done;
+	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8) < 0) goto done;
+	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
+	{
+	    ++havesubsect;
+	    if (subsectionhelp(e->section, out) < 0) goto done;
+	}
     }
 
     for (int j = 0; j < nreqposargs; ++j)
@@ -802,7 +995,12 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8) < 0) goto done;
+	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
+	{
+	    ++havesubsect;
+	    if (subsectionhelp(e->section, out) < 0) goto done;
+	}
     }
 
     for (int j = 0; j < noptposargs; ++j)
@@ -812,7 +1010,23 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8) < 0) goto done;
+	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
+	{
+	    ++havesubsect;
+	    if (subsectionhelp(e->section, out) < 0) goto done;
+	}
+    }
+
+    if (havesubsect)
+    {
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, "\nFor sub-section arguments delimited by "
+		"a colon (:), any colons contained in values must be escaped "
+		"with a backslash (\\). Alternatively, values may be quoted "
+		"in a pair of brackets (between `[' and `]') if they don't "
+		"contain those themselves.");
+	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
     }
 
     rc = 0;
