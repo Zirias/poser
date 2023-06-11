@@ -519,6 +519,20 @@ done:
     return rc;
 }
 
+static const char *namestr(const PSC_ConfigElement *e)
+{
+    switch (e->type)
+    {
+	case ET_LIST:
+	    return e->element->name;
+	case ET_SECTION:
+	case ET_SECTIONLIST:
+	    return e->section->name;
+	default:
+	    return e->name;
+    }
+}
+
 static const char *argstr(const PSC_ConfigElement *e)
 {
     const char *result = e->argname;
@@ -733,7 +747,7 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	    flags[nflags++] = e;
 	    if (e->required) ++nreqflags;
 	}
-	else if (e->name)
+	else if (namestr(e))
 	{
 	    if (e->required) reqposargs[nreqposargs++] = e;
 	    else optposargs[noptposargs++] = e;
@@ -840,7 +854,7 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	    PSC_ConfigElement *e = flags[j];
 	    s = PSC_StringBuilder_create();
 	    if (e->flag > 0) PSC_StringBuilder_appendChar(s, e->flag);
-	    else PSC_StringBuilder_append(s, e->name);
+	    else PSC_StringBuilder_append(s, namestr(e));
 	    PSC_StringBuilder_appendChar(s, '=');
 	    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "[0|1]");
 	    else PSC_StringBuilder_append(s, argstr(e));
@@ -910,7 +924,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	}
 	else if (e->flag == 0)
 	{
-	    if (e->name) longflags[nlongflags++] = e;
+	    if (namestr(e)) longflags[nlongflags++] = e;
 	}
 	else
 	{
@@ -937,14 +951,14 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_appendChar(s, '\t');
 	    PSC_StringBuilder_append(s, argstr(e));
 	}
-	if (e->name)
+	if (namestr(e))
 	{
 	    PSC_StringBuilder_append(s, ", --");
 	    if (e->type == ET_BOOL)
 	    {
 		PSC_StringBuilder_append(s, "[no-]");
 	    }
-	    PSC_StringBuilder_append(s, e->name);
+	    PSC_StringBuilder_append(s, namestr(e));
 	    if (e->type != ET_BOOL)
 	    {
 		PSC_StringBuilder_appendChar(s, '=');
@@ -971,7 +985,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	{
 	    PSC_StringBuilder_append(s, "[no-]");
 	}
-	PSC_StringBuilder_append(s, e->name);
+	PSC_StringBuilder_append(s, namestr(e));
 	if (e->type != ET_BOOL)
 	{
 	    PSC_StringBuilder_appendChar(s, '=');
