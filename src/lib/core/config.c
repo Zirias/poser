@@ -29,8 +29,6 @@ static unsigned short currlines = 0;
 
 static pid_t pagerpid;
 static volatile sig_atomic_t pagerexited;
-static volatile int pagerrc;
-static volatile int pagersig;
 
 struct PSC_ConfigSection
 {
@@ -119,16 +117,8 @@ static void handlepagersig(int sig)
     int st;
     if (waitpid(pagerpid, &st, WNOHANG) == pagerpid)
     {
-	if (WIFEXITED(st))
+	if (WIFEXITED(st) || WIFSIGNALED(st))
 	{
-	    pagerrc = WEXITSTATUS(st);
-	    pagersig = 0;
-	    pagerexited = 1;
-	}
-	else if (WIFSIGNALED(st))
-	{
-	    pagerrc = 0;
-	    pagersig = WTERMSIG(st);
 	    pagerexited = 1;
 	}
     }
@@ -602,6 +592,8 @@ static int printlines(FILE *out, PSC_List *lines, int autopage)
 	memset(&handler, 0, sizeof handler);
 	sigemptyset(&handler.sa_mask);
 	handler.sa_handler = handlepagersig;
+	pagerexited = 0;
+	pagerpid = -1;
 	if (sigaction(SIGCHLD, &handler, &ohandler) >= 0)
 	{
 	    if ((pagerpid = fork()) >= 0)
@@ -677,9 +669,20 @@ pgdone:
 	}
 	else
 	{
-	    PSC_List_destroy(lines);
-	    waitpid(pagerpid, 0, 0);
-	    return 0;
+	    int pgrc;
+	    waitpid(pagerpid, &pgrc, 0);
+	    if ((WIFSIGNALED(pgrc)
+			&& WTERMSIG(pgrc) != SIGINT
+			&& WTERMSIG(pgrc) != SIGTERM)
+		    || (WIFEXITED(pgrc) && WEXITSTATUS(pgrc) != 0))
+	    {
+		fprintf(stderr, "Error piping to PAGER: %s\n", pager);
+	    }
+	    else
+	    {
+		PSC_List_destroy(lines);
+		return 0;
+	    }
 	}
     }
 
