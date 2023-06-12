@@ -605,6 +605,13 @@ static int printlines(FILE *out, PSC_List *lines, int autopage)
 		    fcntl(errpfd[1], F_SETFD, FD_CLOEXEC);
 		    dup2(pfd[0], STDIN_FILENO);
 		    close(pfd[0]);
+		    int ttyfd = open("/dev/tty", O_WRONLY|O_NONBLOCK);
+		    if (ttyfd >= 0)
+		    {
+			dup2(ttyfd, STDOUT_FILENO);
+			dup2(ttyfd, STDERR_FILENO);
+			close(ttyfd);
+		    }
 		    PSC_List *pagercmd = PSC_List_fromString(pager, " ");
 		    if (pagercmd)
 		    {
