@@ -3,22 +3,34 @@
 #include "util.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poser/core/config.h>
 #include <poser/core/hashtable.h>
 #include <poser/core/list.h>
 #include <poser/core/service.h>
 #include <poser/core/stringbuilder.h>
+#include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
 #define DEFLINELEN 80
 #define MINLINELEN 24
 #define MAXLINELEN 512
+#define MAXLINES 512
 
 static size_t currlinelen = DEFLINELEN;
+static unsigned short currlines = 0;
+
+static pid_t pagerpid;
+static volatile sig_atomic_t pagerexited;
+static volatile int pagerrc;
+static volatile int pagersig;
 
 struct PSC_ConfigSection
 {
@@ -93,12 +105,34 @@ struct PSC_ConfigParser
 {
     const PSC_ConfigSection *root;
     PSC_List *parsers;
+    int autopage;
 };
 
 struct PSC_Config
 {
     PSC_HashTable *values;
 };
+
+static void handlepagersig(int sig)
+{
+    if (sig != SIGCHLD) return;
+    int st;
+    if (waitpid(pagerpid, &st, WNOHANG) == pagerpid)
+    {
+	if (WIFEXITED(st))
+	{
+	    pagerrc = WEXITSTATUS(st);
+	    pagersig = 0;
+	    pagerexited = 1;
+	}
+	else if (WIFSIGNALED(st))
+	{
+	    pagerrc = 0;
+	    pagersig = WTERMSIG(st);
+	    pagerexited = 1;
+	}
+    }
+}
 
 SOEXPORT PSC_ConfigSection *PSC_ConfigSection_create(const char *name)
 {
@@ -333,6 +367,7 @@ SOEXPORT PSC_ConfigParser *PSC_ConfigParser_create(
     PSC_ConfigParser *self = PSC_malloc(sizeof *self);
     self->root = root;
     self->parsers = PSC_List_create();
+    self->autopage = 0;
     return self;
 }
 
@@ -360,6 +395,11 @@ SOEXPORT void PSC_ConfigParser_addArgs(PSC_ConfigParser *self,
     p->parserData = ad;
     p->type = PT_ARGS;
     PSC_List_append(self->parsers, p, deleteconcreteparser);
+}
+
+SOEXPORT void PSC_ConfigParser_autoPage(PSC_ConfigParser *self)
+{
+    self->autopage = 1;
 }
 
 static int compareflags(const void *a, const void *b)
@@ -398,13 +438,25 @@ static int compareanyflag(const void *a, const void *b)
     return strcmp(lfstr, rfstr);
 }
 
-static void setoutputwidth(FILE *out)
+static void setoutputdims(FILE *out)
 {
     int outfd = fileno(out);
     if (!isatty(outfd))
     {
 	currlinelen = DEFLINELEN;
+	currlines = 0;
 	return;
+    }
+    const char *envlines = getenv("LINES");
+    if (envlines)
+    {
+	errno = 0;
+	char *endptr = 0;
+	long val = strtol(envlines, &endptr, 10);
+	if (!*endptr && !errno)
+	{
+	    currlines = val > MAXLINES ? MAXLINES : (unsigned short)val;
+	}
     }
     const char *envcols = getenv("COLUMNS");
     if (envcols)
@@ -427,6 +479,8 @@ static void setoutputwidth(FILE *out)
 	if (sz.ws_col < MINLINELEN) currlinelen = MINLINELEN;
 	else if (sz.ws_col > MAXLINELEN) currlinelen = MAXLINELEN;
 	else currlinelen = (size_t)sz.ws_col;
+	if (!currlines) currlines = sz.ws_row > MAXLINES
+	    ? MAXLINES : (unsigned short) sz.ws_row;
 	return;
     }
 #elif defined(TIOCGSIZE)
@@ -436,23 +490,25 @@ static void setoutputwidth(FILE *out)
 	if (sz.ts_cols < MINLINELEN) currlinelen = MINLINELEN;
 	else if (sz.ts_cols > MAXLINELEN) currlinelen = MAXLINELEN;
 	else currlinelen = (size_t)sz.ts_cols;
+	if (!currlines) currlines = sz.ts_lines > MAXLINES
+	    ? MAXLINES : (unsigned short) ts_lines;
 	return;
     }
 #endif
     currlinelen = DEFLINELEN;
+    currlines = 0;
 }
 
-static int printformatted(FILE *out, PSC_StringBuilder *str,
+static void formatlines(PSC_List *lines, PSC_StringBuilder *str,
 	int indentfirst, int indentrest, int compact)
 {
     char line[MAXLINELEN];
     int linepos = 0;
-    int rc = -1;
     
     const char *cstr = PSC_StringBuilder_str(str);
     int indent = indentfirst;
 
-    if (!*cstr) goto done;
+    if (!*cstr) return;
 
     for (;;)
     {
@@ -467,7 +523,7 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 	{
 	    if (*cstr == '\n')
 	    {
-		if (!compact && fprintf(out, "\n") <= 0) goto done;
+		if (!compact) PSC_List_append(lines, "", 0);
 		++cstr;
 		continue;
 	    }
@@ -498,24 +554,145 @@ static int printformatted(FILE *out, PSC_StringBuilder *str,
 		++cstr;
 	    }
 	    *ltp = 0;
-	    int ltrc = fprintf(out, "%s\n", longtok);
-	    free(longtok);
-	    if (ltrc <= 0) goto done;
+	    PSC_List_append(lines, longtok, free);
 	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
 	}
 	else if (linepos > indent)
 	{
 	    line[linepos] = 0;
-	    if (fprintf(out, "%s\n", line) <= 0) goto done;
+	    PSC_List_append(lines, PSC_copystr(line), free);
 	}
 	indent = indentrest;
     }
 
+    PSC_StringBuilder_destroy(str);
+}
+
+static int printlines(FILE *out, PSC_List *lines, int autopage)
+{
+    int rc = -1;
+    const char *pager = 0;
+
+    if (autopage && isatty(fileno(out))
+	    && PSC_List_size(lines) + 2 >= currlines)
+    {
+	pager = getenv("PAGER");
+    }
+
+    if (pager && *pager)
+    {
+	int pagerfailed = 0;
+	int pfd[2];
+	if (pipe(pfd) < 0)
+	{
+	    pagerfailed = 1;
+	    goto pgdone;
+	}
+	int errpfd[2];
+	if (pipe(errpfd) < 0)
+	{
+	    pagerfailed = 1;
+	    close(pfd[0]);
+	    close(pfd[1]);
+	    goto pgdone;
+	}
+	struct sigaction handler;
+	struct sigaction ohandler;
+	memset(&handler, 0, sizeof handler);
+	sigemptyset(&handler.sa_mask);
+	handler.sa_handler = handlepagersig;
+	if (sigaction(SIGCHLD, &handler, &ohandler) >= 0)
+	{
+	    if ((pagerpid = fork()) >= 0)
+	    {
+		if (pagerpid == 0)
+		{
+		    close(pfd[1]);
+		    close(errpfd[0]);
+		    fcntl(errpfd[1], F_SETFD, FD_CLOEXEC);
+		    dup2(pfd[0], STDIN_FILENO);
+		    close(pfd[0]);
+		    PSC_List *pagercmd = PSC_List_fromString(pager, " ");
+		    if (pagercmd)
+		    {
+			size_t pagerargc = PSC_List_size(pagercmd);
+			char **cmd = PSC_malloc((pagerargc+1) * sizeof *cmd);
+			cmd[pagerargc] = 0;
+			for (size_t i = 0; i < pagerargc; ++i)
+			{
+			    cmd[i] = PSC_List_at(pagercmd, i);
+			}
+			execvp(cmd[0], cmd);
+		    }
+		    FILE *errout = fdopen(errpfd[1], "a");
+		    if (errout) fputs("\n", errout);
+		    exit(EXIT_FAILURE);
+		}
+		close(pfd[0]);
+		close(errpfd[1]);
+		FILE *pgin = fdopen(errpfd[0], "r");
+		char errmsg[2];
+		if (pgin && !fgets(errmsg, 2, pgin))
+		{
+		    FILE *pgout = fdopen(pfd[1], "a");
+		    if (pgout)
+		    {
+			fcntl(pfd[1], F_SETFL,
+				fcntl(pfd[1], F_GETFL, 0) | O_NONBLOCK);
+			PSC_ListIterator *i = PSC_List_iterator(lines);
+			while (!pagerfailed && PSC_ListIterator_moveNext(i))
+			{
+			    const char *line = PSC_ListIterator_current(i);
+			    while (!pagerfailed)
+			    {
+				if (pagerexited)
+				{
+				    pagerfailed = 1;
+				    break;
+				}
+				if (fprintf(pgout, "%s\n", line) > 0) break;
+				if (errno != EAGAIN && errno != EINTR)
+				{
+				    pagerfailed = 1;
+				}
+			    }
+			}
+			PSC_ListIterator_destroy(i);
+			fclose(pgout);
+		    }
+		}
+		else pagerfailed = 1;
+		fclose(pgin);
+	    }
+	    else pagerfailed = 1;
+	    sigaction(SIGCHLD, &ohandler, 0);
+	}
+	else pagerfailed = 1;
+
+pgdone:
+	if (pagerfailed)
+	{
+	    fprintf(stderr, "Error piping to PAGER: %s\n", pager);
+	}
+	else
+	{
+	    PSC_List_destroy(lines);
+	    waitpid(pagerpid, 0, 0);
+	    return 0;
+	}
+    }
+
+    PSC_ListIterator *i = PSC_List_iterator(lines);
+    while (PSC_ListIterator_moveNext(i))
+    {
+	const char *line = PSC_ListIterator_current(i);
+	if (fprintf(out, "%s\n", line) <= 0) goto done;
+    }
     rc = 0;
 done:
-
-    PSC_StringBuilder_destroy(str);
+    PSC_ListIterator_destroy(i);
+    PSC_List_destroy(lines);
     return rc;
 }
 
@@ -585,7 +762,7 @@ static const char *argstr(const PSC_ConfigElement *e)
     return result;
 }
 
-SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
+static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 {
     const char *svname = 0;
     char *boolflags = 0;
@@ -703,8 +880,15 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
     free(optflags);
     free(boolflags);
 
-    setoutputwidth(out);
-    return printformatted(out, s, 0, 8, 0);
+    setoutputdims(out);
+    PSC_List *lines = PSC_List_create();
+    formatlines(lines, s, 0, 8, 0);
+    return lines;
+}
+
+SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
+{
+    return printlines(out, usagelines(self, out), 0);
 }
 
 static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
@@ -719,7 +903,7 @@ static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
     PSC_StringBuilder_append(s, argstr(e));
 }
 
-static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
+static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 {
     PSC_ConfigElement **reqposargs = 0;
     PSC_ConfigElement **optposargs = 0;
@@ -730,7 +914,6 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
     int noptposargs = 0;
     int nflags = 0;
     int nreqflags = 0;
-    int rc = -1;
 
     size_t elemcount = PSC_List_size(sect->elements);
     reqposargs = PSC_malloc(elemcount * sizeof *reqposargs);
@@ -756,7 +939,7 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
     PSC_ListIterator_destroy(i);
     if (nflags > 1) qsort(flags, nflags, sizeof *flags, compareanyflag);
 
-    if (!(nreqposargs + noptposargs + nflags)) goto success;
+    if (!(nreqposargs + noptposargs + nflags)) goto done;
 
     s = PSC_StringBuilder_create();
     PSC_StringBuilder_append(s, "\nFormat: ");
@@ -818,18 +1001,17 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	    PSC_StringBuilder_appendChar(s, ']');
 	}
     }
-
-    if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+    formatlines(lines, s, 6, 6, 0);
 
     for (int j = 0; j < nreqposargs; ++j)
     {
 	PSC_ConfigElement *e = reqposargs[j];
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, argstr(e));
-	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	formatlines(lines, s, 6, 6, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 10, 10, 1) < 0) goto done;
+	formatlines(lines, s, 10, 10, 1);
     }
 
     for (int j = 0; j < noptposargs; ++j)
@@ -837,10 +1019,10 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	PSC_ConfigElement *e = optposargs[j];
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, argstr(e));
-	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	formatlines(lines, s, 6, 6, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 10, 10, 1) < 0) goto done;
+	formatlines(lines, s, 10, 10, 1);
     }
 
     if (nflags)
@@ -848,7 +1030,7 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s,
 		"k=v: key-value pair, any of the following:");
-	if (printformatted(out, s, 6, 6, 0) < 0) goto done;
+	formatlines(lines, s, 6, 6, 0);
 	for (int j = 0; j < nflags; ++j)
 	{
 	    PSC_ConfigElement *e = flags[j];
@@ -859,22 +1041,17 @@ static int subsectionhelp(const PSC_ConfigSection *sect, FILE *out)
 	    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "[0|1]");
 	    else PSC_StringBuilder_append(s, argstr(e));
 	    if (e->required) PSC_StringBuilder_append(s, " {required}");
-	    if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	    formatlines(lines, s, 8, 8, 0);
 	    s = PSC_StringBuilder_create();
 	    setdescstr(s, e);
-	    if (printformatted(out, s, 12, 12, 1) < 0) goto done;
+	    formatlines(lines, s, 12, 12, 1);
 	}
     }
-
-success:
-    rc = 0;
 
 done:
     free(flags);
     free(optposargs);
     free(reqposargs);
-
-    return rc;
 }
 
 SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
@@ -884,6 +1061,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     PSC_ConfigElement **longflags = 0;
     PSC_ConfigElement **reqposargs = 0;
     PSC_ConfigElement **optposargs = 0;
+    PSC_List *lines = 0;
     PSC_ListIterator *i = 0;
     PSC_StringBuilder *s = 0;
     int nshortflags = 0;
@@ -891,7 +1069,6 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     int nreqposargs = 0;
     int noptposargs = 0;
     int havesubsect = 0;
-    int rc = -1;
 
     for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
     {
@@ -938,7 +1115,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     if (nlongflags > 1) qsort(longflags, nlongflags,
 	    sizeof *longflags, compareelemnames);
 
-    if (PSC_ConfigParser_usage(self, out) < 0) goto done;
+    lines = usagelines(self, out);
 
     for (int j = 0; j < nshortflags; ++j)
     {
@@ -965,14 +1142,14 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		PSC_StringBuilder_append(s, argstr(e));
 	    }
 	}
-	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
+	formatlines(lines, s, 4, 4, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	formatlines(lines, s, 8, 8, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
-	    if (subsectionhelp(e->section, out) < 0) goto done;
+	    subsectionhelp(e->section, lines);
 	}
     }
 
@@ -991,44 +1168,48 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_appendChar(s, '=');
 	    PSC_StringBuilder_append(s, argstr(e));
 	}
-	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
+	formatlines(lines, s, 4, 4, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	formatlines(lines, s, 8, 8, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
-	    if (subsectionhelp(e->section, out) < 0) goto done;
+	    subsectionhelp(e->section, lines);
 	}
     }
 
     for (int j = 0; j < nreqposargs; ++j)
     {
 	PSC_ConfigElement *e = reqposargs[j];
-	const char *str = argstr(e);
-	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_appendChar(s, '\n');
+	PSC_StringBuilder_append(s, argstr(e));
+	formatlines(lines, s, 4, 4, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	formatlines(lines, s, 8, 8, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
-	    if (subsectionhelp(e->section, out) < 0) goto done;
+	    subsectionhelp(e->section, lines);
 	}
     }
 
     for (int j = 0; j < noptposargs; ++j)
     {
 	PSC_ConfigElement *e = optposargs[j];
-	const char *str = argstr(e);
-	if (fprintf(out, "\n%*s\n", (int)strlen(str)+4, str) <= 0) goto done;
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_appendChar(s, '\n');
+	PSC_StringBuilder_append(s, argstr(e));
+	formatlines(lines, s, 4, 4, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	if (printformatted(out, s, 8, 8, 0) < 0) goto done;
+	formatlines(lines, s, 8, 8, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
-	    if (subsectionhelp(e->section, out) < 0) goto done;
+	    subsectionhelp(e->section, lines);
 	}
     }
 
@@ -1040,18 +1221,15 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		"with a backslash (\\). Alternatively, values may be quoted "
 		"in a pair of brackets (between `[' and `]') if they don't "
 		"contain those themselves.");
-	if (printformatted(out, s, 4, 4, 0) < 0) goto done;
+	formatlines(lines, s, 4, 4, 0);
     }
 
-    rc = 0;
-
-done:
     free(optposargs);
     free(reqposargs);
     free(longflags);
     free(shortflags);
 
-    return rc;
+    return printlines(out, lines, self->autopage);
 }
 
 SOEXPORT void PSC_ConfigParser_destroy(PSC_ConfigParser *self)

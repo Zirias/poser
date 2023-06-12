@@ -38,6 +38,11 @@ C_CLASS_DECL(PSC_Config);
  */
 typedef void (*PSC_ConfigElementCallback)(PSC_ConfigParserCtx *ctx);
 
+/** Callback for a custom immediate action when a config element is found.
+ * @param data some custom data
+ */
+typedef void (*PSC_ConfigAction)(void *data);
+
 /** PSC_ConfigSection default constructor.
  * Creates a new PSC_ConfigSection
  * @memberof PSC_ConfigSection
@@ -100,6 +105,19 @@ PSC_ConfigElement_argInfo(PSC_ConfigElement *self, int flag,
     CMETHOD;
 
 DECLEXPORT void
+PSC_ConfigElement_argOnly(PSC_ConfigElement *self)
+    CMETHOD;
+
+DECLEXPORT void
+PSC_ConfigElement_argAction(PSC_ConfigElement *self,
+	PSC_ConfigAction action, void *actionData)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT void
+PSC_ConfigElement_fileOnly(PSC_ConfigElement *self)
+    CMETHOD;
+
+DECLEXPORT void
 PSC_ConfigElement_describe(PSC_ConfigElement *self, const char *description)
     CMETHOD;
 
@@ -157,9 +175,13 @@ DECLEXPORT void
 PSC_ConfigParser_addFile(PSC_ConfigParser *self, const char *filename)
     CMETHOD ATTR_NONNULL((2));
 
-DECLEXPORT PSC_Config *
-PSC_ConfigParser_parse(const PSC_ConfigParser *self)
+DECLEXPORT void
+PSC_ConfigParser_autoPage(PSC_ConfigParser *self)
     CMETHOD;
+
+DECLEXPORT int
+PSC_ConfigParser_parse(const PSC_ConfigParser *self, PSC_Config **config)
+    CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT int
 PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
