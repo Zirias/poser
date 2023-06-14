@@ -1321,26 +1321,24 @@ static void deleteargcontext(ArgContext *ctx)
     free(ctx);
 }
 
-static int parseshortflag(PSC_Config *cfg, ArgContext *ctx, char flag)
+static int  parseshortflag(PSC_ConfigElement **e, PSC_Config *cfg,
+	ArgContext *ctx, char flag)
 {
     char flagstr[] = { flag, 0 };
-    PSC_ConfigElement *e = PSC_HashTable_get(ctx->flags, flagstr);
-    if (!e) return -1;
-    if (PSC_HashTable_get(ctx->onceflags, namestr(e)))
+    *e = PSC_HashTable_get(ctx->flags, flagstr);
+    if (!*e) return -1;
+    if (PSC_HashTable_get(ctx->onceflags, namestr(*e)))
     {
-	if (PSC_HashTable_get(ctx->seenflags, namestr(e)))
+	if (PSC_HashTable_get(ctx->seenflags, namestr(*e)))
 	{
 	    return -1;
 	}
-	PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
+	PSC_HashTable_set(ctx->seenflags, namestr(*e), *e, 0);
     }
-    if (e->type == ET_BOOL)
+    if ((*e)->type == ET_BOOL)
     {
-	PSC_HashTable_set(cfg->values, namestr(e), &boolval, 0);
-    }
-    else
-    {
-	PSC_Queue_enqueue(ctx->needsarg, e, 0);
+	PSC_HashTable_set(cfg->values, namestr(*e), &boolval, 0);
+	*e = 0;
     }
     return 0;
 }
@@ -1551,10 +1549,12 @@ static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
     }
 }
 
-static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, char *str)
+static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, const char *str,
+	PSC_ConfigElement *e)
 {
-    PSC_ConfigElement *e = PSC_Queue_dequeue(ctx->needsarg);
+    if (!e) e = PSC_Queue_dequeue(ctx->needsarg);
     if (!e) return 0;
+    if (e->type == ET_BOOL) return -1;
     void *val = 0;
     void (*deleter)(void *) = parseargsvalue(&val, e, str, 1);
     if (!val) return -1;
@@ -1573,6 +1573,59 @@ static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, char *str)
 	PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
     }
     return 1;
+}
+
+static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
+{
+    PSC_ConfigElement *e = 0;
+    const char *arg = 0;
+    size_t eqpos = strcspn(flag, "=");
+    if (flag[eqpos])
+    {
+	char *flagstr = PSC_malloc(eqpos+1);
+	memcpy(flagstr, flag, eqpos);
+	flagstr[eqpos] = 0;
+	e = PSC_HashTable_get(ctx->flags, flagstr);
+	free(flagstr);
+	arg = flag+eqpos+1;
+    }
+    else
+    {
+	if (!strncmp(flag, "no-", 3))
+	{
+	    e = PSC_HashTable_get(ctx->flags, flag+3);
+	    if (e && e->type == ET_BOOL)
+	    {
+		if (PSC_HashTable_get(ctx->seenflags, namestr(e))) return -1;
+		PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
+		PSC_HashTable_delete(cfg->values, namestr(e));
+		return 0;
+	    }
+	    e = 0;
+	}
+	e = PSC_HashTable_get(ctx->flags, flag);
+	if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
+	{
+	    if (PSC_HashTable_get(ctx->seenflags, namestr(e))) return -1;
+	    PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
+	}
+    }
+    if (!e) return -1;
+    if (e->type == ET_BOOL)
+    {
+	if (arg) return -1;
+	PSC_HashTable_set(cfg->values, namestr(e), &boolval, 0);
+	return 0;
+    }
+    if (arg)
+    {
+	if (parseflagarg(cfg, ctx, arg, e) < 0) return -1;
+    }
+    else
+    {
+	PSC_Queue_enqueue(ctx->needsarg, e, 0);
+    }
+    return 0;
 }
 
 static int parsefromargs(const ArgData *self, PSC_Config *cfg,
@@ -1597,11 +1650,12 @@ static int parsefromargs(const ArgData *self, PSC_Config *cfg,
 	{
 	    if (o[1] == '-')
 	    {
-		// TODO
+		if (parselongflag(cfg, ctx, o+2) < 0) goto done;
 	    }
 	    else
 	    {
-		if (parseshortflag(cfg, ctx, *++o) < 0) goto done;
+		PSC_ConfigElement *e;
+		if (parseshortflag(&e, cfg, ctx, *++o) < 0) goto done;
 		int multiflags = 1;
 		for (char *co = ++o; *co; ++co)
 		{
@@ -1612,19 +1666,24 @@ static int parsefromargs(const ArgData *self, PSC_Config *cfg,
 			break;
 		    }
 		}
-		if (multiflags) for (; *o; ++o)
+		if (multiflags)
 		{
-		    if (parseshortflag(cfg, ctx, *o) < 0) goto done;
+		    if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
+		    for (; *o; ++o)
+		    {
+			if (parseshortflag(&e, cfg, ctx, *o) < 0) goto done;
+			if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
+		    }
 		}
 		else
 		{
-		    if (parseflagarg(cfg, ctx, o) < 0) goto done;
+		    if (!e || parseflagarg(cfg, ctx, o, e) < 0) goto done;
 		}
 	    }
 	}
 	else
 	{
-	    int haveflagarg = parseflagarg(cfg, ctx, o);
+	    int haveflagarg = parseflagarg(cfg, ctx, o, 0);
 	    if (haveflagarg < 0) goto done;
 	    if (!haveflagarg)
 	    {
