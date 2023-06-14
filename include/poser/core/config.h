@@ -198,7 +198,7 @@ PSC_ConfigParser_sampleFile(const PSC_ConfigParser *self, FILE *out)
 DECLEXPORT void
 PSC_ConfigParser_destroy(PSC_ConfigParser *self);
 
-DECLEXPORT void *
+DECLEXPORT const void *
 PSC_Config_get(const PSC_Config *self, const char *name)
     CMETHOD ATTR_NONNULL((2));
 

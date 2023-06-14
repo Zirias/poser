@@ -7,6 +7,7 @@
 #include <poser/core/config.h>
 #include <poser/core/hashtable.h>
 #include <poser/core/list.h>
+#include <poser/core/queue.h>
 #include <poser/core/service.h>
 #include <poser/core/stringbuilder.h>
 #include <signal.h>
@@ -29,6 +30,8 @@ static unsigned short currlines = 0;
 
 static pid_t pagerpid;
 static volatile sig_atomic_t pagerexited;
+
+static int boolval = 1;
 
 struct PSC_ConfigSection
 {
@@ -79,6 +82,16 @@ struct PSC_ConfigParserCtx
     ElemType type;
     int success;
 };
+
+typedef struct ArgContext
+{
+    PSC_Queue *needsarg;
+    PSC_Queue *positional;
+    PSC_HashTable *flags;
+    PSC_HashTable *onceflags;
+    PSC_HashTable *seenflags;
+    PSC_ConfigElement *listposarg;
+} ArgContext;
 
 typedef struct ArgData
 {
@@ -135,6 +148,16 @@ SOEXPORT PSC_ConfigSection *PSC_ConfigSection_create(const char *name)
 static void deleteElement(void *element)
 {
     PSC_ConfigElement_destroy(element);
+}
+
+static void deleteList(void *list)
+{
+    PSC_List_destroy(list);
+}
+
+static void deleteConfig(void *config)
+{
+    PSC_Config_destroy(config);
 }
 
 SOEXPORT void PSC_ConfigSection_add(PSC_ConfigSection *self,
@@ -443,7 +466,7 @@ static void setoutputdims(FILE *out)
 	errno = 0;
 	char *endptr = 0;
 	long val = strtol(envlines, &endptr, 10);
-	if (!*endptr && !errno)
+	if (endptr != envlines && !*endptr && !errno)
 	{
 	    currlines = val > MAXLINES ? MAXLINES : (unsigned short)val;
 	}
@@ -454,7 +477,7 @@ static void setoutputdims(FILE *out)
 	errno = 0;
 	char *endptr = 0;
 	long val = strtol(envcols, &endptr, 10);
-	if (!*endptr && !errno)
+	if (endptr != envcols && !*endptr && !errno)
 	{
 	    if (val < MINLINELEN) currlinelen = MINLINELEN;
 	    else if (val > MAXLINELEN) currlinelen = MAXLINELEN;
@@ -1242,10 +1265,296 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     return printlines(out, lines, self->autopage);
 }
 
+static ArgContext *createargcontext(const PSC_ConfigSection *sect)
+{
+    ArgContext *ctx = PSC_malloc(sizeof *ctx);
+    ctx->needsarg = PSC_Queue_create();
+    ctx->positional = PSC_Queue_create();
+    ctx->flags = PSC_HashTable_create(5);
+    ctx->onceflags = PSC_HashTable_create(5);
+    ctx->seenflags = PSC_HashTable_create(5);
+    ctx->listposarg = 0;
+
+    PSC_ListIterator *i = PSC_List_iterator(sect->elements);
+    while (PSC_ListIterator_moveNext(i))
+    {
+	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	if (e->flag < 0)
+	{
+	    PSC_Queue_enqueue(ctx->positional, e, 0);
+	}
+	else
+	{
+	    PSC_HashTable_set(ctx->flags, namestr(e), e, 0);
+	    if (e->flag)
+	    {
+		char flagstr[2] = {0};
+		*flagstr = e->flag;
+		PSC_HashTable_set(ctx->flags, flagstr, e, 0);
+	    }
+	    if (e->type != ET_LIST && e->type != ET_SECTIONLIST)
+	    {
+		PSC_HashTable_set(ctx->onceflags, namestr(e), e, 0);
+	    }
+	}
+    }
+    PSC_ListIterator_destroy(i);
+
+    return ctx;
+}
+
+static void deleteargcontext(ArgContext *ctx)
+{
+    if (!ctx) return;
+    PSC_HashTable_destroy(ctx->seenflags);
+    PSC_HashTable_destroy(ctx->onceflags);
+    PSC_HashTable_destroy(ctx->flags);
+    PSC_Queue_destroy(ctx->positional);
+    PSC_Queue_destroy(ctx->needsarg);
+    free(ctx);
+}
+
+static int parseshortflag(PSC_Config *cfg, ArgContext *ctx, char flag)
+{
+    char flagstr[] = { flag, 0 };
+    PSC_ConfigElement *e = PSC_HashTable_get(ctx->flags, flagstr);
+    if (!e) return -1;
+    if (PSC_HashTable_get(ctx->onceflags, namestr(e)))
+    {
+	if (PSC_HashTable_get(ctx->seenflags, namestr(e)))
+	{
+	    return -1;
+	}
+	PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
+    }
+    if (e->type == ET_BOOL)
+    {
+	PSC_HashTable_set(cfg->values, namestr(e), &boolval, 0);
+    }
+    else
+    {
+	PSC_Queue_enqueue(ctx->needsarg, e, 0);
+    }
+    return 0;
+}
+
+static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
+	const char *str)
+{
+    return 0;
+}
+
+static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
+	const char *str, int recurse))(void *)
+{
+    ElemType t = e->type;
+    if (t == ET_LIST) t = e->element->type;
+    switch (t)
+    {
+	long lv;
+	double fv;
+	char *endptr;
+
+	case ET_STRING:
+	    *val = PSC_copystr(str);
+	    return free;
+
+	case ET_INTEGER:
+	    errno = 0;
+	    lv = strtol(str, &endptr, 10);
+	    if (!errno && endptr != str && !*endptr)
+	    {
+		long *v = PSC_malloc(sizeof *v);
+		*v = lv;
+		*val = v;
+		return free;
+	    }
+	    return 0;
+
+	case ET_FLOAT:
+	    errno = 0;
+	    fv = strtod(str, &endptr);
+	    if (!errno && endptr != str && !*endptr)
+	    {
+		double *v = PSC_malloc(sizeof *v);
+		*v = fv;
+		*val = v;
+		return free;
+	    }
+	    return 0;
+
+	case ET_SECTION:
+	case ET_SECTIONLIST:
+	    if (!recurse) return 0;
+	    *val = parseargssection(e->section, str);
+	    return deleteConfig;
+
+	default:
+	    return 0;
+    }
+}
+
+static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, char *str)
+{
+    PSC_ConfigElement *e = PSC_Queue_dequeue(ctx->needsarg);
+    if (!e) return 0;
+    void *val = 0;
+    void (*deleter)(void *) = parseargsvalue(&val, e, str, 1);
+    if (!val) return -1;
+    if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+    {
+	PSC_List *list = PSC_HashTable_get(cfg->values, namestr(e));
+	if (!list)
+	{
+	    list = PSC_List_create();
+	    PSC_HashTable_set(cfg->values, namestr(e), list, deleteList);
+	}
+	PSC_List_append(list, val, deleter);
+    }
+    else
+    {
+	PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
+    }
+    return 1;
+}
+
+static int parsefromargs(const ArgData *self, PSC_Config *cfg,
+    const PSC_ConfigSection *sect)
+{
+    int endflags = 0;
+    int escapedash = 0;
+    int rc = -1;
+
+    ArgContext *ctx = createargcontext(sect);
+    for (int arg = 1; arg < self->argc; ++arg)
+    {
+	char *o = self->argv[arg];
+
+	if (!escapedash && *o == '-' && o[1] == '-' && !o[2])
+	{
+	    escapedash = 1;
+	    continue;
+	}
+
+	if (!endflags && !escapedash && *o == '-' && o[1])
+	{
+	    if (o[1] == '-')
+	    {
+		// TODO
+	    }
+	    else
+	    {
+		if (parseshortflag(cfg, ctx, *++o) < 0) goto done;
+		int multiflags = 1;
+		for (char *co = ++o; *co; ++co)
+		{
+		    char flagstr[] = { *co, 0 };
+		    if (!PSC_HashTable_get(ctx->flags, flagstr))
+		    {
+			multiflags = 0;
+			break;
+		    }
+		}
+		if (multiflags) for (; *o; ++o)
+		{
+		    if (parseshortflag(cfg, ctx, *o) < 0) goto done;
+		}
+		else
+		{
+		    if (parseflagarg(cfg, ctx, o) < 0) goto done;
+		}
+	    }
+	}
+	else
+	{
+	    int haveflagarg = parseflagarg(cfg, ctx, o);
+	    if (haveflagarg < 0) goto done;
+	    if (!haveflagarg)
+	    {
+		endflags = 1;
+		PSC_ConfigElement *e = ctx->listposarg;
+		if (!e) e = PSC_Queue_dequeue(ctx->positional);
+		if (!e) goto done;
+		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+		{
+		    ctx->listposarg = e;
+		}
+		void *val = 0;
+		void (*deleter)(void *) = parseargsvalue(&val, e, o, 1);
+		if (!val) goto done;
+		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+		{
+		    PSC_List *list = PSC_HashTable_get(
+			    cfg->values, namestr(e));
+		    if (!list)
+		    {
+			list = PSC_List_create();
+			PSC_HashTable_set(cfg->values, namestr(e),
+				list, deleteList);
+		    }
+		    PSC_List_append(list, val, deleter);
+		}
+		else
+		{
+		    PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
+		}
+	    }
+	}
+    }
+    rc = 0;
+
+done:
+    deleteargcontext(ctx);
+    return rc;
+}
+
+SOEXPORT int PSC_ConfigParser_parse(const PSC_ConfigParser *self,
+	PSC_Config **config)
+{
+    if (PSC_List_size(self->parsers) == 0)
+    {
+	PSC_Service_panic(
+		"Tried to parse config without any configured parsers");
+    }
+
+    PSC_ListIterator *i = 0;
+    int rc = 0;
+    PSC_Config *cfg = PSC_malloc(sizeof *cfg);
+    cfg->values = PSC_HashTable_create(5);
+
+    for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
+    {
+	ConcreteParser *p = PSC_ListIterator_current(i);
+	if (p->type == PT_ARGS)
+	{
+	    const ArgData *ad = p->parserData;
+	    rc = parsefromargs(ad, cfg, self->root);
+	}
+	if (rc != 0) break;
+    }
+    PSC_ListIterator_destroy(i);
+
+    if (rc != 0) PSC_Config_destroy(cfg);
+    else *config = cfg;
+    return rc < 0 ? -1 : 0;
+}
+
 SOEXPORT void PSC_ConfigParser_destroy(PSC_ConfigParser *self)
 {
     if (!self) return;
     PSC_List_destroy(self->parsers);
+    free(self);
+}
+
+DECLEXPORT const void *PSC_Config_get(const PSC_Config *self, const char *name)
+{
+    return PSC_HashTable_get(self->values, name);
+}
+
+DECLEXPORT void PSC_Config_destroy(PSC_Config *self)
+{
+    if (!self) return;
+    PSC_HashTable_destroy(self->values);
     free(self);
 }
 
