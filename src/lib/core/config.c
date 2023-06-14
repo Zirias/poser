@@ -83,6 +83,12 @@ struct PSC_ConfigParserCtx
     int success;
 };
 
+typedef struct ArgSectItem
+{
+    char *key;
+    char *val;
+} ArgSectItem;
+
 typedef struct ArgContext
 {
     PSC_Queue *needsarg;
@@ -1074,6 +1080,7 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "[0|1]");
 	    else PSC_StringBuilder_append(s, argstr(e));
 	    if (e->required) PSC_StringBuilder_append(s, " {required}");
+	    if (e->type == ET_LIST) PSC_StringBuilder_append(s, " {multiple}");
 	    formatlines(lines, s, 8, 8, 0);
 	    s = PSC_StringBuilder_create();
 	    setdescstr(s, e);
@@ -1250,10 +1257,10 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     {
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, "\nFor sub-section arguments delimited by "
-		"a colon (:), any colons contained in values must be escaped "
-		"with a backslash (\\). Alternatively, values may be quoted "
-		"in a pair of brackets (between `[' and `]') if they don't "
-		"contain those themselves.");
+		"a colon (:), any colons and equals signs (=) contained in "
+		"values must be escaped with a backslash (\\). Alternatively, "
+		"values may be quoted in a pair of brackets (between `[' and "
+		"`]') if they don't contain those themselves.");
 	formatlines(lines, s, 4, 4, 0);
     }
 
@@ -1338,10 +1345,160 @@ static int parseshortflag(PSC_Config *cfg, ArgContext *ctx, char flag)
     return 0;
 }
 
+static void deleteargsectitem(void *item)
+{
+    if (!item) return;
+    ArgSectItem *i = item;
+    free(i->val);
+    free(i->key);
+    free(i);
+}
+
+static PSC_Queue *argsectionparts(const char *str)
+{
+    PSC_Queue *parts = PSC_Queue_create();
+
+    int ok = 1;
+    while (ok && *str)
+    {
+	ArgSectItem *item = PSC_malloc(sizeof *item);
+	item->key = 0;
+	item->val = 0;
+	for (;;)
+	{
+	    char *tmp = PSC_malloc(strlen(str)+1);
+	    int escape = 0;
+	    int quote = 0;
+	    if (*str == '[')
+	    {
+		quote = 1;
+		++str;
+	    }
+	    char *tp = tmp;
+	    for (;
+		    ok && *str &&
+		    (escape || quote || (*str != ':' && *str != '='));
+		    ++str)
+	    {
+		if (escape)
+		{
+		    *tp++ = *str;
+		    escape = 0;
+		    continue;
+		}
+		if (quote)
+		{
+		    if (*str == ']')
+		    {
+			if (str[1] && str[1] != ':' && str[1] != '=')
+			{
+			    free(tmp);
+			    ok = 0;
+			}
+			else quote = 0;
+		    }
+		    else if (*str == '[')
+		    {
+			free(tmp);
+			ok = 0;
+		    }
+		    else *tp++ = *str;
+		}
+		else if (*str == '\\')
+		{
+		    escape = 1;
+		}
+		else *tp++ = *str;
+	    }
+	    *tp = 0;
+	    if (!ok) break;
+	    if (*str == '=')
+	    {
+		if (item->key)
+		{
+		    free(tmp);
+		    ok = 0;
+		    break;
+		}
+		item->key = PSC_realloc(tmp, strlen(tmp)+1);
+		++str;
+	    }
+	    else if (!*str || *str == ':')
+	    {
+		item->val = PSC_realloc(tmp, strlen(tmp)+1);
+		if (*str) ++str;
+		break;
+	    }
+	}
+	if (ok) PSC_Queue_enqueue(parts, item, deleteargsectitem);
+	else deleteargsectitem(item);
+    }
+    if (ok && !*str) return parts;
+    PSC_Queue_destroy(parts);
+    return 0;
+}
+
+static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
+	const char *str, int recurse))(void *);
+
 static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
 	const char *str)
 {
-    return 0;
+    int ok = 0;
+    PSC_Config *cfg = PSC_malloc(sizeof *cfg);
+    cfg->values = PSC_HashTable_create(5);
+    ArgContext *ctx = createargcontext(sect);
+    PSC_Queue *parts = argsectionparts(str);
+    if (!parts) goto done;
+
+    ok = 1;
+    ArgSectItem *item;
+    while (ok && (item = PSC_Queue_dequeue(parts)))
+    {
+	PSC_ConfigElement *e = 0;
+	if (item->key)
+	{
+	    e = PSC_HashTable_get(ctx->flags, item->key);
+	    if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
+	    {
+		if (PSC_HashTable_get(ctx->seenflags, namestr(e))) e = 0;
+		else PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
+	    }
+	}
+	else e = PSC_Queue_dequeue(ctx->positional);
+	if (e)
+	{
+	    void *val = 0;
+	    void (*deleter)(void *) = parseargsvalue(&val, e, item->val, 0);
+	    if (!val) ok = 0;
+	    else if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+	    {
+		PSC_List *list = PSC_HashTable_get(cfg->values, namestr(e));
+		if (!list)
+		{
+		    list = PSC_List_create();
+		    PSC_HashTable_set(cfg->values, namestr(e),
+			    list, deleteList);
+		}
+		PSC_List_append(list, val, deleter);
+	    }
+	    else
+	    {
+		PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
+	    }
+	} else ok = 0;
+	deleteargsectitem(item);
+    }
+
+done:
+    if (!ok)
+    {
+	PSC_Config_destroy(cfg);
+	cfg = 0;
+    }
+    PSC_Queue_destroy(parts);
+    deleteargcontext(ctx);
+    return cfg;
 }
 
 static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
