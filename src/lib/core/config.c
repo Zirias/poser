@@ -1055,9 +1055,25 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     return lines;
 }
 
-SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
+SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out,
+	int witherrors)
 {
-    return printlines(out, usagelines(self, out), 0);
+    PSC_List *lines = usagelines(self, out);
+    if (witherrors)
+    {
+	PSC_ListIterator *i;
+	PSC_StringBuilder *s;
+	for (i = PSC_List_iterator(self->errors);
+		PSC_ListIterator_moveNext(i);)
+	{
+	    s = PSC_StringBuilder_create();
+	    PSC_StringBuilder_appendChar(s, '\n');
+	    PSC_StringBuilder_append(s, PSC_ListIterator_current(i));
+	    formatlines(lines, s, 0, 0, 0);
+	}
+	PSC_ListIterator_destroy(i);
+    }
+    return printlines(out, lines, 0);
 }
 
 static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
@@ -1943,9 +1959,11 @@ static int validateconfig(const PSC_ConfigSection *sect,
 	const PSC_Config *config, PSC_List *errors)
 {
     PSC_ListIterator *i;
+    PSC_ListIterator *j;
     int rc = 0;
 
-    for (i = PSC_List_iterator(sect->elements); PSC_ListIterator_moveNext(i);)
+    for (i = PSC_List_iterator(sect->elements);
+	    rc == 0 && PSC_ListIterator_moveNext(i);)
     {
 	const PSC_ConfigElement *e = PSC_ListIterator_current(i);
 	const void *val = PSC_HashTable_get(config->values, namestr(e));
@@ -1953,29 +1971,61 @@ static int validateconfig(const PSC_ConfigSection *sect,
 	{
 	    addparsererror(errors, "Required field `%s' missing", namestr(e));
 	    rc = -1;
-	    break;
 	}
-	if (val)
+	else if (val) switch(e->type)
 	{
-	    if (e->type == ET_SECTION)
-	    {
-		const PSC_ConfigSection *subsect = e->section;
-		const PSC_Config *subcfg = val;
-		if ((rc = validateconfig(subsect, subcfg, errors)) < 0) break;
-	    }
-	    else if (e->type == ET_SECTIONLIST)
-	    {
-		const PSC_ConfigSection *subsect = e->section;
-		const PSC_List *configs = val;
-		PSC_ListIterator *j = PSC_List_iterator(configs);
-		while (rc == 0 && PSC_ListIterator_moveNext(j))
+	    const PSC_ConfigSection *subsect;
+	    const PSC_Config *subcfg;
+	    const PSC_List *configs;
+
+	    case ET_SECTION:
+		subsect = e->section;
+		subcfg = val;
+		rc = validateconfig(subsect, subcfg, errors);
+		break;
+
+	    case ET_SECTIONLIST:
+		subsect = e->section;
+		configs = val;
+		for (j = PSC_List_iterator(configs);
+			rc == 0 && PSC_ListIterator_moveNext(j);)
 		{
-		    const PSC_Config *subcfg = PSC_ListIterator_current(j);
+		    subcfg = PSC_ListIterator_current(j);
 		    rc = validateconfig(subsect, subcfg, errors);
 		}
 		PSC_ListIterator_destroy(j);
-		if (rc < 0) break;
-	    }
+		break;
+
+	    default:
+		break;
+	}
+	else switch(e->type)
+	{
+	    case ET_STRING:
+		if (e->defString) PSC_HashTable_set(config->values,
+			namestr(e), PSC_copystr(e->defString), free);
+		break;
+
+	    case ET_INTEGER:
+		if (e->defInteger)
+		{
+		    long *dv = PSC_malloc(sizeof *dv);
+		    *dv = e->defInteger;
+		    PSC_HashTable_set(config->values, namestr(e), dv, free);
+		}
+		break;
+
+	    case ET_FLOAT:
+		if (e->defFloat)
+		{
+		    double *dv = PSC_malloc(sizeof *dv);
+		    *dv = e->defFloat;
+		    PSC_HashTable_set(config->values, namestr(e), dv, free);
+		}
+		break;
+
+	    default:
+		break;
 	}
     }
     PSC_ListIterator_destroy(i);
@@ -2021,21 +2071,7 @@ SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
     if (rc < 0)
     {
 	ArgData *ad = getargparser(self);
-	if (ad && ad->autousage)
-	{
-	    PSC_List *errlines = usagelines(self, stderr);
-	    PSC_StringBuilder *s;
-	    for (i = PSC_List_iterator(self->errors);
-		    PSC_ListIterator_moveNext(i);)
-	    {
-		s = PSC_StringBuilder_create();
-		PSC_StringBuilder_appendChar(s, '\n');
-		PSC_StringBuilder_append(s, PSC_ListIterator_current(i));
-		formatlines(errlines, s, 0, 0, 0);
-	    }
-	    PSC_ListIterator_destroy(i);
-	    printlines(stderr, errlines, self->autopage);
-	}
+	if (ad && ad->autousage) PSC_ConfigParser_usage(self, stderr, 1);
     }
     return rc;
 }
@@ -2056,6 +2092,26 @@ SOEXPORT void PSC_ConfigParser_destroy(PSC_ConfigParser *self)
 SOEXPORT const void *PSC_Config_get(const PSC_Config *self, const char *name)
 {
     return PSC_HashTable_get(self->values, name);
+}
+
+SOEXPORT const char *PSC_Config_getString(const PSC_Config *self,
+	const char *name)
+{
+    return PSC_Config_get(self, name);
+}
+
+SOEXPORT long PSC_Config_getInteger(const PSC_Config *self, const char *name)
+{
+    const long *val = PSC_HashTable_get(self->values, name);
+    if (!val) return 0L;
+    return *val;
+}
+
+SOEXPORT double PSC_Config_getFloat(const PSC_Config *self, const char *name)
+{
+    const double *val = PSC_HashTable_get(self->values, name);
+    if (!val) return .0;
+    return *val;
 }
 
 SOEXPORT void PSC_Config_destroy(PSC_Config *self)

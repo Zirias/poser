@@ -204,7 +204,7 @@ PSC_ConfigParser_errors(const PSC_ConfigParser *self)
     CMETHOD ATTR_RETNONNULL;
 
 DECLEXPORT int
-PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
+PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out, int witherrors)
     CMETHOD;
 
 DECLEXPORT int
@@ -220,6 +220,18 @@ PSC_ConfigParser_destroy(PSC_ConfigParser *self);
 
 DECLEXPORT const void *
 PSC_Config_get(const PSC_Config *self, const char *name)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT const char *
+PSC_Config_getString(const PSC_Config *self, const char *name)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT long
+PSC_Config_getInteger(const PSC_Config *self, const char *name)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT double
+PSC_Config_getFloat(const PSC_Config *self, const char *name)
     CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT void
