@@ -1599,22 +1599,68 @@ static PSC_Queue *argsectionparts(const char *str, PSC_List *errors)
     return 0;
 }
 
-static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
-	    PSC_List *errors, const char *str, int recurse))(void *);
+static void *parseargsvalue(PSC_ConfigElement *e, PSC_List *errors,
+	const char *str, int toplevel)
+{
+    ElemType t = e->type;
+    if (t == ET_LIST) t = e->element->type;
+    switch (t)
+    {
+	long lv;
+	double fv;
+	char *endptr;
 
-static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
+	case ET_STRING:
+	    return PSC_copystr(str);
+
+	case ET_INTEGER:
+	    errno = 0;
+	    lv = strtol(str, &endptr, 10);
+	    if (!errno && endptr != str && !*endptr)
+	    {
+		long *v = PSC_malloc(sizeof *v);
+		*v = lv;
+		return v;
+	    }
+	    addparsererror(errors,
+		    toplevel ? "Argument `%s' for --%s is not a valid integer"
+		    : "Argument `%s' for key `%s' is not a valid integer",
+		    str, namestr(e));
+	    return 0;
+
+	case ET_FLOAT:
+	    errno = 0;
+	    fv = strtod(str, &endptr);
+	    if (!errno && endptr != str && !*endptr)
+	    {
+		double *v = PSC_malloc(sizeof *v);
+		*v = fv;
+		return v;
+	    }
+	    addparsererror(errors,
+		    toplevel ? "Argument `%s' for --%s is not a valid "
+		    "floating point number"
+		    : "Argment `%s' for key `%s' is not a valid "
+		    "floating point number", str, namestr(e));
+	    return 0;
+
+	default:
+	    return 0;
+    }
+}
+
+
+static int parseargssection(PSC_Config *cfg, const PSC_ConfigSection *sect,
 	PSC_List *errors, const char *str)
 {
-    int ok = 0;
-    PSC_Config *cfg = PSC_malloc(sizeof *cfg);
-    cfg->values = PSC_HashTable_create(5);
+    int rc = -1;
     ArgContext *ctx = createargcontext(sect, errors);
     PSC_Queue *parts = argsectionparts(str, errors);
     if (!parts) goto done;
 
-    ok = 1;
+    rc = 0;
     ArgSectItem *item;
-    while (ok && (item = PSC_Queue_dequeue(parts)))
+    while (rc == 0 && (item = PSC_Queue_dequeue(parts)))
     {
 	PSC_ConfigElement *e = 0;
 	if (item->key)
@@ -1644,106 +1690,64 @@ static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
 	}
 	if (e)
 	{
-	    void *val = 0;
-	    void (*deleter)(void *) = parseargsvalue(
-		    &val, e, errors, item->val, 0);
-	    if (!val) ok = 0;
-	    else if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+	    if (e->type != ET_SECTION && e->type != ET_SECTIONLIST)
 	    {
-		PSC_List *list = PSC_HashTable_get(cfg->values, namestr(e));
-		if (!list)
+		void *val = parseargsvalue(e, errors, item->val, 0);
+		if (!val) rc = -1;
+		else if (e->type == ET_LIST)
 		{
-		    list = PSC_List_create();
-		    PSC_HashTable_set(cfg->values, namestr(e),
-			    list, deleteList);
+		    PSC_List *list = PSC_HashTable_get(
+			    cfg->values, namestr(e));
+		    if (!list)
+		    {
+			list = PSC_List_create();
+			PSC_HashTable_set(cfg->values, namestr(e),
+				list, deleteList);
+		    }
+		    PSC_List_append(list, val, free);
 		}
-		PSC_List_append(list, val, deleter);
+		else
+		{
+		    PSC_HashTable_set(cfg->values, namestr(e), val, free);
+		}
 	    }
-	    else
-	    {
-		PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
-	    }
-	} else ok = 0;
+	} else rc = -1;
 	deleteargsectitem(item);
     }
 
 done:
-    if (!ok)
-    {
-	PSC_Config_destroy(cfg);
-	cfg = 0;
-    }
     PSC_Queue_destroy(parts);
     deleteargcontext(ctx);
-    return cfg;
+    return rc;
 }
 
-static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
-	    PSC_List *errors, const char *str, int recurse))(void *)
+static int parseanyarg(PSC_Config *cfg, PSC_ConfigElement *e,
+	const char *str, PSC_List *errors)
 {
-    ElemType t = e->type;
-    if (t == ET_LIST) t = e->element->type;
-    switch (t)
-    {
-	long lv;
-	double fv;
-	char *endptr;
-
-	case ET_STRING:
-	    *val = PSC_copystr(str);
-	    return free;
-
-	case ET_INTEGER:
-	    errno = 0;
-	    lv = strtol(str, &endptr, 10);
-	    if (!errno && endptr != str && !*endptr)
-	    {
-		long *v = PSC_malloc(sizeof *v);
-		*v = lv;
-		*val = v;
-		return free;
-	    }
-	    addparsererror(errors,
-		    recurse ? "Argument `%s' for --%s is not a valid integer"
-		    : "Argument `%s' for key `%s' is not a valid integer",
-		    str, namestr(e));
-	    return 0;
-
-	case ET_FLOAT:
-	    errno = 0;
-	    fv = strtod(str, &endptr);
-	    if (!errno && endptr != str && !*endptr)
-	    {
-		double *v = PSC_malloc(sizeof *v);
-		*v = fv;
-		*val = v;
-		return free;
-	    }
-	    addparsererror(errors,
-		    recurse ? "Argument `%s' for --%s is not a valid "
-		    "floating point number"
-		    : "Argment `%s' for key `%s' is not a valid "
-		    "floating point number", str, namestr(e));
-	    return 0;
-
-	case ET_SECTION:
-	case ET_SECTIONLIST:
-	    if (!recurse) return 0;
-	    *val = parseargssection(e->section, errors, str);
-	    return deleteConfig;
-
-	default:
-	    return 0;
-    }
-}
-
-static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, const char *str,
-	PSC_ConfigElement *e)
-{
-    if (!e) e = PSC_Queue_dequeue(ctx->needsarg);
-    if (!e) return 0;
     void *val = 0;
-    void (*deleter)(void *) = parseargsvalue(&val, e, ctx->errors, str, 1);
+    if (e->type == ET_SECTION)
+    {
+	PSC_Config *subcfg = PSC_HashTable_get(cfg->values, namestr(e));
+	if (!subcfg)
+	{
+	    subcfg = PSC_malloc(sizeof *subcfg);
+	    subcfg->values = PSC_HashTable_create(5);
+	    PSC_HashTable_set(cfg->values, namestr(e), subcfg, deleteConfig);
+	}
+	return parseargssection(subcfg, e->section, errors, str);
+    }
+    if (e->type == ET_SECTIONLIST)
+    {
+	PSC_Config *subcfg = PSC_malloc(sizeof *subcfg);
+	subcfg->values = PSC_HashTable_create(5);
+	if (parseargssection(subcfg, e->section, errors, str) < 0)
+	{
+	    PSC_Config_destroy(subcfg);
+	    return -1;
+	}
+	val = subcfg;
+    }
+    else val = parseargsvalue(e, errors, str, 1);
     if (!val) return -1;
     if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
     {
@@ -1753,12 +1757,22 @@ static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, const char *str,
 	    list = PSC_List_create();
 	    PSC_HashTable_set(cfg->values, namestr(e), list, deleteList);
 	}
-	PSC_List_append(list, val, deleter);
+	PSC_List_append(list, val, e->type == ET_LIST ? free : deleteConfig);
     }
     else
     {
-	PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
+	PSC_HashTable_set(cfg->values, namestr(e), val, free);
     }
+    return 0;
+}
+
+static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, const char *str,
+	PSC_ConfigElement *e)
+{
+    if (!e) e = PSC_Queue_dequeue(ctx->needsarg);
+    if (!e) return 0;
+
+    if (parseanyarg(cfg, e, str, ctx->errors) < 0) return -1;
     return 1;
 }
 
@@ -1898,7 +1912,7 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 				"Argument given for boolean flag -%c", o[-1]);
 			goto done;
 		    }
-		    else if ((rc = parseflagarg(cfg, ctx, o, e)) != 0)
+		    else if ((rc = parseflagarg(cfg, ctx, o, e)) < 0)
 		    {
 			goto done;
 		    }
@@ -1925,26 +1939,7 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 		{
 		    ctx->listposarg = e;
 		}
-		void *val = 0;
-		void (*deleter)(void *) = parseargsvalue(
-			&val, e, p->errors, o, 1);
-		if (!val) goto done;
-		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
-		{
-		    PSC_List *list = PSC_HashTable_get(
-			    cfg->values, namestr(e));
-		    if (!list)
-		    {
-			list = PSC_List_create();
-			PSC_HashTable_set(cfg->values, namestr(e),
-				list, deleteList);
-		    }
-		    PSC_List_append(list, val, deleter);
-		}
-		else
-		{
-		    PSC_HashTable_set(cfg->values, namestr(e), val, deleter);
-		}
+		if (parseanyarg(cfg, e, o, ctx->errors) < 0) goto done;
 	    }
 	}
     }
