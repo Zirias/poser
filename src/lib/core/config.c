@@ -19,6 +19,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <threads.h>
 #include <unistd.h>
 
 #define DEFLINELEN 80
@@ -36,6 +37,8 @@ static volatile sig_atomic_t pagerexited;
 
 static int boolval = 1;
 
+static thread_local PSC_ConfigParser *activeParser;
+
 struct PSC_ConfigSection
 {
     char *name;
@@ -50,8 +53,17 @@ typedef enum ElemType
     ET_BOOL,
     ET_SECTION,
     ET_LIST,
-    ET_SECTIONLIST
+    ET_SECTIONLIST,
+    ET_ACTION
 } ElemType;
+
+typedef enum ParserType
+{
+    PT_NONE = 0,
+    PT_ARGS = 1 << 0,
+    PT_FILE = 1 << 1,
+    PT_ANY = (1 << 2) - 1
+} ParserType;
 
 struct PSC_ConfigElement
 {
@@ -67,8 +79,14 @@ struct PSC_ConfigElement
 	double defFloat;
 	PSC_ConfigSection *section;
 	PSC_ConfigElement *element;
+	struct
+	{
+	    PSC_ConfigAction action;
+	    void *actionData;
+	};
     };
     ElemType type;
+    ParserType pt;
     int flag;
     int required;
 };
@@ -99,6 +117,7 @@ typedef struct ArgContext
     PSC_HashTable *flags;
     PSC_HashTable *onceflags;
     PSC_HashTable *seenflags;
+    PSC_HashTable *actions;
     PSC_ConfigElement *listposarg;
     PSC_List *errors;
 } ArgContext;
@@ -110,12 +129,6 @@ typedef struct ArgData
     int argc;
     int autousage;
 } ArgData;
-
-typedef enum ParserType
-{
-    PT_ARGS,
-    PT_FILE
-} ParserType;
 
 typedef struct ConcreteParser
 {
@@ -191,6 +204,49 @@ SOEXPORT void PSC_ConfigSection_add(PSC_ConfigSection *self,
     PSC_List_append(self->elements, element, deleteElement);
 }
 
+static void helpargprint(void *data)
+{
+    (void)data;
+    PSC_ConfigParser_help(activeParser, stderr);
+}
+
+SOEXPORT void PSC_ConfigSection_addHelpArg(PSC_ConfigSection *self,
+	const char *description, const char *name, char flag)
+{
+    if (!description) description = "Print this help text";
+    if (!name) name = "help";
+    if (!flag) flag = 'h';
+
+    PSC_ConfigElement *e = PSC_ConfigElement_createAction(
+	    name, helpargprint, 0);
+    PSC_ConfigElement_describe(e, description);
+    PSC_ConfigElement_argInfo(e, flag, 0);
+    PSC_ConfigElement_argOnly(e);
+    PSC_List_append(self->elements, e, deleteElement);
+}
+
+static void versionargprint(void *data)
+{
+    const char *version = data;
+    fprintf(stderr, "%s\n", version);
+}
+
+SOEXPORT void PSC_ConfigSection_addVersionArg(PSC_ConfigSection *self,
+	const char *version, const char *description,
+	const char *name, char flag)
+{
+    if (!description) description = "Print version information";
+    if (!name) name = "version";
+    if (!flag) flag = 'V';
+
+    PSC_ConfigElement *e = PSC_ConfigElement_createAction(
+	    name, versionargprint, (void *)version);
+    PSC_ConfigElement_describe(e, description);
+    PSC_ConfigElement_argInfo(e, flag, 0);
+    PSC_ConfigElement_argOnly(e);
+    PSC_List_append(self->elements, e, deleteElement);
+}
+
 SOEXPORT void PSC_ConfigSection_destroy(PSC_ConfigSection *self)
 {
     if (!self) return;
@@ -207,6 +263,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createString(const char *name,
     self->name = PSC_copystr(name);
     self->defString = PSC_copystr(defval);
     self->type = ET_STRING;
+    self->pt = PT_ANY;
     self->required = required;
     return self;
 }
@@ -219,6 +276,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createInteger(const char *name,
     self->name = PSC_copystr(name);
     self->defInteger = defval;
     self->type = ET_INTEGER;
+    self->pt = PT_ANY;
     self->required = required;
     return self;
 }
@@ -231,6 +289,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createFloat(const char *name,
     self->name = PSC_copystr(name);
     self->defFloat = defval;
     self->type = ET_FLOAT;
+    self->pt = PT_ANY;
     self->required = required;
     return self;
 }
@@ -241,6 +300,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createBool(const char *name)
     memset(self, 0, sizeof *self);
     self->name = PSC_copystr(name);
     self->type = ET_BOOL;
+    self->pt = PT_ANY;
     return self;
 }
 
@@ -251,6 +311,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createSection(
     memset(self, 0, sizeof *self);
     self->section = section;
     self->type = ET_SECTION;
+    self->pt = PT_ANY;
     self->required = required;
     return self;
 }
@@ -262,6 +323,7 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createList(
     memset(self, 0, sizeof *self);
     self->element = element;
     self->type = ET_LIST;
+    self->pt = PT_ANY;
     self->required = required;
     return self;
 }
@@ -273,7 +335,21 @@ SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createSectionList(
     memset(self, 0, sizeof *self);
     self->section = section;
     self->type = ET_SECTIONLIST;
+    self->pt = PT_ANY;
     self->required = required;
+    return self;
+}
+
+SOEXPORT PSC_ConfigElement *PSC_ConfigElement_createAction(
+	const char *name, PSC_ConfigAction action, void *actionData)
+{
+    PSC_ConfigElement *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
+    self->name = PSC_copystr(name);
+    self->type = ET_ACTION;
+    self->pt = PT_ANY;
+    self->action = action;
+    self->actionData = actionData;
     return self;
 }
 
@@ -283,6 +359,16 @@ SOEXPORT void PSC_ConfigElement_argInfo(PSC_ConfigElement *self, int flag,
     self->flag = flag;
     free(self->argname);
     self->argname = PSC_copystr(argname);
+}
+
+SOEXPORT void PSC_ConfigElement_argOnly(PSC_ConfigElement *self)
+{
+    self->pt = PT_ARGS;
+}
+
+SOEXPORT void PSC_ConfigElement_fileOnly(PSC_ConfigElement *self)
+{
+    self->pt = PT_FILE;
 }
 
 SOEXPORT void PSC_ConfigElement_describe(PSC_ConfigElement *self,
@@ -883,11 +969,12 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 	    PSC_ListIterator_moveNext(i);)
     {
 	PSC_ConfigElement *e = PSC_ListIterator_current(i);
-	if (e->type == ET_BOOL && e->flag > 0)
+	if (!(e->pt & PT_ARGS)) continue;
+	if ((e->type == ET_BOOL || e->type == ET_ACTION) && e->flag > 0)
 	{
 	    boolflags[nboolflags++] = e->flag;
 	}
-	else if (e->type != ET_BOOL)
+	else if (e->type != ET_BOOL && e->type != ET_ACTION)
 	{
 	    if (e->flag > 0)
 	    {
@@ -980,9 +1067,10 @@ static void setdescstr(PSC_StringBuilder *s, PSC_ConfigElement *e)
 	PSC_StringBuilder_append(s, e->description);
 	return;
     }
-    if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "Enable ");
+    if (e->type == ET_ACTION) PSC_StringBuilder_append(s, "Perform ");
+    else if (e->type == ET_BOOL) PSC_StringBuilder_append(s, "Enable ");
     else PSC_StringBuilder_append(s, "Set ");
-    PSC_StringBuilder_append(s, argstr(e));
+    PSC_StringBuilder_append(s, e->type == ET_ACTION ? namestr(e) : argstr(e));
 }
 
 static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
@@ -1006,7 +1094,10 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	    PSC_ListIterator_moveNext(i);)
     {
 	PSC_ConfigElement *e = PSC_ListIterator_current(i);
-	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST) continue;
+	if (!(e->pt & PT_ARGS)) continue;
+	if (e->type == ET_SECTION
+		|| e->type == ET_SECTIONLIST
+		|| e->type == ET_ACTION) continue;
 	if (e->flag >= 0)
 	{
 	    flags[nflags++] = e;
@@ -1165,6 +1256,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	    PSC_ListIterator_moveNext(i);)
     {
 	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	if (!(e->pt & PT_ARGS)) continue;
 	if (e->flag > 0)
 	{
 	    shortflags[nshortflags++] = e;
@@ -1193,7 +1285,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, "\n-");
 	PSC_StringBuilder_appendChar(s, e->flag);
-	if (e->type != ET_BOOL)
+	if (e->type != ET_BOOL && e->type != ET_ACTION)
 	{
 	    PSC_StringBuilder_appendChar(s, '\t');
 	    PSC_StringBuilder_append(s, argstr(e));
@@ -1206,7 +1298,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		PSC_StringBuilder_append(s, "[no-]");
 	    }
 	    PSC_StringBuilder_append(s, namestr(e));
-	    if (e->type != ET_BOOL)
+	    if (e->type != ET_BOOL && e->type != ET_ACTION)
 	    {
 		PSC_StringBuilder_appendChar(s, '=');
 		PSC_StringBuilder_append(s, argstr(e));
@@ -1233,7 +1325,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_append(s, "[no-]");
 	}
 	PSC_StringBuilder_append(s, namestr(e));
-	if (e->type != ET_BOOL)
+	if (e->type != ET_BOOL && e->type != ET_ACTION)
 	{
 	    PSC_StringBuilder_appendChar(s, '=');
 	    PSC_StringBuilder_append(s, argstr(e));
@@ -1311,6 +1403,7 @@ static ArgContext *createargcontext(const PSC_ConfigSection *sect,
     ctx->flags = PSC_HashTable_create(5);
     ctx->onceflags = PSC_HashTable_create(5);
     ctx->seenflags = PSC_HashTable_create(5);
+    ctx->actions = PSC_HashTable_create(3);
     ctx->listposarg = 0;
     ctx->errors = errors;
 
@@ -1318,18 +1411,21 @@ static ArgContext *createargcontext(const PSC_ConfigSection *sect,
     while (PSC_ListIterator_moveNext(i))
     {
 	PSC_ConfigElement *e = PSC_ListIterator_current(i);
-	if (e->flag < 0)
+	if (!(e->pt & PT_ARGS)) continue;
+	if (e->flag < 0 && e->type != ET_ACTION)
 	{
 	    PSC_Queue_enqueue(ctx->positional, e, 0);
 	}
 	else
 	{
-	    PSC_HashTable_set(ctx->flags, namestr(e), e, 0);
-	    if (e->flag)
+	    PSC_HashTable *h = e->type == ET_ACTION
+		? ctx->actions : ctx->flags;
+	    PSC_HashTable_set(h, namestr(e), e, 0);
+	    if (e->flag > 0)
 	    {
 		char flagstr[2] = {0};
 		*flagstr = e->flag;
-		PSC_HashTable_set(ctx->flags, flagstr, e, 0);
+		PSC_HashTable_set(h, flagstr, e, 0);
 	    }
 	    if (e->type != ET_LIST && e->type != ET_SECTIONLIST)
 	    {
@@ -1345,6 +1441,7 @@ static ArgContext *createargcontext(const PSC_ConfigSection *sect,
 static void deleteargcontext(ArgContext *ctx)
 {
     if (!ctx) return;
+    PSC_HashTable_destroy(ctx->actions);
     PSC_HashTable_destroy(ctx->seenflags);
     PSC_HashTable_destroy(ctx->onceflags);
     PSC_HashTable_destroy(ctx->flags);
@@ -1353,10 +1450,17 @@ static void deleteargcontext(ArgContext *ctx)
     free(ctx);
 }
 
-static int  parseshortflag(PSC_ConfigElement **e, PSC_Config *cfg,
+static int parseshortflag(PSC_ConfigElement **e, PSC_Config *cfg,
 	ArgContext *ctx, char flag)
 {
     char flagstr[] = { flag, 0 };
+    *e = PSC_HashTable_get(ctx->actions, flagstr);
+    if (*e)
+    {
+	(*e)->action((*e)->actionData);
+	*e = 0;
+	return 1;
+    }
     *e = PSC_HashTable_get(ctx->flags, flagstr);
     if (!*e)
     {
@@ -1675,6 +1779,12 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 	    }
 	    e = 0;
 	}
+	e = PSC_HashTable_get(ctx->actions, flag);
+	if (e)
+	{
+	    e->action(e->actionData);
+	    return 1;
+	}
 	e = PSC_HashTable_get(ctx->flags, flag);
 	if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
 	{
@@ -1687,7 +1797,11 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 	    PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
 	}
     }
-    if (!e) return -1;
+    if (!e)
+    {
+	addparsererror(ctx->errors, "Unknown flag: --%s", flag);
+	return -1;
+    }
     if (e->type == ET_BOOL)
     {
 	if (arg)
@@ -1732,12 +1846,12 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 	{
 	    if (o[1] == '-')
 	    {
-		if (parselongflag(cfg, ctx, o+2) < 0) goto done;
+		if ((rc = parselongflag(cfg, ctx, o+2)) != 0) goto done;
 	    }
 	    else
 	    {
 		PSC_ConfigElement *e;
-		if (parseshortflag(&e, cfg, ctx, *++o) < 0) goto done;
+		if ((rc = parseshortflag(&e, cfg, ctx, *++o)) != 0) goto done;
 		int multiflags = 1;
 		for (char *co = ++o; *co; ++co)
 		{
@@ -1753,7 +1867,10 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 		    if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    for (; *o; ++o)
 		    {
-			if (parseshortflag(&e, cfg, ctx, *o) < 0) goto done;
+			if ((rc = parseshortflag(&e, cfg, ctx, *o)) != 0)
+			{
+			    goto done;
+			}
 			if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    }
 		}
@@ -1765,12 +1882,16 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 				"Argument given for boolean flag -%c", o[-1]);
 			goto done;
 		    }
-		    else if (parseflagarg(cfg, ctx, o, e) < 0) goto done;
+		    else if ((rc = parseflagarg(cfg, ctx, o, e)) != 0)
+		    {
+			goto done;
+		    }
 		}
 	    }
 	}
 	else
 	{
+	    rc = -1;
 	    int haveflagarg = parseflagarg(cfg, ctx, o, 0);
 	    if (haveflagarg < 0) goto done;
 	    if (!haveflagarg)
@@ -1877,6 +1998,8 @@ SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
     PSC_Config *cfg = PSC_malloc(sizeof *cfg);
     cfg->values = PSC_HashTable_create(5);
 
+    activeParser = self;
+
     for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
     {
 	ConcreteParser *p = PSC_ListIterator_current(i);
@@ -1892,6 +2015,9 @@ SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
     if (rc == 0) rc = validateconfig(self->root, cfg, self->errors);
     if (rc != 0) PSC_Config_destroy(cfg);
     else *config = cfg;
+
+    activeParser = 0;
+
     if (rc < 0)
     {
 	ArgData *ad = getargparser(self);
@@ -1911,7 +2037,7 @@ SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
 	    printlines(stderr, errlines, self->autopage);
 	}
     }
-    return rc < 0 ? -1 : 0;
+    return rc;
 }
 
 SOEXPORT const PSC_List *PSC_ConfigParser_errors(const PSC_ConfigParser *self)

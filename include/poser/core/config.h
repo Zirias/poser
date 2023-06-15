@@ -64,6 +64,16 @@ DECLEXPORT void
 PSC_ConfigSection_add(PSC_ConfigSection *self, PSC_ConfigElement *element)
     CMETHOD ATTR_NONNULL((2));
 
+DECLEXPORT void
+PSC_ConfigSection_addHelpArg(PSC_ConfigSection *self,
+	const char *description, const char *name, char flag)
+    CMETHOD;
+
+DECLEXPORT void
+PSC_ConfigSection_addVersionArg(PSC_ConfigSection *self, const char *version,
+	const char *description, const char *name, char flag)
+    CMETHOD ATTR_NONNULL((2));
+
 /** PSC_ConfigSection destructor.
  * This also destroys any added members.
  * @memberof PSC_ConfigSection
@@ -101,6 +111,11 @@ DECLEXPORT PSC_ConfigElement *
 PSC_ConfigElement_createSectionList(PSC_ConfigSection *section, int required)
     ATTR_RETNONNULL ATTR_NONNULL((1));
 
+DECLEXPORT PSC_ConfigElement *
+PSC_ConfigElement_createAction(const char *name,
+	PSC_ConfigAction action, void *actionData)
+    ATTR_RETNONNULL ATTR_NONNULL((1)) ATTR_NONNULL((2));
+
 DECLEXPORT void
 PSC_ConfigElement_argInfo(PSC_ConfigElement *self, int flag,
 	const char *argname)
@@ -109,11 +124,6 @@ PSC_ConfigElement_argInfo(PSC_ConfigElement *self, int flag,
 DECLEXPORT void
 PSC_ConfigElement_argOnly(PSC_ConfigElement *self)
     CMETHOD;
-
-DECLEXPORT void
-PSC_ConfigElement_argAction(PSC_ConfigElement *self,
-	PSC_ConfigAction action, void *actionData)
-    CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT void
 PSC_ConfigElement_fileOnly(PSC_ConfigElement *self)
