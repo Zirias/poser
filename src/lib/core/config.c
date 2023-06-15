@@ -207,7 +207,7 @@ SOEXPORT void PSC_ConfigSection_add(PSC_ConfigSection *self,
 static void helpargprint(void *data)
 {
     (void)data;
-    PSC_ConfigParser_help(activeParser, stderr);
+    PSC_ConfigParser_help(activeParser, stdout);
 }
 
 SOEXPORT void PSC_ConfigSection_addHelpArg(PSC_ConfigSection *self,
@@ -228,7 +228,7 @@ SOEXPORT void PSC_ConfigSection_addHelpArg(PSC_ConfigSection *self,
 static void versionargprint(void *data)
 {
     const char *version = data;
-    fprintf(stderr, "%s\n", version);
+    puts(version);
 }
 
 SOEXPORT void PSC_ConfigSection_addVersionArg(PSC_ConfigSection *self,
