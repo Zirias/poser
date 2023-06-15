@@ -11,6 +11,7 @@
 #include <poser/core/service.h>
 #include <poser/core/stringbuilder.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,8 @@
 #define MINLINELEN 24
 #define MAXLINELEN 512
 #define MAXLINES 512
+
+#define MAXERRLEN 1024
 
 static size_t currlinelen = DEFLINELEN;
 static unsigned short currlines = 0;
@@ -97,6 +100,7 @@ typedef struct ArgContext
     PSC_HashTable *onceflags;
     PSC_HashTable *seenflags;
     PSC_ConfigElement *listposarg;
+    PSC_List *errors;
 } ArgContext;
 
 typedef struct ArgData
@@ -104,6 +108,7 @@ typedef struct ArgData
     char *defname;
     char **argv;
     int argc;
+    int autousage;
 } ArgData;
 
 typedef enum ParserType
@@ -122,6 +127,7 @@ struct PSC_ConfigParser
 {
     const PSC_ConfigSection *root;
     PSC_List *parsers;
+    PSC_List *errors;
     int autopage;
 };
 
@@ -141,6 +147,19 @@ static void handlepagersig(int sig)
 	    pagerexited = 1;
 	}
     }
+}
+
+static void addparsererror(PSC_List *errors, const char *format, ...)
+    ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));
+
+static void addparsererror(PSC_List *errors, const char *format, ...)
+{
+    char *msg = PSC_malloc(MAXERRLEN);
+    va_list ap;
+    va_start(ap, format);
+    size_t len = vsnprintf(msg, MAXERRLEN, format, ap);
+    va_end(ap);
+    PSC_List_append(errors, PSC_realloc(msg, len+1), free);
 }
 
 SOEXPORT PSC_ConfigSection *PSC_ConfigSection_create(const char *name)
@@ -386,6 +405,7 @@ SOEXPORT PSC_ConfigParser *PSC_ConfigParser_create(
     PSC_ConfigParser *self = PSC_malloc(sizeof *self);
     self->root = root;
     self->parsers = PSC_List_create();
+    self->errors = PSC_List_create();
     self->autopage = 0;
     return self;
 }
@@ -403,6 +423,23 @@ static void deleteconcreteparser(void *ptr)
     free(p);
 }
 
+static ArgData *getargparser(const PSC_ConfigParser *self)
+{
+    ArgData *result = 0;
+    PSC_ListIterator *i = PSC_List_iterator(self->parsers);
+    while (PSC_ListIterator_moveNext(i))
+    {
+	ConcreteParser *p = PSC_ListIterator_current(i);
+	if (p->type == PT_ARGS)
+	{
+	    result = p->parserData;
+	    break;
+	}
+    }
+    PSC_ListIterator_destroy(i);
+    return result;
+}
+
 SOEXPORT void PSC_ConfigParser_addArgs(PSC_ConfigParser *self,
 	const char *defname, int argc, char **argv)
 {
@@ -411,9 +448,16 @@ SOEXPORT void PSC_ConfigParser_addArgs(PSC_ConfigParser *self,
     ad->defname = PSC_copystr(defname);
     ad->argv = argv;
     ad->argc = argc;
+    ad->autousage = 0;
     p->parserData = ad;
     p->type = PT_ARGS;
     PSC_List_append(self->parsers, p, deleteconcreteparser);
+}
+
+SOEXPORT void PSC_ConfigParser_argsAutoUsage(PSC_ConfigParser *self)
+{
+    ArgData *ad = getargparser(self);
+    if (ad) ad->autousage = 1;
 }
 
 SOEXPORT void PSC_ConfigParser_autoPage(PSC_ConfigParser *self)
@@ -518,13 +562,12 @@ static void setoutputdims(FILE *out)
     currlines = 0;
 }
 
-static void formatlines(PSC_List *lines, PSC_StringBuilder *str,
+static void formatlinesraw(PSC_List *lines, const char *cstr,
 	int indentfirst, int indentrest, int compact)
 {
     char line[MAXLINELEN];
     int linepos = 0;
     
-    const char *cstr = PSC_StringBuilder_str(str);
     int indent = indentfirst;
 
     if (!*cstr) return;
@@ -585,6 +628,12 @@ static void formatlines(PSC_List *lines, PSC_StringBuilder *str,
 	indent = indentrest;
     }
 
+}
+static void formatlines(PSC_List *lines, PSC_StringBuilder *str,
+	int indentfirst, int indentrest, int compact)
+{
+    formatlinesraw(lines, PSC_StringBuilder_str(str),
+	    indentfirst, indentrest, compact);
     PSC_StringBuilder_destroy(str);
 }
 
@@ -749,6 +798,13 @@ static const char *namestr(const PSC_ConfigElement *e)
     }
 }
 
+static const char *getargsvname(const ArgData *ad)
+{
+    if (!ad) return 0;
+    if (ad->argc > 0) return ad->argv[0];
+    return ad->defname;
+}
+
 static const char *argstr(const PSC_ConfigElement *e)
 {
     const char *result = e->argname;
@@ -803,7 +859,6 @@ static const char *argstr(const PSC_ConfigElement *e)
 
 static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 {
-    const char *svname = 0;
     char *boolflags = 0;
     PSC_ConfigElement **optflags = 0;
     PSC_ConfigElement **reqposargs = 0;
@@ -815,19 +870,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     int nreqposargs = 0;
     int noptposargs = 0;
 
-    for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
-    {
-	ConcreteParser *p = PSC_ListIterator_current(i);
-	if (p->type == PT_ARGS)
-	{
-	    ArgData *ad = p->parserData;
-	    if (ad->argc > 0) svname = ad->argv[0];
-	    else svname = ad->defname;
-	    break;
-	}
-    }
-    PSC_ListIterator_destroy(i);
-
+    const char *svname = getargsvname(getargparser(self));
     if (!svname) PSC_Service_panic(
 	    "Can't print usage without a configured args parser");
 
@@ -1096,7 +1139,6 @@ done:
 
 SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 {
-    const char *svname = 0;
     PSC_ConfigElement **shortflags = 0;
     PSC_ConfigElement **longflags = 0;
     PSC_ConfigElement **reqposargs = 0;
@@ -1110,19 +1152,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     int noptposargs = 0;
     int havesubsect = 0;
 
-    for (i = PSC_List_iterator(self->parsers); PSC_ListIterator_moveNext(i);)
-    {
-	ConcreteParser *p = PSC_ListIterator_current(i);
-	if (p->type == PT_ARGS)
-	{
-	    ArgData *ad = p->parserData;
-	    if (ad->argc > 0) svname = ad->argv[0];
-	    else svname = ad->defname;
-	    break;
-	}
-    }
-    PSC_ListIterator_destroy(i);
-
+    const char *svname = getargsvname(getargparser(self));
     if (!svname) PSC_Service_panic(
 	    "Can't print help without a configured args parser");
 
@@ -1272,7 +1302,8 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     return printlines(out, lines, self->autopage);
 }
 
-static ArgContext *createargcontext(const PSC_ConfigSection *sect)
+static ArgContext *createargcontext(const PSC_ConfigSection *sect,
+	PSC_List *errors)
 {
     ArgContext *ctx = PSC_malloc(sizeof *ctx);
     ctx->needsarg = PSC_Queue_create();
@@ -1281,6 +1312,7 @@ static ArgContext *createargcontext(const PSC_ConfigSection *sect)
     ctx->onceflags = PSC_HashTable_create(5);
     ctx->seenflags = PSC_HashTable_create(5);
     ctx->listposarg = 0;
+    ctx->errors = errors;
 
     PSC_ListIterator *i = PSC_List_iterator(sect->elements);
     while (PSC_ListIterator_moveNext(i))
@@ -1326,11 +1358,16 @@ static int  parseshortflag(PSC_ConfigElement **e, PSC_Config *cfg,
 {
     char flagstr[] = { flag, 0 };
     *e = PSC_HashTable_get(ctx->flags, flagstr);
-    if (!*e) return -1;
+    if (!*e)
+    {
+	addparsererror(ctx->errors, "Unknown flag: -%c", flag);
+	return -1;
+    }
     if (PSC_HashTable_get(ctx->onceflags, namestr(*e)))
     {
 	if (PSC_HashTable_get(ctx->seenflags, namestr(*e)))
 	{
+	    addparsererror(ctx->errors, "Flag --%s given twice", namestr(*e));
 	    return -1;
 	}
 	PSC_HashTable_set(ctx->seenflags, namestr(*e), *e, 0);
@@ -1352,7 +1389,7 @@ static void deleteargsectitem(void *item)
     free(i);
 }
 
-static PSC_Queue *argsectionparts(const char *str)
+static PSC_Queue *argsectionparts(const char *str, PSC_List *errors)
 {
     PSC_Queue *parts = PSC_Queue_create();
 
@@ -1391,6 +1428,8 @@ static PSC_Queue *argsectionparts(const char *str)
 			if (str[1] && str[1] != ':' && str[1] != '=')
 			{
 			    free(tmp);
+			    addparsererror(errors, "subsection: unexpected ] "
+				    "character, must quote entire values");
 			    ok = 0;
 			}
 			else quote = 0;
@@ -1398,6 +1437,8 @@ static PSC_Queue *argsectionparts(const char *str)
 		    else if (*str == '[')
 		    {
 			free(tmp);
+			addparsererror(errors, "subsection: unexpected [ "
+				"character, cannot nest quoting");
 			ok = 0;
 		    }
 		    else *tp++ = *str;
@@ -1415,6 +1456,8 @@ static PSC_Queue *argsectionparts(const char *str)
 		if (item->key)
 		{
 		    free(tmp);
+		    addparsererror(errors, "subsection: unexpected = "
+			    "character, a key was already given");
 		    ok = 0;
 		    break;
 		}
@@ -1437,16 +1480,16 @@ static PSC_Queue *argsectionparts(const char *str)
 }
 
 static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
-	const char *str, int recurse))(void *);
+	    PSC_List *errors, const char *str, int recurse))(void *);
 
 static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
-	const char *str)
+	PSC_List *errors, const char *str)
 {
     int ok = 0;
     PSC_Config *cfg = PSC_malloc(sizeof *cfg);
     cfg->values = PSC_HashTable_create(5);
-    ArgContext *ctx = createargcontext(sect);
-    PSC_Queue *parts = argsectionparts(str);
+    ArgContext *ctx = createargcontext(sect, errors);
+    PSC_Queue *parts = argsectionparts(str, errors);
     if (!parts) goto done;
 
     ok = 1;
@@ -1457,17 +1500,33 @@ static PSC_Config *parseargssection(const PSC_ConfigSection *sect,
 	if (item->key)
 	{
 	    e = PSC_HashTable_get(ctx->flags, item->key);
+	    if (!e)
+	    {
+		addparsererror(errors,
+			"subsection: unknown key `%s'", item->key);
+	    }
 	    if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
 	    {
-		if (PSC_HashTable_get(ctx->seenflags, namestr(e))) e = 0;
+		if (PSC_HashTable_get(ctx->seenflags, namestr(e)))
+		{
+		    addparsererror(errors, "subsection: key `%s' given twice",
+			    namestr(e));
+		    e = 0;
+		}
 		else PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
 	    }
 	}
-	else e = PSC_Queue_dequeue(ctx->positional);
+	else
+	{
+	    e = PSC_Queue_dequeue(ctx->positional);
+	    if (!e) addparsererror(errors, 
+		    "subsection: unexpected extra argument `%s'", item->val);
+	}
 	if (e)
 	{
 	    void *val = 0;
-	    void (*deleter)(void *) = parseargsvalue(&val, e, item->val, 0);
+	    void (*deleter)(void *) = parseargsvalue(
+		    &val, e, errors, item->val, 0);
 	    if (!val) ok = 0;
 	    else if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
 	    {
@@ -1500,7 +1559,7 @@ done:
 }
 
 static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
-	const char *str, int recurse))(void *)
+	    PSC_List *errors, const char *str, int recurse))(void *)
 {
     ElemType t = e->type;
     if (t == ET_LIST) t = e->element->type;
@@ -1524,6 +1583,10 @@ static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
 		*val = v;
 		return free;
 	    }
+	    addparsererror(errors,
+		    recurse ? "Argument `%s' for --%s is not a valid integer"
+		    : "Argument `%s' for key `%s' is not a valid integer",
+		    str, namestr(e));
 	    return 0;
 
 	case ET_FLOAT:
@@ -1536,12 +1599,17 @@ static void (*parseargsvalue(void **val, PSC_ConfigElement *e,
 		*val = v;
 		return free;
 	    }
+	    addparsererror(errors,
+		    recurse ? "Argument `%s' for --%s is not a valid "
+		    "floating point number"
+		    : "Argment `%s' for key `%s' is not a valid "
+		    "floating point number", str, namestr(e));
 	    return 0;
 
 	case ET_SECTION:
 	case ET_SECTIONLIST:
 	    if (!recurse) return 0;
-	    *val = parseargssection(e->section, str);
+	    *val = parseargssection(e->section, errors, str);
 	    return deleteConfig;
 
 	default:
@@ -1554,9 +1622,8 @@ static int parseflagarg(PSC_Config *cfg, ArgContext *ctx, const char *str,
 {
     if (!e) e = PSC_Queue_dequeue(ctx->needsarg);
     if (!e) return 0;
-    if (e->type == ET_BOOL) return -1;
     void *val = 0;
-    void (*deleter)(void *) = parseargsvalue(&val, e, str, 1);
+    void (*deleter)(void *) = parseargsvalue(&val, e, ctx->errors, str, 1);
     if (!val) return -1;
     if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
     {
@@ -1596,7 +1663,12 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 	    e = PSC_HashTable_get(ctx->flags, flag+3);
 	    if (e && e->type == ET_BOOL)
 	    {
-		if (PSC_HashTable_get(ctx->seenflags, namestr(e))) return -1;
+		if (PSC_HashTable_get(ctx->seenflags, namestr(e)))
+		{
+		    addparsererror(ctx->errors,
+			    "Flag --[no-]%s given twice", namestr(e));
+		    return -1;
+		}
 		PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
 		PSC_HashTable_delete(cfg->values, namestr(e));
 		return 0;
@@ -1606,14 +1678,24 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 	e = PSC_HashTable_get(ctx->flags, flag);
 	if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
 	{
-	    if (PSC_HashTable_get(ctx->seenflags, namestr(e))) return -1;
+	    if (PSC_HashTable_get(ctx->seenflags, namestr(e)))
+	    {
+		addparsererror(ctx->errors,
+			"Flag --%s given twice", namestr(e));
+		return -1;
+	    }
 	    PSC_HashTable_set(ctx->seenflags, namestr(e), e, 0);
 	}
     }
     if (!e) return -1;
     if (e->type == ET_BOOL)
     {
-	if (arg) return -1;
+	if (arg)
+	{
+	    addparsererror(ctx->errors,
+		    "Argument given for boolean flag --%s", namestr(e));
+	    return -1;
+	}
 	PSC_HashTable_set(cfg->values, namestr(e), &boolval, 0);
 	return 0;
     }
@@ -1628,14 +1710,14 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
     return 0;
 }
 
-static int parsefromargs(const ArgData *self, PSC_Config *cfg,
-    const PSC_ConfigSection *sect)
+static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
+	PSC_Config *cfg)
 {
     int endflags = 0;
     int escapedash = 0;
     int rc = -1;
 
-    ArgContext *ctx = createargcontext(sect);
+    ArgContext *ctx = createargcontext(p->root, p->errors);
     for (int arg = 1; arg < self->argc; ++arg)
     {
 	char *o = self->argv[arg];
@@ -1677,7 +1759,13 @@ static int parsefromargs(const ArgData *self, PSC_Config *cfg,
 		}
 		else
 		{
-		    if (!e || parseflagarg(cfg, ctx, o, e) < 0) goto done;
+		    if (!e)
+		    {
+			addparsererror(ctx->errors,
+				"Argument given for boolean flag -%c", o[-1]);
+			goto done;
+		    }
+		    else if (parseflagarg(cfg, ctx, o, e) < 0) goto done;
 		}
 	    }
 	}
@@ -1690,13 +1778,19 @@ static int parsefromargs(const ArgData *self, PSC_Config *cfg,
 		endflags = 1;
 		PSC_ConfigElement *e = ctx->listposarg;
 		if (!e) e = PSC_Queue_dequeue(ctx->positional);
-		if (!e) goto done;
+		if (!e)
+		{
+		    addparsererror(p->errors,
+			    "Unexpected extra argument `%s'", o);
+		    goto done;
+		}
 		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
 		{
 		    ctx->listposarg = e;
 		}
 		void *val = 0;
-		void (*deleter)(void *) = parseargsvalue(&val, e, o, 1);
+		void (*deleter)(void *) = parseargsvalue(
+			&val, e, p->errors, o, 1);
 		if (!val) goto done;
 		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
 		{
@@ -1724,7 +1818,51 @@ done:
     return rc;
 }
 
-SOEXPORT int PSC_ConfigParser_parse(const PSC_ConfigParser *self,
+static int validateconfig(const PSC_ConfigSection *sect,
+	const PSC_Config *config, PSC_List *errors)
+{
+    PSC_ListIterator *i;
+    int rc = 0;
+
+    for (i = PSC_List_iterator(sect->elements); PSC_ListIterator_moveNext(i);)
+    {
+	const PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	const void *val = PSC_HashTable_get(config->values, namestr(e));
+	if (e->required && !val)
+	{
+	    addparsererror(errors, "Required field `%s' missing", namestr(e));
+	    rc = -1;
+	    break;
+	}
+	if (val)
+	{
+	    if (e->type == ET_SECTION)
+	    {
+		const PSC_ConfigSection *subsect = e->section;
+		const PSC_Config *subcfg = val;
+		if ((rc = validateconfig(subsect, subcfg, errors)) < 0) break;
+	    }
+	    else if (e->type == ET_SECTIONLIST)
+	    {
+		const PSC_ConfigSection *subsect = e->section;
+		const PSC_List *configs = val;
+		PSC_ListIterator *j = PSC_List_iterator(configs);
+		while (rc == 0 && PSC_ListIterator_moveNext(j))
+		{
+		    const PSC_Config *subcfg = PSC_ListIterator_current(j);
+		    rc = validateconfig(subsect, subcfg, errors);
+		}
+		PSC_ListIterator_destroy(j);
+		if (rc < 0) break;
+	    }
+	}
+    }
+    PSC_ListIterator_destroy(i);
+
+    return rc;
+}
+
+SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
 	PSC_Config **config)
 {
     if (PSC_List_size(self->parsers) == 0)
@@ -1733,6 +1871,7 @@ SOEXPORT int PSC_ConfigParser_parse(const PSC_ConfigParser *self,
 		"Tried to parse config without any configured parsers");
     }
 
+    PSC_List_clear(self->errors);
     PSC_ListIterator *i = 0;
     int rc = 0;
     PSC_Config *cfg = PSC_malloc(sizeof *cfg);
@@ -1744,30 +1883,56 @@ SOEXPORT int PSC_ConfigParser_parse(const PSC_ConfigParser *self,
 	if (p->type == PT_ARGS)
 	{
 	    const ArgData *ad = p->parserData;
-	    rc = parsefromargs(ad, cfg, self->root);
+	    rc = parsefromargs(ad, self, cfg);
 	}
 	if (rc != 0) break;
     }
     PSC_ListIterator_destroy(i);
 
+    if (rc == 0) rc = validateconfig(self->root, cfg, self->errors);
     if (rc != 0) PSC_Config_destroy(cfg);
     else *config = cfg;
+    if (rc < 0)
+    {
+	ArgData *ad = getargparser(self);
+	if (ad && ad->autousage)
+	{
+	    PSC_List *errlines = usagelines(self, stderr);
+	    PSC_StringBuilder *s;
+	    for (i = PSC_List_iterator(self->errors);
+		    PSC_ListIterator_moveNext(i);)
+	    {
+		s = PSC_StringBuilder_create();
+		PSC_StringBuilder_appendChar(s, '\n');
+		PSC_StringBuilder_append(s, PSC_ListIterator_current(i));
+		formatlines(errlines, s, 0, 0, 0);
+	    }
+	    PSC_ListIterator_destroy(i);
+	    printlines(stderr, errlines, self->autopage);
+	}
+    }
     return rc < 0 ? -1 : 0;
+}
+
+SOEXPORT const PSC_List *PSC_ConfigParser_errors(const PSC_ConfigParser *self)
+{
+    return self->errors;
 }
 
 SOEXPORT void PSC_ConfigParser_destroy(PSC_ConfigParser *self)
 {
     if (!self) return;
+    PSC_List_destroy(self->errors);
     PSC_List_destroy(self->parsers);
     free(self);
 }
 
-DECLEXPORT const void *PSC_Config_get(const PSC_Config *self, const char *name)
+SOEXPORT const void *PSC_Config_get(const PSC_Config *self, const char *name)
 {
     return PSC_HashTable_get(self->values, name);
 }
 
-DECLEXPORT void PSC_Config_destroy(PSC_Config *self)
+SOEXPORT void PSC_Config_destroy(PSC_Config *self)
 {
     if (!self) return;
     PSC_HashTable_destroy(self->values);

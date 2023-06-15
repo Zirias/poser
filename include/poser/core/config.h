@@ -33,6 +33,8 @@ C_CLASS_DECL(PSC_ConfigParser);
  */
 C_CLASS_DECL(PSC_Config);
 
+C_CLASS_DECL(PSC_List);
+
 /** Callback for custom parsing or validating a single element.
  * @param ctx a context for parsing/validating
  */
@@ -172,6 +174,10 @@ PSC_ConfigParser_addArgs(PSC_ConfigParser *self, const char *defname,
     CMETHOD;
 
 DECLEXPORT void
+PSC_ConfigParser_argsAutoUsage(PSC_ConfigParser *self)
+    CMETHOD;
+
+DECLEXPORT void
 PSC_ConfigParser_addFile(PSC_ConfigParser *self, const char *filename)
     CMETHOD ATTR_NONNULL((2));
 
@@ -180,8 +186,12 @@ PSC_ConfigParser_autoPage(PSC_ConfigParser *self)
     CMETHOD;
 
 DECLEXPORT int
-PSC_ConfigParser_parse(const PSC_ConfigParser *self, PSC_Config **config)
+PSC_ConfigParser_parse(PSC_ConfigParser *self, PSC_Config **config)
     CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT const PSC_List *
+PSC_ConfigParser_errors(const PSC_ConfigParser *self)
+    CMETHOD ATTR_RETNONNULL;
 
 DECLEXPORT int
 PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out)
