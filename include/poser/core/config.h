@@ -158,6 +158,10 @@ DECLEXPORT double
 PSC_ConfigParserCtx_float(const PSC_ConfigParserCtx *self)
     CMETHOD;
 
+DECLEXPORT int
+PSC_ConfigParserCtx_succeeded(const PSC_ConfigParserCtx *self)
+    CMETHOD;
+
 DECLEXPORT void
 PSC_ConfigParserCtx_setString(PSC_ConfigParserCtx *self, const char *val)
     CMETHOD;
@@ -171,8 +175,27 @@ PSC_ConfigParserCtx_setFloat(PSC_ConfigParserCtx *self, double val)
     CMETHOD;
 
 DECLEXPORT void
-PSC_ConfigParserCtx_fail(PSC_ConfigParserCtx *self, const char *error)
+PSC_ConfigParserCtx_setStringFor(PSC_ConfigParserCtx *self,
+	const char *name, const char *val)
+    CMETHOD ATTR_NONNULL((2)) ATTR_NONNULL((3));
+
+DECLEXPORT void
+PSC_ConfigParserCtx_setIntegerFor(PSC_ConfigParserCtx *self,
+	const char *name, long val)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT void
+PSC_ConfigParserCtx_setFloatFor(PSC_ConfigParserCtx *self,
+	const char *name, double val)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT void
+PSC_ConfigParserCtx_succeed(PSC_ConfigParserCtx *self)
     CMETHOD;
+
+DECLEXPORT void
+PSC_ConfigParserCtx_fail(PSC_ConfigParserCtx *self, const char *errfmt, ...)
+    CMETHOD ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));
 
 DECLEXPORT PSC_ConfigParser *
 PSC_ConfigParser_create(const PSC_ConfigSection *root)

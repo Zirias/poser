@@ -93,7 +93,8 @@ struct PSC_ConfigElement
 struct PSC_ConfigParserCtx
 {
     char *string;
-    char *error;
+    PSC_HashTable *values;
+    PSC_List *errors;
     union
     {
 	long integerVal;
@@ -164,14 +165,19 @@ static void handlepagersig(int sig)
 static void addparsererror(PSC_List *errors, const char *format, ...)
     ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));
 
-static void addparsererror(PSC_List *errors, const char *format, ...)
+static void vaddparsererror(PSC_List *errors, const char *format, va_list ap)
 {
     char *msg = PSC_malloc(MAXERRLEN);
+    size_t len = vsnprintf(msg, MAXERRLEN, format, ap);
+    PSC_List_append(errors, PSC_realloc(msg, len+1), free);
+}
+
+static void addparsererror(PSC_List *errors, const char *format, ...)
+{
     va_list ap;
     va_start(ap, format);
-    size_t len = vsnprintf(msg, MAXERRLEN, format, ap);
+    vaddparsererror(errors, format, ap);
     va_end(ap);
-    PSC_List_append(errors, PSC_realloc(msg, len+1), free);
 }
 
 SOEXPORT PSC_ConfigSection *PSC_ConfigSection_create(const char *name)
@@ -416,6 +422,25 @@ SOEXPORT void PSC_ConfigElement_destroy(PSC_ConfigElement *self)
     free(self);
 }
 
+static PSC_ConfigParserCtx *createParserCtx(ElemType type, const char *str,
+	PSC_HashTable *values, PSC_List *errors)
+{
+    PSC_ConfigParserCtx *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
+    self->string = PSC_copystr(str);
+    self->values = values;
+    self->errors = errors;
+    self->type = type;
+    return self;
+}
+
+static void deleteParserCtx(PSC_ConfigParserCtx *self)
+{
+    if (!self) return;
+    free(self->string);
+    free(self);
+}
+
 SOEXPORT const char *PSC_ConfigParserCtx_string(
 	const PSC_ConfigParserCtx *self)
 {
@@ -440,6 +465,11 @@ SOEXPORT double PSC_ConfigParserCtx_float(const PSC_ConfigParserCtx *self)
 		"element that is not a float");
     }
     return self->floatVal;
+}
+
+SOEXPORT int PSC_ConfigParserCtx_succeeded(const PSC_ConfigParserCtx *self)
+{
+    return self->success;
 }
 
 SOEXPORT void PSC_ConfigParserCtx_setString(PSC_ConfigParserCtx *self,
@@ -476,12 +506,44 @@ SOEXPORT void PSC_ConfigParserCtx_setFloat(PSC_ConfigParserCtx *self,
     self->floatVal = val;
 }
 
-SOEXPORT void PSC_ConfigParserCtx_fail(PSC_ConfigParserCtx *self,
-	const char *error)
+SOEXPORT void PSC_ConfigParserCtx_setStringFor(PSC_ConfigParserCtx *self,
+	const char *name, const char *val)
 {
-    free(self->error);
-    self->error = PSC_copystr(error);
+    if (PSC_HashTable_get(self->values, name)) return;
+    PSC_HashTable_set(self->values, name, PSC_copystr(val), free);
+}
+
+SOEXPORT void PSC_ConfigParserCtx_setIntegerFor(PSC_ConfigParserCtx *self,
+	const char *name, long val)
+{
+    if (PSC_HashTable_get(self->values, name)) return;
+    long *v = PSC_malloc(sizeof *v);
+    *v = val;
+    PSC_HashTable_set(self->values, name, v, free);
+}
+
+SOEXPORT void PSC_ConfigParserCtx_setFloatFor(PSC_ConfigParserCtx *self,
+	const char *name, double val)
+{
+    if (PSC_HashTable_get(self->values, name)) return;
+    double *v = PSC_malloc(sizeof *v);
+    *v = val;
+    PSC_HashTable_set(self->values, name, v, free);
+}
+
+SOEXPORT void PSC_ConfigParserCtx_succeed(PSC_ConfigParserCtx *self)
+{
+    self->success = 1;
+}
+
+SOEXPORT void PSC_ConfigParserCtx_fail(PSC_ConfigParserCtx *self,
+	const char *errfmt, ...)
+{
     self->success = 0;
+    va_list ap;
+    va_start(ap, errfmt);
+    vaddparsererror(self->errors, errfmt, ap);
+    va_end(ap);
 }
 
 SOEXPORT PSC_ConfigParser *PSC_ConfigParser_create(
@@ -1592,11 +1654,13 @@ static PSC_Queue *argsectionparts(const char *str, PSC_List *errors)
     return 0;
 }
 
-static void *parseargsvalue(PSC_ConfigElement *e, PSC_List *errors,
-	const char *str, int toplevel)
+static void *parseargsvalue(PSC_ConfigElement *e, PSC_HashTable *v,
+	PSC_List *errors, const char *str, int toplevel)
 {
     ElemType t = e->type;
     if (t == ET_LIST) t = e->element->type;
+    PSC_ConfigElementCallback parser = e->parser;
+    if (!parser && t == ET_LIST) parser = e->element->parser;
     switch (t)
     {
 	long lv;
@@ -1604,16 +1668,41 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_List *errors,
 	char *endptr;
 
 	case ET_STRING:
+	    if (parser)
+	    {
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		ctx->success = 1;
+		parser(ctx);
+		char *result = ctx->success ? ctx->string : 0;
+		ctx->string = 0;
+		deleteParserCtx(ctx);
+		return result;
+	    }
 	    return PSC_copystr(str);
 
 	case ET_INTEGER:
 	    errno = 0;
 	    lv = strtol(str, &endptr, 10);
+	    if (parser)
+	    {
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		ctx->success = (!errno && endptr != str && !*endptr);
+		if (ctx->success) ctx->integerVal = lv;
+		parser(ctx);
+		long *result = 0;
+		if (ctx->success)
+		{
+		    result = PSC_malloc(sizeof *result);
+		    *result = ctx->integerVal;
+		}
+		deleteParserCtx(ctx);
+		return result;
+	    }
 	    if (!errno && endptr != str && !*endptr)
 	    {
-		long *v = PSC_malloc(sizeof *v);
-		*v = lv;
-		return v;
+		long *result = PSC_malloc(sizeof *result);
+		*result = lv;
+		return result;
 	    }
 	    addparsererror(errors,
 		    toplevel ? "Argument `%s' for --%s is not a valid integer"
@@ -1624,11 +1713,26 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_List *errors,
 	case ET_FLOAT:
 	    errno = 0;
 	    fv = strtod(str, &endptr);
+	    if (parser)
+	    {
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		ctx->success = (!errno && endptr != str && !*endptr);
+		if (ctx->success) ctx->floatVal = fv;
+		parser(ctx);
+		double *result = 0;
+		if (ctx->success)
+		{
+		    result = PSC_malloc(sizeof *result);
+		    *result = ctx->floatVal;
+		}
+		deleteParserCtx(ctx);
+		return result;
+	    }
 	    if (!errno && endptr != str && !*endptr)
 	    {
-		double *v = PSC_malloc(sizeof *v);
-		*v = fv;
-		return v;
+		double *result = PSC_malloc(sizeof *result);
+		*result = fv;
+		return result;
 	    }
 	    addparsererror(errors,
 		    toplevel ? "Argument `%s' for --%s is not a valid "
@@ -1685,7 +1789,8 @@ static int parseargssection(PSC_Config *cfg, const PSC_ConfigSection *sect,
 	{
 	    if (e->type != ET_SECTION && e->type != ET_SECTIONLIST)
 	    {
-		void *val = parseargsvalue(e, errors, item->val, 0);
+		void *val = parseargsvalue(e,
+			cfg->values, errors, item->val, 0);
 		if (!val) rc = -1;
 		else if (e->type == ET_LIST)
 		{
@@ -1740,7 +1845,7 @@ static int parseanyarg(PSC_Config *cfg, PSC_ConfigElement *e,
 	}
 	val = subcfg;
     }
-    else val = parseargsvalue(e, errors, str, 1);
+    else val = parseargsvalue(e, cfg->values, errors, str, 1);
     if (!val) return -1;
     if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
     {
@@ -1943,8 +2048,41 @@ done:
     return rc;
 }
 
+static int validatecustom(PSC_ConfigElementCallback validator,
+	const void *val, ElemType t, PSC_Config *cfg, PSC_List *errors)
+{
+    int rc = -1;
+    PSC_ConfigParserCtx *ctx = createParserCtx(t, 0, cfg->values, errors);
+    switch (t)
+    {
+	case ET_STRING:
+	    ctx->string = (char *)val;
+	    validator(ctx);
+	    ctx->string = 0;
+	    if (ctx->success) rc = 0;
+	    break;
+
+	case ET_INTEGER:
+	    ctx->integerVal = *((long *)val);
+	    validator(ctx);
+	    if (ctx->success) rc = 0;
+	    break;
+
+	case ET_FLOAT:
+	    ctx->floatVal = *((double *)val);
+	    validator(ctx);
+	    if (ctx->success) rc = 0;
+	    break;
+
+	default:
+	    ;
+    }
+    deleteParserCtx(ctx);
+    return rc;
+}
+
 static int validateconfig(const PSC_ConfigSection *sect,
-	const PSC_Config *config, PSC_List *errors)
+	PSC_Config *config, PSC_List *errors)
 {
     PSC_ListIterator *i;
     PSC_ListIterator *j;
@@ -1955,6 +2093,11 @@ static int validateconfig(const PSC_ConfigSection *sect,
     {
 	const PSC_ConfigElement *e = PSC_ListIterator_current(i);
 	const void *val = PSC_HashTable_get(config->values, namestr(e));
+	PSC_ConfigElementCallback validator = e->validator;
+	if (e->type == ET_LIST && !validator)
+	{
+	    validator = e->element->validator;
+	}
 	if (e->required && !val)
 	{
 	    addparsererror(errors, "Required field `%s' missing", namestr(e));
@@ -1963,12 +2106,37 @@ static int validateconfig(const PSC_ConfigSection *sect,
 	else if (val) switch(e->type)
 	{
 	    const PSC_ConfigSection *subsect;
-	    const PSC_Config *subcfg;
 	    const PSC_List *configs;
+	    PSC_Config *subcfg;
+
+	    case ET_STRING:
+	    case ET_INTEGER:
+	    case ET_FLOAT:
+		if (validator)
+		{
+		    rc = validatecustom(validator,
+			    val, e->type, config, errors);
+		}
+		break;
+
+	    case ET_LIST:
+		if (validator)
+		{
+		    configs = val;
+		    for (j = PSC_List_iterator(configs);
+			    rc == 0 && PSC_ListIterator_moveNext(j);)
+		    {
+			rc = validatecustom(validator,
+				PSC_ListIterator_current(j), e->element->type,
+				config, errors);
+		    }
+		    PSC_ListIterator_destroy(j);
+		}
+		break;
 
 	    case ET_SECTION:
 		subsect = e->section;
-		subcfg = val;
+		subcfg = (PSC_Config *)val;
 		rc = validateconfig(subsect, subcfg, errors);
 		break;
 
