@@ -1801,7 +1801,28 @@ static int parseargssection(PSC_Config *cfg, const PSC_ConfigSection *sect,
 	}
 	if (e)
 	{
-	    if (e->type != ET_SECTION && e->type != ET_SECTIONLIST)
+	    if (e->type == ET_BOOL)
+	    {
+		if (item->key)
+		{
+		    if (!item->val[1])
+		    {
+			if (item->val[0] == '0') PSC_HashTable_delete(
+				cfg->values, namestr(e));
+			else if (item->val[0] == '1') PSC_HashTable_set(
+				cfg->values, namestr(e), &boolval, 0);
+			else rc = -1;
+		    }
+		    else rc = -1;
+		    if (rc < 0)
+		    {
+			addparsererror(errors, "subsection: invalid boolean "
+				"value `%s'", item->val);
+		    }
+		}
+		else PSC_HashTable_set(cfg->values, namestr(e), &boolval, 0);
+	    }
+	    else if (e->type != ET_SECTION && e->type != ET_SECTIONLIST)
 	    {
 		void *val = parseargsvalue(e, cfg, errors, item->val, 0);
 		if (!val) rc = -1;
