@@ -103,6 +103,7 @@ struct PSC_ConfigParserCtx
     };
     ElemType type;
     int success;
+    int acted;
 };
 
 typedef struct ArgSectItem
@@ -439,6 +440,7 @@ static PSC_ConfigParserCtx *createParserCtx(ElemType type, const char *str,
     self->section = section;
     self->errors = errors;
     self->type = type;
+    self->acted = 0;
     return self;
 }
 
@@ -548,12 +550,14 @@ SOEXPORT void PSC_ConfigParserCtx_setFloatFor(PSC_ConfigParserCtx *self,
 SOEXPORT void PSC_ConfigParserCtx_succeed(PSC_ConfigParserCtx *self)
 {
     self->success = 1;
+    self->acted = 1;
 }
 
 SOEXPORT void PSC_ConfigParserCtx_fail(PSC_ConfigParserCtx *self,
 	const char *errfmt, ...)
 {
     self->success = 0;
+    self->acted = 1;
     va_list ap;
     va_start(ap, errfmt);
     vaddparsererror(self->errors, errfmt, ap);
@@ -1130,15 +1134,12 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out,
     PSC_List *lines = usagelines(self, out);
     if (witherrors)
     {
+	PSC_List_append(lines, "", 0);
 	PSC_ListIterator *i;
-	PSC_StringBuilder *s;
 	for (i = PSC_List_iterator(self->errors);
 		PSC_ListIterator_moveNext(i);)
 	{
-	    s = PSC_StringBuilder_create();
-	    PSC_StringBuilder_appendChar(s, '\n');
-	    PSC_StringBuilder_append(s, PSC_ListIterator_current(i));
-	    formatlines(lines, s, 0, 0, 0);
+	    formatlinesraw(lines, PSC_ListIterator_current(i), 0, 0, 0);
 	}
 	PSC_ListIterator_destroy(i);
     }
@@ -1675,6 +1676,8 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_Config *c,
     if (t == ET_LIST) t = e->element->type;
     PSC_ConfigElementCallback parser = e->parser;
     if (!parser && t == ET_LIST) parser = e->element->parser;
+    void *result = 0;
+    int nomsg = 0;
     switch (t)
     {
 	long lv;
@@ -1687,7 +1690,7 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_Config *c,
 		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, c, errors);
 		ctx->success = 1;
 		parser(ctx);
-		char *result = ctx->success ? ctx->string : 0;
+		result = ctx->success ? ctx->string : 0;
 		ctx->string = 0;
 		deleteParserCtx(ctx);
 		return result;
@@ -1703,26 +1706,27 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_Config *c,
 		ctx->success = (!errno && endptr != str && !*endptr);
 		if (ctx->success) ctx->integerVal = lv;
 		parser(ctx);
-		long *result = 0;
+		long *rv = 0;
 		if (ctx->success)
 		{
-		    result = PSC_malloc(sizeof *result);
-		    *result = ctx->integerVal;
+		    rv = PSC_malloc(sizeof *rv);
+		    *rv = ctx->integerVal;
 		}
+		nomsg = ctx->acted;
 		deleteParserCtx(ctx);
-		return result;
+		result = rv;
 	    }
-	    if (!errno && endptr != str && !*endptr)
+	    else if (!errno && endptr != str && !*endptr)
 	    {
-		long *result = PSC_malloc(sizeof *result);
-		*result = lv;
-		return result;
+		long *rv = PSC_malloc(sizeof *rv);
+		*rv = lv;
+		result = rv;
 	    }
-	    addparsererror(errors,
+	    if (!result && !nomsg) addparsererror(errors,
 		    toplevel ? "Argument `%s' for --%s is not a valid integer"
 		    : "Argument `%s' for key `%s' is not a valid integer",
 		    str, namestr(e));
-	    return 0;
+	    return result;
 
 	case ET_FLOAT:
 	    errno = 0;
@@ -1733,27 +1737,28 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_Config *c,
 		ctx->success = (!errno && endptr != str && !*endptr);
 		if (ctx->success) ctx->floatVal = fv;
 		parser(ctx);
-		double *result = 0;
+		double *rv = 0;
 		if (ctx->success)
 		{
-		    result = PSC_malloc(sizeof *result);
-		    *result = ctx->floatVal;
+		    rv = PSC_malloc(sizeof *rv);
+		    *rv = ctx->floatVal;
 		}
+		nomsg = ctx->acted;
 		deleteParserCtx(ctx);
-		return result;
+		result = rv;
 	    }
-	    if (!errno && endptr != str && !*endptr)
+	    else if (!errno && endptr != str && !*endptr)
 	    {
-		double *result = PSC_malloc(sizeof *result);
-		*result = fv;
-		return result;
+		double *rv = PSC_malloc(sizeof *rv);
+		*rv = fv;
+		result = rv;
 	    }
-	    addparsererror(errors,
+	    if (!result && !nomsg) addparsererror(errors,
 		    toplevel ? "Argument `%s' for --%s is not a valid "
 		    "floating point number"
 		    : "Argment `%s' for key `%s' is not a valid "
 		    "floating point number", str, namestr(e));
-	    return 0;
+	    return result;
 
 	default:
 	    return 0;
@@ -1771,7 +1776,7 @@ static int parseargssection(PSC_Config *cfg, const PSC_ConfigSection *sect,
 
     rc = 0;
     ArgSectItem *item;
-    while (rc == 0 && (item = PSC_Queue_dequeue(parts)))
+    while ((item = PSC_Queue_dequeue(parts)))
     {
 	PSC_ConfigElement *e = 0;
 	if (item->key)
@@ -1991,7 +1996,7 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 {
     int endflags = 0;
     int escapedash = 0;
-    int rc = -1;
+    int rc = 0;
 
     ArgContext *ctx = createargcontext(p->root, p->errors);
     for (int arg = 1; arg < self->argc; ++arg)
@@ -2008,12 +2013,14 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 	{
 	    if (o[1] == '-')
 	    {
-		if ((rc = parselongflag(cfg, ctx, o+2)) != 0) goto done;
+		if (parselongflag(cfg, ctx, o+2) != 0) rc = -1;
 	    }
 	    else
 	    {
 		PSC_ConfigElement *e;
-		if ((rc = parseshortflag(&e, cfg, ctx, *++o)) != 0) goto done;
+		int frc = parseshortflag(&e, cfg, ctx, *++o);
+		if (frc > 0) goto done;
+		if (frc < 0) rc = -1;
 		int multiflags = 1;
 		for (char *co = ++o; *co; ++co)
 		{
@@ -2026,37 +2033,32 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 		}
 		if (multiflags)
 		{
-		    if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
+		    if (!frc && e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    for (; *o; ++o)
 		    {
-			if ((rc = parseshortflag(&e, cfg, ctx, *o)) != 0)
-			{
-			    goto done;
-			}
-			if (e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
+			frc = parseshortflag(&e, cfg, ctx, *++o);
+			if (frc > 0) goto done;
+			if (frc < 0) rc = -1;
+			if (!frc && e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    }
 		}
-		else
+		else if (!frc)
 		{
 		    if (!e)
 		    {
 			addparsererror(ctx->errors,
 				"Argument given for boolean flag -%c", o[-1]);
-			goto done;
+			rc = -1;
 		    }
-		    else if ((rc = parseflagarg(cfg, ctx, o, e)) < 0)
-		    {
-			goto done;
-		    }
+		    else if (parseflagarg(cfg, ctx, o, e) < 0) rc = -1;
 		}
 	    }
 	}
 	else
 	{
-	    rc = -1;
 	    int haveflagarg = parseflagarg(cfg, ctx, o, 0);
-	    if (haveflagarg < 0) goto done;
-	    if (!haveflagarg)
+	    if (haveflagarg < 0) rc = -1;
+	    else if (!haveflagarg)
 	    {
 		endflags = 1;
 		PSC_ConfigElement *e = ctx->listposarg;
@@ -2065,17 +2067,19 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 		{
 		    addparsererror(p->errors,
 			    "Unexpected extra argument `%s'", o);
-		    goto done;
+		    rc = -1;
 		}
-		if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+		else
 		{
-		    ctx->listposarg = e;
+		    if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
+		    {
+			ctx->listposarg = e;
+		    }
+		    if (parseanyarg(cfg, e, o, ctx->errors) < 0) rc = -1;
 		}
-		if (parseanyarg(cfg, e, o, ctx->errors) < 0) goto done;
 	    }
 	}
     }
-    rc = 0;
 
 done:
     deleteargcontext(ctx);
@@ -2123,7 +2127,7 @@ static int validateconfig(const PSC_ConfigSection *sect,
     int rc = 0;
 
     for (i = PSC_List_iterator(sect->elements);
-	    rc == 0 && PSC_ListIterator_moveNext(i);)
+	    PSC_ListIterator_moveNext(i);)
     {
 	const PSC_ConfigElement *e = PSC_ListIterator_current(i);
 	const void *val = PSC_HashTable_get(config->values, namestr(e));
@@ -2158,7 +2162,7 @@ static int validateconfig(const PSC_ConfigSection *sect,
 		{
 		    configs = val;
 		    for (j = PSC_List_iterator(configs);
-			    rc == 0 && PSC_ListIterator_moveNext(j);)
+			    PSC_ListIterator_moveNext(j);)
 		    {
 			rc = validatecustom(validator,
 				PSC_ListIterator_current(j), e->element->type,
@@ -2178,7 +2182,7 @@ static int validateconfig(const PSC_ConfigSection *sect,
 		subsect = e->section;
 		configs = val;
 		for (j = PSC_List_iterator(configs);
-			rc == 0 && PSC_ListIterator_moveNext(j);)
+			PSC_ListIterator_moveNext(j);)
 		{
 		    subcfg = PSC_ListIterator_current(j);
 		    rc = validateconfig(subsect, subcfg, errors);
@@ -2220,7 +2224,7 @@ static int validateconfig(const PSC_ConfigSection *sect,
     }
     PSC_ListIterator_destroy(i);
 
-    if (sect->validator)
+    if (rc == 0 && sect->validator)
     {
 	PSC_ConfigParserCtx *ctx = createParserCtx(
 		ET_SECTION, 0, config, errors);
