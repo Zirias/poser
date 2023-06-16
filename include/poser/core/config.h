@@ -65,6 +65,11 @@ PSC_ConfigSection_add(PSC_ConfigSection *self, PSC_ConfigElement *element)
     CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT void
+PSC_ConfigSection_validate(PSC_ConfigSection *self,
+	PSC_ConfigElementCallback validator)
+    CMETHOD ATTR_NONNULL((2));
+
+DECLEXPORT void
 PSC_ConfigSection_addHelpArg(PSC_ConfigSection *self,
 	const char *description, const char *name, char flag)
     CMETHOD;
@@ -156,6 +161,10 @@ PSC_ConfigParserCtx_integer(const PSC_ConfigParserCtx *self)
 
 DECLEXPORT double
 PSC_ConfigParserCtx_float(const PSC_ConfigParserCtx *self)
+    CMETHOD;
+
+DECLEXPORT const PSC_Config *
+PSC_ConfigParserCtx_section(const PSC_ConfigParserCtx *self)
     CMETHOD;
 
 DECLEXPORT int

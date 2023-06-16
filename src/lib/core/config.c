@@ -40,6 +40,7 @@ static PSC_ConfigParser *activeParser;
 
 struct PSC_ConfigSection
 {
+    PSC_ConfigElementCallback validator;
     char *name;
     PSC_List *elements;
 };
@@ -93,7 +94,7 @@ struct PSC_ConfigElement
 struct PSC_ConfigParserCtx
 {
     char *string;
-    PSC_HashTable *values;
+    PSC_Config *section;
     PSC_List *errors;
     union
     {
@@ -183,6 +184,7 @@ static void addparsererror(PSC_List *errors, const char *format, ...)
 SOEXPORT PSC_ConfigSection *PSC_ConfigSection_create(const char *name)
 {
     PSC_ConfigSection *self = PSC_malloc(sizeof *self);
+    self->validator = 0;
     self->name = PSC_copystr(name);
     self->elements = PSC_List_create();
     return self;
@@ -207,6 +209,12 @@ SOEXPORT void PSC_ConfigSection_add(PSC_ConfigSection *self,
 	PSC_ConfigElement *element)
 {
     PSC_List_append(self->elements, element, deleteElement);
+}
+
+SOEXPORT void PSC_ConfigSection_validate(PSC_ConfigSection *self,
+	PSC_ConfigElementCallback validator)
+{
+    self->validator = validator;
 }
 
 static void helpargprint(void *data)
@@ -423,12 +431,12 @@ SOEXPORT void PSC_ConfigElement_destroy(PSC_ConfigElement *self)
 }
 
 static PSC_ConfigParserCtx *createParserCtx(ElemType type, const char *str,
-	PSC_HashTable *values, PSC_List *errors)
+	PSC_Config *section, PSC_List *errors)
 {
     PSC_ConfigParserCtx *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
     self->string = PSC_copystr(str);
-    self->values = values;
+    self->section = section;
     self->errors = errors;
     self->type = type;
     return self;
@@ -465,6 +473,12 @@ SOEXPORT double PSC_ConfigParserCtx_float(const PSC_ConfigParserCtx *self)
 		"element that is not a float");
     }
     return self->floatVal;
+}
+
+SOEXPORT const PSC_Config *PSC_ConfigParserCtx_section(
+	const PSC_ConfigParserCtx *self)
+{
+    return self->section;
 }
 
 SOEXPORT int PSC_ConfigParserCtx_succeeded(const PSC_ConfigParserCtx *self)
@@ -509,26 +523,26 @@ SOEXPORT void PSC_ConfigParserCtx_setFloat(PSC_ConfigParserCtx *self,
 SOEXPORT void PSC_ConfigParserCtx_setStringFor(PSC_ConfigParserCtx *self,
 	const char *name, const char *val)
 {
-    if (PSC_HashTable_get(self->values, name)) return;
-    PSC_HashTable_set(self->values, name, PSC_copystr(val), free);
+    if (PSC_HashTable_get(self->section->values, name)) return;
+    PSC_HashTable_set(self->section->values, name, PSC_copystr(val), free);
 }
 
 SOEXPORT void PSC_ConfigParserCtx_setIntegerFor(PSC_ConfigParserCtx *self,
 	const char *name, long val)
 {
-    if (PSC_HashTable_get(self->values, name)) return;
+    if (PSC_HashTable_get(self->section->values, name)) return;
     long *v = PSC_malloc(sizeof *v);
     *v = val;
-    PSC_HashTable_set(self->values, name, v, free);
+    PSC_HashTable_set(self->section->values, name, v, free);
 }
 
 SOEXPORT void PSC_ConfigParserCtx_setFloatFor(PSC_ConfigParserCtx *self,
 	const char *name, double val)
 {
-    if (PSC_HashTable_get(self->values, name)) return;
+    if (PSC_HashTable_get(self->section->values, name)) return;
     double *v = PSC_malloc(sizeof *v);
     *v = val;
-    PSC_HashTable_set(self->values, name, v, free);
+    PSC_HashTable_set(self->section->values, name, v, free);
 }
 
 SOEXPORT void PSC_ConfigParserCtx_succeed(PSC_ConfigParserCtx *self)
@@ -1654,7 +1668,7 @@ static PSC_Queue *argsectionparts(const char *str, PSC_List *errors)
     return 0;
 }
 
-static void *parseargsvalue(PSC_ConfigElement *e, PSC_HashTable *v,
+static void *parseargsvalue(PSC_ConfigElement *e, PSC_Config *c,
 	PSC_List *errors, const char *str, int toplevel)
 {
     ElemType t = e->type;
@@ -1670,7 +1684,7 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_HashTable *v,
 	case ET_STRING:
 	    if (parser)
 	    {
-		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, c, errors);
 		ctx->success = 1;
 		parser(ctx);
 		char *result = ctx->success ? ctx->string : 0;
@@ -1685,7 +1699,7 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_HashTable *v,
 	    lv = strtol(str, &endptr, 10);
 	    if (parser)
 	    {
-		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, c, errors);
 		ctx->success = (!errno && endptr != str && !*endptr);
 		if (ctx->success) ctx->integerVal = lv;
 		parser(ctx);
@@ -1715,7 +1729,7 @@ static void *parseargsvalue(PSC_ConfigElement *e, PSC_HashTable *v,
 	    fv = strtod(str, &endptr);
 	    if (parser)
 	    {
-		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, v, errors);
+		PSC_ConfigParserCtx *ctx = createParserCtx(t, str, c, errors);
 		ctx->success = (!errno && endptr != str && !*endptr);
 		if (ctx->success) ctx->floatVal = fv;
 		parser(ctx);
@@ -1789,8 +1803,7 @@ static int parseargssection(PSC_Config *cfg, const PSC_ConfigSection *sect,
 	{
 	    if (e->type != ET_SECTION && e->type != ET_SECTIONLIST)
 	    {
-		void *val = parseargsvalue(e,
-			cfg->values, errors, item->val, 0);
+		void *val = parseargsvalue(e, cfg, errors, item->val, 0);
 		if (!val) rc = -1;
 		else if (e->type == ET_LIST)
 		{
@@ -1845,7 +1858,7 @@ static int parseanyarg(PSC_Config *cfg, PSC_ConfigElement *e,
 	}
 	val = subcfg;
     }
-    else val = parseargsvalue(e, cfg->values, errors, str, 1);
+    else val = parseargsvalue(e, cfg, errors, str, 1);
     if (!val) return -1;
     if (e->type == ET_LIST || e->type == ET_SECTIONLIST)
     {
@@ -2052,7 +2065,7 @@ static int validatecustom(PSC_ConfigElementCallback validator,
 	const void *val, ElemType t, PSC_Config *cfg, PSC_List *errors)
 {
     int rc = -1;
-    PSC_ConfigParserCtx *ctx = createParserCtx(t, 0, cfg->values, errors);
+    PSC_ConfigParserCtx *ctx = createParserCtx(t, 0, cfg, errors);
     switch (t)
     {
 	case ET_STRING:
@@ -2185,6 +2198,15 @@ static int validateconfig(const PSC_ConfigSection *sect,
 	}
     }
     PSC_ListIterator_destroy(i);
+
+    if (sect->validator)
+    {
+	PSC_ConfigParserCtx *ctx = createParserCtx(
+		ET_SECTION, 0, config, errors);
+	sect->validator(ctx);
+	if (!ctx->success) rc = -1;
+	deleteParserCtx(ctx);
+    }
 
     return rc;
 }
