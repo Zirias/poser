@@ -19,7 +19,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
-#include <threads.h>
 #include <unistd.h>
 
 #define DEFLINELEN 80
@@ -37,7 +36,7 @@ static volatile sig_atomic_t pagerexited;
 
 static int boolval = 1;
 
-static thread_local PSC_ConfigParser *activeParser;
+static PSC_ConfigParser *activeParser;
 
 struct PSC_ConfigSection
 {
