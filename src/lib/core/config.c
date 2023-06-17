@@ -1034,6 +1034,8 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     const char *svname = getargsvname(getargparser(self));
     if (!svname) PSC_Service_panic(
 	    "Can't print usage without a configured args parser");
+    int indent = 11;
+    if (strlen(svname) < 8) indent = strlen(svname) + 8;
 
     size_t elemcount = PSC_List_size(self->root->elements);
     boolflags = PSC_malloc(elemcount);
@@ -1133,7 +1135,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 
     setoutputdims(out);
     PSC_List *lines = PSC_List_create();
-    formatlines(lines, s, 0, 8, 0);
+    formatlines(lines, s, 0, indent, 0);
 
     for (int j = 0; j < nactflags; ++j)
     {
@@ -1150,7 +1152,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_append(s, " --");
 	    PSC_StringBuilder_append(s, namestr(e));
 	}
-	formatlines(lines, s, 7, 8, 0);
+	formatlines(lines, s, 7, indent, 0);
     }
 
     return lines;
