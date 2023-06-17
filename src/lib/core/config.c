@@ -68,7 +68,11 @@ typedef enum ParserType
 struct PSC_ConfigElement
 {
     PSC_ConfigElementCallback parser;
-    PSC_ConfigElementCallback validator;
+    union
+    {
+	PSC_ConfigElementCallback validator;
+	PSC_ConfigAction action;
+    };
     char *name;
     char *argname;
     char *description;
@@ -79,11 +83,7 @@ struct PSC_ConfigElement
 	double defFloat;
 	PSC_ConfigSection *section;
 	PSC_ConfigElement *element;
-	struct
-	{
-	    PSC_ConfigAction action;
-	    void *actionData;
-	};
+	void *actionData;
     };
     ElemType type;
     ParserType pt;
