@@ -1019,12 +1019,14 @@ static const char *argstr(const PSC_ConfigElement *e)
 static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 {
     char *boolflags = 0;
+    PSC_ConfigElement **actflags = 0;
     PSC_ConfigElement **optflags = 0;
     PSC_ConfigElement **reqposargs = 0;
     PSC_ConfigElement **optposargs = 0;
     PSC_ListIterator *i = 0;
     PSC_StringBuilder *s = 0;
     int nboolflags = 0;
+    int nactflags = 0;
     int noptflags = 0;
     int nreqposargs = 0;
     int noptposargs = 0;
@@ -1035,6 +1037,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 
     size_t elemcount = PSC_List_size(self->root->elements);
     boolflags = PSC_malloc(elemcount);
+    actflags = PSC_malloc(elemcount * sizeof *actflags);
     optflags = PSC_malloc(elemcount * sizeof *optflags);
     reqposargs = PSC_malloc(elemcount * sizeof *reqposargs);
     optposargs = PSC_malloc(elemcount * sizeof *optposargs);
@@ -1043,9 +1046,13 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     {
 	PSC_ConfigElement *e = PSC_ListIterator_current(i);
 	if (!(e->pt & PT_ARGS)) continue;
-	if ((e->type == ET_BOOL || e->type == ET_ACTION) && e->flag > 0)
+	if ((e->type == ET_BOOL) && e->flag > 0)
 	{
 	    boolflags[nboolflags++] = e->flag;
+	}
+	else if (e->type == ET_ACTION)
+	{
+	    actflags[nactflags++] = e;
 	}
 	else if (e->type != ET_BOOL && e->type != ET_ACTION)
 	{
@@ -1063,6 +1070,8 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     PSC_ListIterator_destroy(i);
     boolflags[nboolflags] = 0;
     if (nboolflags > 1) qsort(boolflags, nboolflags, 1, compareflags);
+    if (nactflags > 1) qsort(actflags, nactflags,
+	    sizeof *actflags, compareanyflag);
     if (noptflags > 1) qsort(optflags, noptflags,
 	    sizeof *optflags, compareelements);
 
@@ -1125,6 +1134,25 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     setoutputdims(out);
     PSC_List *lines = PSC_List_create();
     formatlines(lines, s, 0, 8, 0);
+
+    for (int j = 0; j < nactflags; ++j)
+    {
+	PSC_ConfigElement *e = actflags[j];
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, svname);
+	if (e->flag > 0)
+	{
+	    PSC_StringBuilder_append(s, " -");
+	    PSC_StringBuilder_appendChar(s, e->flag);
+	}
+	else
+	{
+	    PSC_StringBuilder_append(s, " --");
+	    PSC_StringBuilder_append(s, namestr(e));
+	}
+	formatlines(lines, s, 7, 8, 0);
+    }
+
     return lines;
 }
 
@@ -1543,9 +1571,9 @@ static int parseshortflag(PSC_ConfigElement **e, PSC_Config *cfg,
     *e = PSC_HashTable_get(ctx->actions, flagstr);
     if (*e)
     {
-	(*e)->action((*e)->actionData);
-	*e = 0;
-	return 1;
+	addparsererror(ctx->errors,
+		"Flag -%c must be the only argument", flag);
+	return -1;
     }
     *e = PSC_HashTable_get(ctx->flags, flagstr);
     if (!*e)
@@ -1949,8 +1977,9 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 	e = PSC_HashTable_get(ctx->actions, flag);
 	if (e)
 	{
-	    e->action(e->actionData);
-	    return 1;
+	    addparsererror(ctx->errors,
+		    "Flag --%s must be the only argument", namestr(e));
+	    return -1;
 	}
 	e = PSC_HashTable_get(ctx->flags, flag);
 	if (e && PSC_HashTable_get(ctx->onceflags, namestr(e)))
@@ -1994,11 +2023,33 @@ static int parselongflag(PSC_Config *cfg, ArgContext *ctx, const char *flag)
 static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 	PSC_Config *cfg)
 {
+    PSC_ConfigElement *e = 0;
     int endflags = 0;
     int escapedash = 0;
     int rc = 0;
 
     ArgContext *ctx = createargcontext(p->root, p->errors);
+    if (self->argc == 2 && self->argv[1][0] == '-' && self->argv[1][1]
+	    && ((self->argv[1][1] == '-' && self->argv[1][2])
+		|| (self->argv[1][1] != '-' && !self->argv[1][2])))
+    {
+	PSC_ConfigElement *act;
+	if (self->argv[1][2])
+	{
+	    act = PSC_HashTable_get(ctx->actions, self->argv[1]+2);
+	}
+	else
+	{
+	    char flagstr[] = {self->argv[1][1], 0};
+	    act = PSC_HashTable_get(ctx->actions, flagstr);
+	}
+	if (act)
+	{
+	    act->action(act->actionData);
+	    rc = 1;
+	    goto done;
+	}
+    }
     for (int arg = 1; arg < self->argc; ++arg)
     {
 	char *o = self->argv[arg];
@@ -2017,15 +2068,14 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 	    }
 	    else
 	    {
-		PSC_ConfigElement *e;
 		int frc = parseshortflag(&e, cfg, ctx, *++o);
-		if (frc > 0) goto done;
 		if (frc < 0) rc = -1;
 		int multiflags = 1;
 		for (char *co = ++o; *co; ++co)
 		{
 		    char flagstr[] = { *co, 0 };
-		    if (!PSC_HashTable_get(ctx->flags, flagstr))
+		    if (!PSC_HashTable_get(ctx->flags, flagstr)
+			    && !PSC_HashTable_get(ctx->actions, flagstr))
 		    {
 			multiflags = 0;
 			break;
@@ -2036,11 +2086,16 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 		    if (!frc && e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    for (; *o; ++o)
 		    {
-			frc = parseshortflag(&e, cfg, ctx, *++o);
-			if (frc > 0) goto done;
+			frc = parseshortflag(&e, cfg, ctx, *o);
 			if (frc < 0) rc = -1;
 			if (!frc && e) PSC_Queue_enqueue(ctx->needsarg, e, 0);
 		    }
+		}
+		else if (e && e->type == ET_ACTION)
+		{
+		    addparsererror(ctx->errors,
+			    "Argument given for action flag -%c", o[-1]);
+		    rc = -1;
 		}
 		else if (!frc)
 		{
@@ -2061,7 +2116,7 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
 	    else if (!haveflagarg)
 	    {
 		endflags = 1;
-		PSC_ConfigElement *e = ctx->listposarg;
+		e = ctx->listposarg;
 		if (!e) e = PSC_Queue_dequeue(ctx->positional);
 		if (!e)
 		{
@@ -2082,6 +2137,12 @@ static int parsefromargs(const ArgData *self, PSC_ConfigParser *p,
     }
 
 done:
+    while ((e = PSC_Queue_dequeue(ctx->needsarg)))
+    {
+	addparsererror(p->errors, "Required argument `%s' for `%s' missing",
+		argstr(e), namestr(e));
+	rc = -1;
+    }
     deleteargcontext(ctx);
     return rc;
 }
