@@ -3,6 +3,7 @@
 
 #include <poser/core/certinfo.h>
 #include <poser/core/client.h>
+#include <poser/core/config.h>
 #include <poser/core/connection.h>
 #include <poser/core/daemon.h>
 #include <poser/core/event.h>
