@@ -1,11 +1,11 @@
 #define _DEFAULT_SOURCE
 
 #include "event.h"
+#include "log.h"
 #include "runopts.h"
 #include "service.h"
 
 #include <poser/core/daemon.h>
-#include <poser/core/log.h>
 #include <poser/core/threadpool.h>
 
 #include <grp.h>
@@ -463,7 +463,7 @@ SOEXPORT void PSC_Service_panic(const char *msg)
     {
 	panicHandlers[i](msg);
     }
-    PSC_Log_setAsync(0);
+    PSC_Log_setPanic();
     PSC_Log_msg(PSC_L_FATAL, msg);
     if (running) longjmp(panicjmp, -1);
     else abort();

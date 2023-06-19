@@ -1,4 +1,5 @@
-#include <poser/core/log.h>
+#include "log.h"
+
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
 
@@ -133,5 +134,15 @@ SOEXPORT void PSC_Log_fmt(PSC_LogLevel level, const char *format, ...)
     vsnprintf(buf, PSC_MAXLOGLINE, format, ap);
     va_end(ap);
     PSC_Log_msg(level, buf);
+}
+
+SOLOCAL void PSC_Log_setPanic(void)
+{
+    logasync = 0;
+    if (!currentwriter)
+    {
+	currentwriter = writeFile;
+	writerdata = stderr;
+    }
 }
 
