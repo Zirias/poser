@@ -71,6 +71,14 @@ SOEXPORT char *PSC_joinstr(const char *delim, char **strings)
     return joined;
 }
 
+SOEXPORT const char *PSC_basename(const char *path)
+{
+    size_t seppos;
+    while (*path && path[(seppos = strcspn(path, "/"))]) path += seppos + 1;
+    if (*path) return path;
+    return ".";
+}
+
 SOLOCAL uint8_t hashstr(const char *key, uint8_t mask)
 {
     size_t h = 5381;

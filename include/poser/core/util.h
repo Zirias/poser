@@ -59,4 +59,16 @@ DECLEXPORT char *
 PSC_joinstr(const char *delim, char **strings)
     ATTR_MALLOC ATTR_NONNULL((1));
 
+/** Get base filename from full path.
+ * This looks for the last path separator ('/') in the given string and
+ * returns a pointer to the first character after it. If no separator is
+ * found, the original string is returned. If the returned string would be
+ * empty, a pointer to the string "." is returned instead.
+ * @param path the full path string
+ * @returns the base filename
+ */
+DECLEXPORT const char *
+PSC_basename(const char *path)
+    ATTR_RETNONNULL ATTR_NONNULL((1));
+
 #endif
