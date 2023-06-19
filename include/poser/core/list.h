@@ -93,6 +93,16 @@ DECLEXPORT PSC_ListIterator *
 PSC_List_iterator(const PSC_List *self)
     CMETHOD;
 
+/** Clear the list.
+ * All stored objects are removed from the list, and those having a deleter
+ * attached are also destroyed.
+ * @memberof PSC_List
+ * @param self the PSC_List
+ */
+DECLEXPORT void
+PSC_List_clear(PSC_List *self)
+    CMETHOD;
+
 /** PSC_List destructor.
  * All stored objects that have a deleter attached are destroyed as well.
  * @memberof PSC_List

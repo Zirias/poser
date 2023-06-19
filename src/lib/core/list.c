@@ -110,13 +110,19 @@ SOEXPORT PSC_ListIterator *PSC_List_iterator(const PSC_List *self)
     return iter;
 }
 
-SOEXPORT void PSC_List_destroy(PSC_List *self)
+SOEXPORT void PSC_List_clear(PSC_List *self)
 {
-    if (!self) return;
     for (size_t i = 0; i < self->count; ++i)
     {
 	if (self->items[i].deleter) self->items[i].deleter(self->items[i].obj);
     }
+    self->count = 0;
+}
+
+SOEXPORT void PSC_List_destroy(PSC_List *self)
+{
+    if (!self) return;
+    PSC_List_clear(self);
     free(self->items);
     free(self);
 }
