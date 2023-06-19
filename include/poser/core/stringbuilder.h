@@ -30,6 +30,15 @@ DECLEXPORT void
 PSC_StringBuilder_append(PSC_StringBuilder *self, const char *str)
     CMETHOD ATTR_NONNULL((2));
 
+/** Append a single character to the builder.
+ * @memberof PSC_StringBuilder
+ * @param self the PSC_StringBuilder
+ * @param c the character to append
+ */
+DECLEXPORT void
+PSC_StringBuilder_appendChar(PSC_StringBuilder *self, char c)
+    CMETHOD;
+
 /** Get the complete string.
  * @memberof PSC_StringBuilder
  * @param self the PSC_StringBuilder

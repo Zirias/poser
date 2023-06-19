@@ -34,6 +34,13 @@ SOEXPORT void PSC_StringBuilder_append(
     self->size = newsz;
 }
 
+SOEXPORT void PSC_StringBuilder_appendChar(
+	PSC_StringBuilder *self, char c)
+{
+    char str[] = {c, 0};
+    PSC_StringBuilder_append(self, str);
+}
+
 SOEXPORT const char *PSC_StringBuilder_str(const PSC_StringBuilder *self)
 {
     return self->str;
