@@ -132,6 +132,12 @@ typedef struct ArgData
     int autousage;
 } ArgData;
 
+typedef struct FileData
+{
+    char *filename;
+    int required;
+} FileData;
+
 typedef struct ConcreteParser
 {
     void *parserData;
@@ -579,23 +585,37 @@ static void deleteconcreteparser(void *ptr)
 {
     if (!ptr) return;
     ConcreteParser *p = ptr;
-    if (p->type == PT_ARGS)
+    switch (p->type)
     {
-	ArgData *ad = p->parserData;
-	free(ad->defname);
-	free(ad);
+	ArgData *ad;
+	FileData *fd;
+
+	case PT_ARGS:
+	    ad = p->parserData;
+	    free(ad->defname);
+	    free(ad);
+	    break;
+
+	case PT_FILE:
+	    fd = p->parserData;
+	    free(fd->filename);
+	    free(fd);
+	    break;
+
+	default:
+	    ;
     }
     free(p);
 }
 
-static ArgData *getargparser(const PSC_ConfigParser *self)
+static void *getfirstparser(const PSC_ConfigParser *self, ParserType type)
 {
-    ArgData *result = 0;
+    void *result = 0;
     PSC_ListIterator *i = PSC_List_iterator(self->parsers);
     while (PSC_ListIterator_moveNext(i))
     {
 	ConcreteParser *p = PSC_ListIterator_current(i);
-	if (p->type == PT_ARGS)
+	if (p->type == type)
 	{
 	    result = p->parserData;
 	    break;
@@ -621,8 +641,20 @@ SOEXPORT void PSC_ConfigParser_addArgs(PSC_ConfigParser *self,
 
 SOEXPORT void PSC_ConfigParser_argsAutoUsage(PSC_ConfigParser *self)
 {
-    ArgData *ad = getargparser(self);
+    ArgData *ad = getfirstparser(self, PT_ARGS);
     if (ad) ad->autousage = 1;
+}
+
+SOEXPORT void PSC_ConfigParser_addFile(PSC_ConfigParser *self,
+	const char *filename, int required)
+{
+    ConcreteParser *p = PSC_malloc(sizeof *p);
+    FileData *fd = PSC_malloc(sizeof *fd);
+    fd->filename = PSC_copystr(filename);
+    fd->required = required;
+    p->parserData = fd;
+    p->type = PT_FILE;
+    PSC_List_append(self->parsers, p, deleteconcreteparser);
 }
 
 SOEXPORT void PSC_ConfigParser_autoPage(PSC_ConfigParser *self)
@@ -728,7 +760,7 @@ static void setoutputdims(FILE *out)
 }
 
 static void formatlinesraw(PSC_List *lines, const char *cstr,
-	int indentfirst, int indentrest, int compact)
+	int indentfirst, int indentrest, int compact, const char *prefix)
 {
     char line[MAXLINELEN];
     int linepos = 0;
@@ -745,12 +777,23 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 	    linepos = indent;
 	}
 	else linepos = 0;
+	if (prefix)
+	{
+	    size_t prefixlen = strlen(prefix);
+	    memcpy(line+linepos, prefix, prefixlen);
+	    linepos += prefixlen;
+	}
+	int linestart = linepos;
 	size_t toklen = strcspn(cstr, " \n");
 	if (toklen == 0)
 	{
 	    if (*cstr == '\n')
 	    {
-		if (!compact) PSC_List_append(lines, "", 0);
+		if (!compact)
+		{
+		    if (!prefix) PSC_List_append(lines, "", 0);
+		    else PSC_List_append(lines, PSC_copystr(line), free);
+		}
 		++cstr;
 		continue;
 	    }
@@ -759,7 +802,7 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 	size_t needed = toklen;
 	while (linepos + needed < currlinelen)
 	{
-	    if (linepos > indent) line[linepos++] = ' ';
+	    if (linepos > linestart) line[linepos++] = ' ';
 	    for (size_t i = 0; i < toklen; ++i)
 	    {
 		line[linepos++] = *cstr == '\t' ? ' ' : *cstr;
@@ -770,7 +813,7 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 	    toklen = strcspn(cstr, " \n");
 	    needed = toklen + 1;
 	}
-	if (linepos == indent)
+	if (linepos == linestart)
 	{
 	    char *longtok = PSC_malloc(toklen+indent+1);
 	    if (indent) memset(longtok, ' ', indent);
@@ -785,7 +828,7 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 	    while (*cstr == ' ') ++cstr;
 	    if (!*cstr) break;
 	}
-	else if (linepos > indent)
+	else if (linepos > linestart)
 	{
 	    line[linepos] = 0;
 	    PSC_List_append(lines, PSC_copystr(line), free);
@@ -795,10 +838,10 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 
 }
 static void formatlines(PSC_List *lines, PSC_StringBuilder *str,
-	int indentfirst, int indentrest, int compact)
+	int indentfirst, int indentrest, int compact, const char *prefix)
 {
     formatlinesraw(lines, PSC_StringBuilder_str(str),
-	    indentfirst, indentrest, compact);
+	    indentfirst, indentrest, compact, prefix);
     PSC_StringBuilder_destroy(str);
 }
 
@@ -1031,7 +1074,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
     int nreqposargs = 0;
     int noptposargs = 0;
 
-    const char *svname = getargsvname(getargparser(self));
+    const char *svname = getargsvname(getfirstparser(self, PT_ARGS));
     if (!svname) PSC_Service_panic(
 	    "Can't print usage without a configured args parser");
     int indent = 11;
@@ -1135,7 +1178,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 
     setoutputdims(out);
     PSC_List *lines = PSC_List_create();
-    formatlines(lines, s, 0, indent, 0);
+    formatlines(lines, s, 0, indent, 0, 0);
 
     for (int j = 0; j < nactflags; ++j)
     {
@@ -1152,7 +1195,7 @@ static PSC_List *usagelines(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_append(s, " --");
 	    PSC_StringBuilder_append(s, namestr(e));
 	}
-	formatlines(lines, s, 7, indent, 0);
+	formatlines(lines, s, 7, indent, 0, 0);
     }
 
     return lines;
@@ -1169,7 +1212,7 @@ SOEXPORT int PSC_ConfigParser_usage(const PSC_ConfigParser *self, FILE *out,
 	for (i = PSC_List_iterator(self->errors);
 		PSC_ListIterator_moveNext(i);)
 	{
-	    formatlinesraw(lines, PSC_ListIterator_current(i), 0, 0, 0);
+	    formatlinesraw(lines, PSC_ListIterator_current(i), 0, 0, 0, 0);
 	}
 	PSC_ListIterator_destroy(i);
     }
@@ -1290,17 +1333,17 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	    PSC_StringBuilder_appendChar(s, ']');
 	}
     }
-    formatlines(lines, s, 6, 6, 0);
+    formatlines(lines, s, 6, 6, 0, 0);
 
     for (int j = 0; j < nreqposargs; ++j)
     {
 	PSC_ConfigElement *e = reqposargs[j];
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, argstr(e));
-	formatlines(lines, s, 6, 6, 0);
+	formatlines(lines, s, 6, 6, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 10, 10, 1);
+	formatlines(lines, s, 10, 10, 1, 0);
     }
 
     for (int j = 0; j < noptposargs; ++j)
@@ -1308,10 +1351,10 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	PSC_ConfigElement *e = optposargs[j];
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s, argstr(e));
-	formatlines(lines, s, 6, 6, 0);
+	formatlines(lines, s, 6, 6, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 10, 10, 1);
+	formatlines(lines, s, 10, 10, 1, 0);
     }
 
     if (nflags)
@@ -1319,7 +1362,7 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_append(s,
 		"k=v: key-value pair, any of the following:");
-	formatlines(lines, s, 6, 6, 0);
+	formatlines(lines, s, 6, 6, 0, 0);
 	for (int j = 0; j < nflags; ++j)
 	{
 	    PSC_ConfigElement *e = flags[j];
@@ -1331,10 +1374,10 @@ static void subsectionhelp(const PSC_ConfigSection *sect, PSC_List *lines)
 	    else PSC_StringBuilder_append(s, argstr(e));
 	    if (e->required) PSC_StringBuilder_append(s, " {required}");
 	    if (e->type == ET_LIST) PSC_StringBuilder_append(s, " {multiple}");
-	    formatlines(lines, s, 8, 8, 0);
+	    formatlines(lines, s, 8, 8, 0, 0);
 	    s = PSC_StringBuilder_create();
 	    setdescstr(s, e);
-	    formatlines(lines, s, 12, 12, 1);
+	    formatlines(lines, s, 12, 12, 1, 0);
 	}
     }
 
@@ -1359,7 +1402,7 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     int noptposargs = 0;
     int havesubsect = 0;
 
-    const char *svname = getargsvname(getargparser(self));
+    const char *svname = getargsvname(getfirstparser(self, PT_ARGS));
     if (!svname) PSC_Service_panic(
 	    "Can't print help without a configured args parser");
 
@@ -1420,10 +1463,10 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		PSC_StringBuilder_append(s, argstr(e));
 	    }
 	}
-	formatlines(lines, s, 4, 4, 0);
+	formatlines(lines, s, 4, 4, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 8, 8, 0);
+	formatlines(lines, s, 8, 8, 0, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
@@ -1446,10 +1489,10 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	    PSC_StringBuilder_appendChar(s, '=');
 	    PSC_StringBuilder_append(s, argstr(e));
 	}
-	formatlines(lines, s, 4, 4, 0);
+	formatlines(lines, s, 4, 4, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 8, 8, 0);
+	formatlines(lines, s, 8, 8, 0, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
@@ -1463,10 +1506,10 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_appendChar(s, '\n');
 	PSC_StringBuilder_append(s, argstr(e));
-	formatlines(lines, s, 4, 4, 0);
+	formatlines(lines, s, 4, 4, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 8, 8, 0);
+	formatlines(lines, s, 8, 8, 0, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
@@ -1480,10 +1523,10 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 	s = PSC_StringBuilder_create();
 	PSC_StringBuilder_appendChar(s, '\n');
 	PSC_StringBuilder_append(s, argstr(e));
-	formatlines(lines, s, 4, 4, 0);
+	formatlines(lines, s, 4, 4, 0, 0);
 	s = PSC_StringBuilder_create();
 	setdescstr(s, e);
-	formatlines(lines, s, 8, 8, 0);
+	formatlines(lines, s, 8, 8, 0, 0);
 	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
 	{
 	    ++havesubsect;
@@ -1499,13 +1542,35 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
 		"values must be escaped with a backslash (\\). Alternatively, "
 		"values may be quoted in a pair of brackets (between `[' and "
 		"`]') if they don't contain those themselves.");
-	formatlines(lines, s, 4, 4, 0);
+	formatlines(lines, s, 4, 4, 0, 0);
     }
 
     free(optposargs);
     free(reqposargs);
     free(longflags);
     free(shortflags);
+
+    return printlines(out, lines, self->autopage);
+}
+
+SOEXPORT int PSC_ConfigParser_sampleFile(const PSC_ConfigParser *self,
+	FILE *out)
+{
+    FileData *fd = getfirstparser(self, PT_FILE);
+    if (!fd) PSC_Service_panic(
+	    "Can't print sample config without a configured file parser");
+
+    const char *cfgname = PSC_basename(fd->filename);
+    setoutputdims(out);
+
+    PSC_StringBuilder *s;
+    PSC_List *lines = PSC_List_create();
+
+    s = PSC_StringBuilder_create();
+    PSC_StringBuilder_append(s, "Sample ");
+    PSC_StringBuilder_append(s, cfgname);
+    formatlines(lines, s, 0, 0, 0, "# ");
+    PSC_List_append(lines, "", 0);
 
     return printlines(out, lines, self->autopage);
 }
@@ -2336,7 +2401,7 @@ SOEXPORT int PSC_ConfigParser_parse(PSC_ConfigParser *self,
 
     if (rc < 0)
     {
-	ArgData *ad = getargparser(self);
+	ArgData *ad = getfirstparser(self, PT_ARGS);
 	if (ad && ad->autousage) PSC_ConfigParser_usage(self, stderr, 1);
     }
     return rc;

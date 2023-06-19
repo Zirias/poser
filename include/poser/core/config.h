@@ -220,7 +220,8 @@ PSC_ConfigParser_argsAutoUsage(PSC_ConfigParser *self)
     CMETHOD;
 
 DECLEXPORT void
-PSC_ConfigParser_addFile(PSC_ConfigParser *self, const char *filename)
+PSC_ConfigParser_addFile(PSC_ConfigParser *self, const char *filename,
+	int required)
     CMETHOD ATTR_NONNULL((2));
 
 DECLEXPORT void
