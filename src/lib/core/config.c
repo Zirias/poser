@@ -782,6 +782,7 @@ static void formatlinesraw(PSC_List *lines, const char *cstr,
 	    size_t prefixlen = strlen(prefix);
 	    memcpy(line+linepos, prefix, prefixlen);
 	    linepos += prefixlen;
+	    line[linepos] = 0;
 	}
 	int linestart = linepos;
 	size_t toklen = strcspn(cstr, " \n");
@@ -1553,6 +1554,111 @@ SOEXPORT int PSC_ConfigParser_help(const PSC_ConfigParser *self, FILE *out)
     return printlines(out, lines, self->autopage);
 }
 
+static void sectionsamplelines(PSC_List *lines,
+	const PSC_ConfigSection *section, PSC_List *parents, int pathrequired)
+{
+    PSC_List *sections = PSC_List_create();
+    PSC_ListIterator *i;
+    PSC_StringBuilder *s;
+
+    for (i = PSC_List_iterator(section->elements);
+	    PSC_ListIterator_moveNext(i);)
+    {
+	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	if (e->type == ET_SECTION || e->type == ET_SECTIONLIST)
+	{
+	    PSC_List_append(sections, e, 0);
+	    continue;
+	}
+	if (!PSC_List_size(parents)) PSC_List_append(lines, "", 0);
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	formatlines(lines, s, 0, 0, 0, "# ");
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, namestr(e));
+	PSC_StringBuilder_append(s, " = ");
+	int required = e->required;
+	if (required)
+	{
+	    PSC_StringBuilder_append(s, "# REQUIRED");
+	}
+	else
+	{
+	    int islist = 0;
+	    if (e->type == ET_LIST)
+	    {
+		e = e->element;
+		islist = 1;
+	    }
+
+	    if (islist) PSC_StringBuilder_append(s, "[ ");
+
+	    switch (e->type)
+	    {
+		char defbuf[32];
+
+		case ET_BOOL:
+		    PSC_StringBuilder_append(s, "yes");
+		    break;
+
+		case ET_STRING:
+		    PSC_StringBuilder_appendChar(s, '"');
+		    if (e->defString) PSC_StringBuilder_append(
+			    s, e->defString);
+		    PSC_StringBuilder_appendChar(s, '"');
+		    break;
+
+		case ET_INTEGER:
+		    snprintf(defbuf, sizeof defbuf, "%ld", e->defInteger);
+		    PSC_StringBuilder_append(s, defbuf);
+		    break;
+
+		case ET_FLOAT:
+		    snprintf(defbuf, sizeof defbuf, "%g", e->defFloat);
+		    PSC_StringBuilder_append(s, defbuf);
+		    break;
+
+		default:
+		    break;
+	    }
+
+	    if (islist) PSC_StringBuilder_append(s, " ]");
+	}
+	formatlines(lines, s, 0, 0, 0, required && pathrequired ? 0 : "#");
+    }
+    PSC_ListIterator_destroy(i);
+
+    for (i = PSC_List_iterator(sections);
+	    PSC_ListIterator_moveNext(i);)
+    {
+	PSC_ConfigElement *e = PSC_ListIterator_current(i);
+	PSC_List_append(lines, "", 0);
+	s = PSC_StringBuilder_create();
+	setdescstr(s, e);
+	formatlines(lines, s, 0, 0, 0, "# ");
+
+	s = PSC_StringBuilder_create();
+	PSC_StringBuilder_append(s, e->type == ET_SECTION ? "[" : "[[");
+	PSC_ListIterator *j = PSC_List_iterator(parents);
+	while (PSC_ListIterator_moveNext(j))
+	{
+	    PSC_StringBuilder_append(s, namestr(PSC_ListIterator_current(j)));
+	    PSC_StringBuilder_appendChar(s, '.');
+	}
+	PSC_ListIterator_destroy(j);
+	PSC_StringBuilder_append(s, namestr(e));
+	PSC_StringBuilder_append(s, e->type == ET_SECTION ? "]" : "]]");
+	formatlines(lines, s, 0, 0, 0, e->required && pathrequired ? 0 : "#");
+	PSC_List_append(parents, e, 0);
+	sectionsamplelines(lines, e->section, parents,
+		e->required && pathrequired);
+	PSC_List_remove(parents, e);
+    }
+    PSC_ListIterator_destroy(i);
+
+    PSC_List_destroy(sections);
+}
+
 SOEXPORT int PSC_ConfigParser_sampleFile(const PSC_ConfigParser *self,
 	FILE *out)
 {
@@ -1563,14 +1669,16 @@ SOEXPORT int PSC_ConfigParser_sampleFile(const PSC_ConfigParser *self,
     const char *cfgname = PSC_basename(fd->filename);
     setoutputdims(out);
 
-    PSC_StringBuilder *s;
     PSC_List *lines = PSC_List_create();
 
-    s = PSC_StringBuilder_create();
+    PSC_StringBuilder *s = PSC_StringBuilder_create();
     PSC_StringBuilder_append(s, "Sample ");
     PSC_StringBuilder_append(s, cfgname);
     formatlines(lines, s, 0, 0, 0, "# ");
-    PSC_List_append(lines, "", 0);
+
+    PSC_List *parents = PSC_List_create();
+    sectionsamplelines(lines, self->root, parents, 1);
+    PSC_List_destroy(parents);
 
     return printlines(out, lines, self->autopage);
 }
