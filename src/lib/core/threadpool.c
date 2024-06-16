@@ -14,7 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#if defined(__linux__) || defined (__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <threads.h>
 #define THREADLOCAL thread_local
 #else
