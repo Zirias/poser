@@ -12,8 +12,14 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <threads.h>
 #include <unistd.h>
+
+#if defined(__linux__) || defined (__FreeBSD__)
+#include <threads.h>
+#define THREADLOCAL thread_local
+#else
+#define THREADLOCAL __thread
+#endif
 
 #ifndef DEFTHREADS
 #define DEFTHREADS 16
@@ -83,10 +89,10 @@ static int queueAvail;
 static int nextIdx;
 static int lastIdx;
 
-static thread_local int mainthread;
-static thread_local jmp_buf panicjmp;
-static thread_local const char *panicmsg;
-static thread_local volatile sig_atomic_t jobcanceled;
+static THREADLOCAL int mainthread;
+static THREADLOCAL jmp_buf panicjmp;
+static THREADLOCAL const char *panicmsg;
+static THREADLOCAL volatile sig_atomic_t jobcanceled;
 
 static Thread *availableThread(void);
 static void checkThreadJobs(void *receiver, void *sender, void *args);
