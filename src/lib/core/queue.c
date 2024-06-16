@@ -30,7 +30,7 @@ static inline void expand(PSC_Queue *self)
     if (self->front)
     {
 	memcpy(self->entries+self->front+self->capa, self->entries+self->front,
-		self->capa-self->front);
+		(self->capa-self->front) * sizeof *self->entries);
 	self->front+=self->capa;
     }
     else self->back = self->capa;
