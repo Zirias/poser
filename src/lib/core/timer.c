@@ -20,9 +20,8 @@ struct PSC_Timer
 SOEXPORT PSC_Timer *PSC_Timer_create(void)
 {
     PSC_Timer *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
     self->expired = PSC_Event_create(self);
-    self->tid = 0;
-    self->running = 0;
     PSC_Timer_setMs(self, 1000);
     return self;
 }

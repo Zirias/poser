@@ -560,7 +560,7 @@ SOLOCAL int PSC_Service_attachTimer(PSC_Timer *t, timer_t *tid)
     memset(&ev, 0, sizeof ev);
     ev.sigev_notify = SIGEV_SIGNAL;
     ev.sigev_signo = SIGALRM;
-    ev.sigev_value = (union sigval){ .sival_int = ntimers };
+    ev.sigev_value.sival_int = ntimers;
     if (timer_create(CLOCK_MONOTONIC, &ev, &timers[ntimers].tid) < 0)
     {
 	return -1;
