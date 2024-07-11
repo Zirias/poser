@@ -3,7 +3,14 @@
 
 #include <poser/core/service.h>
 
-#define _POSIX_C_SOURCE 200112L
+#ifdef _POSIX_C_SOURCE
+#  if _POSIX_C_SOURCE < 200112L
+#    undef _POSIX_C_SOURCE
+#  endif
+#endif
+#ifndef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 200112L
+#endif
 #include <time.h>
 
 C_CLASS_DECL(PSC_Timer);
