@@ -35,6 +35,7 @@ posercore_HEADERS_INSTALL:=	core \
 				core/util \
 				decl
 
+posercore_LIBS:=		rt
 posercore_LDFLAGS:=		-pthread
 posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
