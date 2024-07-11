@@ -4,6 +4,7 @@
 #include "log.h"
 #include "runopts.h"
 #include "service.h"
+#include "timer.h"
 
 #include <poser/core/daemon.h>
 #include <poser/core/threadpool.h>
@@ -17,10 +18,21 @@
 #include <sys/select.h>
 #include <sys/time.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifndef DEFLOGIDENT
 #define DEFLOGIDENT "posercore"
+#endif
+
+#ifdef _POSIX_TIMER_MAX
+#  if _POSIX_TIMER_MAX > 32
+#    define MAXTIMERS 32
+#  else
+#    define MAXTIMERS _POSIX_TIMER_MAX
+#  endif
+#else
+#  define MAXTIMERS 32
 #endif
 
 struct PSC_EAStartup
@@ -45,6 +57,7 @@ static int running;
 
 static volatile sig_atomic_t shutdownRequest;
 static volatile sig_atomic_t timerTick;
+static volatile sig_atomic_t timerExpired[MAXTIMERS];
 
 static int shutdownRef;
 static int shutdownTicks;
@@ -52,17 +65,40 @@ static int shutdownTicks;
 static struct itimerval timer;
 static struct itimerval otimer;
 
+typedef struct ServiceTimer
+{
+    PSC_Timer *timer;
+    timer_t tid;
+    unsigned idx;
+} ServiceTimer;
+
+static ServiceTimer timers[MAXTIMERS];
+static int ntimers;
+
 static jmp_buf panicjmp;
 static PSC_PanicHandler panicHandlers[MAXPANICHANDLERS];
 static int numPanicHandlers;
 
+static void handletimer(int signum, siginfo_t *info, void *uc);
 static void handlesig(int signum);
 static void tryReduceNfds(int id);
 
+static void handletimer(int signum, siginfo_t *info, void *uc)
+{
+    (void)uc;
+
+    if (signum != SIGALRM) return;
+    if (info->si_code == SI_TIMER)
+    {
+	timerExpired[info->si_value.sival_int] = 1;
+    }
+    else timerTick = 1;
+}
+
 static void handlesig(int signum)
 {
-    if (signum == SIGALRM) timerTick = 1;
-    else shutdownRequest = 1;
+    if (signum != SIGTERM && signum != SIGINT) return;
+    shutdownRequest = 1;
 }
 
 static void tryReduceNfds(int id)
@@ -243,6 +279,7 @@ static int serviceLoop(int isRun)
     sigaddset(&handler.sa_mask, SIGTERM);
     sigaddset(&handler.sa_mask, SIGINT);
     sigaddset(&handler.sa_mask, SIGALRM);
+
     sigset_t mask;
 
     if (sigprocmask(SIG_BLOCK, &handler.sa_mask, &mask) < 0)
@@ -263,6 +300,9 @@ static int serviceLoop(int isRun)
 	goto done;
     }
 
+    handler.sa_handler = 0;
+    handler.sa_sigaction = handletimer;
+    handler.sa_flags = SA_SIGINFO;
     if (sigaction(SIGALRM, &handler, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
@@ -339,6 +379,25 @@ static int serviceLoop(int isRun)
 	    PSC_Event_raise(&tick, 0, 0);
 	    continue;
 	}
+	int havetimer = 0;
+	for (int i = 0; i < ntimers; ++i)
+	{
+	    if (timerExpired[i])
+	    {
+		timerExpired[i] = 0;
+		if (timers[i].timer)
+		{
+		    int n = 1 + timer_getoverrun(timers[i].tid);
+		    for (int j = 0; j < n; ++j)
+		    {
+			PSC_Timer_expire(timers[i].timer);
+		    }
+		}
+		havetimer = 1;
+		break;
+	    }
+	}
+	if (havetimer) continue;
 	if (src < 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
@@ -401,6 +460,12 @@ static int serviceMain(void *data)
 
 done:
     PSC_ThreadPool_done();
+
+    for (int i = 0; i < ntimers; ++i)
+    {
+	timer_delete(timers[i].tid);
+    }
+    ntimers = 0;
 
     free(readyRead.handlers);
     free(readyWrite.handlers);
@@ -477,5 +542,44 @@ SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
 SOLOCAL int PSC_Service_shutsdown(void)
 {
     return shutdownRef >= 0;
+}
+
+SOLOCAL int PSC_Service_attachTimer(PSC_Timer *t, timer_t *tid)
+{
+    for (int i = 0; i < ntimers; ++i)
+    {
+	if (!timers[i].timer)
+	{
+	    timers[i].timer = t;
+	    *tid = timers[i].tid;
+	    return 0;
+	}
+    }
+    if (ntimers == MAXTIMERS) return -1;
+    struct sigevent ev;
+    memset(&ev, 0, sizeof ev);
+    ev.sigev_notify = SIGEV_SIGNAL;
+    ev.sigev_signo = SIGALRM;
+    ev.sigev_value = (union sigval){ .sival_int = ntimers };
+    if (timer_create(CLOCK_MONOTONIC, &ev, &timers[ntimers].tid) < 0)
+    {
+	return -1;
+    }
+    timers[ntimers].timer = t;
+    *tid = timers[ntimers].tid;
+    ++ntimers;
+    return 0;
+}
+
+SOLOCAL void PSC_Service_detachTimer(PSC_Timer *t)
+{
+    for (int i = 0; i < ntimers; ++i)
+    {
+	if (timers[i].timer == t)
+	{
+	    timers[i].timer = 0;
+	    return;
+	}
+    }
 }
 

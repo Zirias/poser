@@ -16,6 +16,7 @@
 #include <poser/core/service.h>
 #include <poser/core/stringbuilder.h>
 #include <poser/core/threadpool.h>
+#include <poser/core/timer.h>
 #include <poser/core/util.h>
 
 #endif

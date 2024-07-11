@@ -12,6 +12,7 @@ posercore_MODULES:=		certinfo \
 				service \
 				stringbuilder \
 				threadpool \
+				timer \
 				util
 
 posercore_HEADERS_INSTALL:=	core \
@@ -30,6 +31,7 @@ posercore_HEADERS_INSTALL:=	core \
 				core/service \
 				core/stringbuilder \
 				core/threadpool \
+				core/timer \
 				core/util \
 				decl
 
