@@ -64,6 +64,7 @@ static int shutdownTicks;
 
 static struct itimerval timer;
 static struct itimerval otimer;
+static int timerset;
 
 typedef struct ServiceTimer
 {
@@ -216,7 +217,7 @@ SOEXPORT int PSC_Service_setTickInterval(unsigned msec)
     timer.it_interval.tv_usec = 1000U * (msec % 1000U);
     timer.it_value.tv_sec = msec / 1000U;
     timer.it_value.tv_usec = 1000U * (msec % 1000U);
-    if (running) return setitimer(ITIMER_REAL, &timer, 0);
+    if (timerset) return setitimer(ITIMER_REAL, &timer, 0);
     return 0;
 }
 
@@ -314,6 +315,7 @@ static int serviceLoop(int isRun)
 	PSC_Log_msg(PSC_L_ERROR, "cannot set periodic timer");
 	goto done;
     }
+    timerset = 1;
 
     PSC_Event_raise(&startup, 0, &sea);
     rc = sea.rc;
@@ -434,6 +436,7 @@ done:
 	rc = EXIT_FAILURE;
     }
 
+    timerset = 0;
     if (setitimer(ITIMER_REAL, &otimer, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot restore original periodic timer");
