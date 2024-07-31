@@ -392,7 +392,7 @@ static int serviceLoop(int isRun)
 		    int n = 1 + timer_getoverrun(timers[i].tid);
 		    for (int j = 0; j < n; ++j)
 		    {
-			PSC_Timer_expire(timers[i].timer);
+			if (timers[i].timer) PSC_Timer_expire(timers[i].timer);
 		    }
 		}
 		havetimer = 1;
