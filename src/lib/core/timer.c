@@ -47,10 +47,10 @@ SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
     struct itimerspec newtimeout = {
 	.it_interval = {
 	    .tv_sec = ms / 1000U,
-	    .tv_nsec = 1000000U * (ms & 1000U) },
+	    .tv_nsec = 1000000U * (ms % 1000U) },
 	.it_value = {
 	    .tv_sec = ms / 1000U,
-	    .tv_nsec = 1000000U * (ms & 1000U) }
+	    .tv_nsec = 1000000U * (ms % 1000U) }
     };
     if (!memcmp(&self->timeout, &newtimeout, sizeof self->timeout)) return;
     self->timeout = newtimeout;
