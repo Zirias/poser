@@ -76,8 +76,9 @@ static void stopandadjust(void)
     struct itimerval curr;
     if (setitimer(ITIMER_REAL, &itvzero, &curr) == 0)
     {
-	unsigned elapsed = (curr.it_value.tv_usec + 999U) / 1000U
+	unsigned togo = (curr.it_value.tv_usec + 999U) / 1000U
 	    + curr.it_value.tv_sec * 1000U;
+	unsigned elapsed = togo < jobs->ms ? jobs->ms - togo : 0;
 	adjust(elapsed);
     }
 }
