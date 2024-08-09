@@ -125,6 +125,7 @@ static void enqueueandstart(PSC_Timer *self)
 
 SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
 {
+    if (self->job) PSC_Timer_stop(self);
     if (!self->job && self->ms)
     {
 	stopandadjust();

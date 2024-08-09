@@ -48,7 +48,8 @@ PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
     CMETHOD;
 
 /** Start the timer.
- * Starts the timer. An expired event will be fired after the configured
+ * Starts the timer. An expired event will be fired after the configured.
+ * If the timer is already running, stops and restarts it.
  * expiry time.
  * @memberof PSC_Timer
  * @param self the PSC_Timer
