@@ -9,7 +9,7 @@
  * @file
  */
 
-/** A periodic timer.
+/** A timer.
  * @class PSC_Timer timer.h <poser/core/timer.h>
  */
 C_CLASS_DECL(PSC_Timer);
@@ -36,7 +36,7 @@ PSC_Timer_expired(PSC_Timer *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
 /** Set expiry in milliseconds.
- * Sets the expiry interval in milliseconds. If the timer is currently
+ * Sets the expiry time in milliseconds. If the timer is currently
  * running, it is first stopped and then restarted with the new value.
  * The initial value is 1000 milliseconds (1 second).
  * @memberof PSC_Timer
@@ -48,12 +48,14 @@ PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
     CMETHOD;
 
 /** Start the timer.
- * The timer will expire periodically until PSC_Timer_stop() is called.
+ * Starts the timer. An expired event will be fired after the configured
+ * expiry time.
  * @memberof PSC_Timer
  * @param self the PSC_Timer
+ * @param periodic if nonzero, expire periodically until explicitly stopped.
  */
 DECLEXPORT void
-PSC_Timer_start(PSC_Timer *self)
+PSC_Timer_start(PSC_Timer *self, int periodic)
     CMETHOD;
 
 /** Stop the timer.
