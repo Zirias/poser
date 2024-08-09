@@ -13,7 +13,7 @@ struct PSC_TimerJob
 {
     PSC_TimerJob *next;
     PSC_Timer *timer;
-    unsigned ms;
+    struct timeval remaining;
 };
 
 struct PSC_Timer
@@ -59,13 +59,35 @@ SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
     else self->ms = ms;
 }
 
-static void adjust(unsigned elapsed)
+#define tvlessthan(lhs,rhs) ((lhs).tv_sec < (rhs).tv_sec || \
+	((lhs).tv_sec == (rhs).tv_sec && (lhs).tv_usec < (rhs).tv_usec))
+
+static void tvsuborzero(struct timeval *tv, const struct timeval *sub)
 {
-    if (!jobs || !elapsed) return;
+    if (tvlessthan(*sub, *tv))
+    {
+	tv->tv_sec -= sub->tv_sec;
+	tv->tv_usec -= sub->tv_usec;
+	if (tv->tv_usec < 0)
+	{
+	    --tv->tv_sec;
+	    tv->tv_usec += 1000000;
+	}
+    }
+    else
+    {
+	tv->tv_sec = 0;
+	tv->tv_usec = 0;
+    }
+}
+
+static void adjust(const struct timeval *elapsed)
+{
+    if (!jobs || (!elapsed->tv_sec && !elapsed->tv_usec)) return;
     PSC_TimerJob *j = jobs;
     do
     {
-	j->ms = j->ms > elapsed ? j->ms - elapsed : 0;
+	tvsuborzero(&j->remaining, elapsed);
 	j = j->next;
     } while (j);
 }
@@ -76,24 +98,20 @@ static void stopandadjust(void)
     struct itimerval curr;
     if (setitimer(ITIMER_REAL, &itvzero, &curr) == 0)
     {
-	unsigned togo = (curr.it_value.tv_usec + 999U) / 1000U
-	    + curr.it_value.tv_sec * 1000U;
-	unsigned elapsed = togo < jobs->ms ? jobs->ms - togo : 0;
-	adjust(elapsed);
+	struct timeval elapsed = jobs->remaining;
+	tvsuborzero(&elapsed, &curr.it_value);
+	adjust(&elapsed);
     }
 }
 
 static void start(void)
 {
     if (!jobs) return;
-    if (jobs->ms)
+    if (jobs->remaining.tv_sec || jobs->remaining.tv_usec)
     {
 	struct itimerval itv = {
 	    .it_interval = { .tv_sec = 0, .tv_usec = 0 },
-	    .it_value = {
-		.tv_sec = jobs->ms / 1000U,
-		.tv_usec = 1000U * (jobs->ms % 1000U)
-	    }
+	    .it_value = jobs->remaining
 	};
 	setitimer(ITIMER_REAL, &itv, 0);
     }
@@ -102,10 +120,13 @@ static void start(void)
 
 static void enqueueandstart(PSC_Timer *self)
 {
-    self->job->ms = self->ms;
+    self->job->remaining = (struct timeval){
+	.tv_sec = self->ms / 1000U,
+	.tv_usec = 1000U * (self->ms % 1000U)
+    };
     PSC_TimerJob *parent = 0;
     PSC_TimerJob *next = jobs;
-    while (next && next->ms < self->ms)
+    while (next && tvlessthan(next->remaining, self->job->remaining))
     {
 	parent = next;
 	next = next->next;
@@ -166,9 +187,9 @@ SOLOCAL void PSC_Timer_underrun(void)
 {
     if (!jobs) return;
     PSC_Timer *self = jobs->timer;
-    unsigned elapsed = jobs->ms;
+    struct timeval elapsed = jobs->remaining;
     jobs = jobs->next;
-    adjust(elapsed);
+    adjust(&elapsed);
     if (self->periodic)
     {
 	enqueueandstart(self);
