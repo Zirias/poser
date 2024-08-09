@@ -300,6 +300,12 @@ static int serviceLoop(int isRun)
 
     running = 1;
     shutdownRef = -1;
+    if (!tickTimer)
+    {
+	tickTimer = PSC_Timer_create();
+	PSC_Timer_setMs(tickTimer, 0);
+    }
+    else PSC_Timer_start(tickTimer, 1);
     PSC_Log_msg(PSC_L_INFO, "service started");
 
     if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
