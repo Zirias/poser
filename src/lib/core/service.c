@@ -4,6 +4,7 @@
 #include "log.h"
 #include "runopts.h"
 #include "service.h"
+#include "timer.h"
 
 #include <poser/core/daemon.h>
 #include <poser/core/threadpool.h>
@@ -15,7 +16,6 @@
 #include <string.h>
 #include <sys/param.h>
 #include <sys/select.h>
-#include <sys/time.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -44,13 +44,12 @@ static int nfds;
 static int running;
 
 static volatile sig_atomic_t shutdownRequest;
-static volatile sig_atomic_t timerTick;
+static volatile sig_atomic_t timerExpire;
 
 static int shutdownRef;
-static int shutdownTicks;
 
-static struct itimerval timer;
-static struct itimerval otimer;
+static PSC_Timer *tickTimer;
+static PSC_Timer *shutdownTimer;
 
 static jmp_buf panicjmp;
 static PSC_PanicHandler panicHandlers[MAXPANICHANDLERS];
@@ -61,7 +60,7 @@ static void tryReduceNfds(int id);
 
 static void handlesig(int signum)
 {
-    if (signum == SIGALRM) timerTick = 1;
+    if (signum == SIGALRM) timerExpire = 1;
     else shutdownRequest = 1;
 }
 
@@ -174,13 +173,24 @@ SOEXPORT void PSC_Service_unregisterPanic(PSC_PanicHandler handler)
     }
 }
 
+static void raiseTick(void *receiver, void *sender, void *args)
+{
+    (void)receiver;
+    (void)sender;
+    (void)args;
+
+    PSC_Event_raise(&tick, 0, 0);
+}
+
 SOEXPORT int PSC_Service_setTickInterval(unsigned msec)
 {
-    timer.it_interval.tv_sec = msec / 1000U;
-    timer.it_interval.tv_usec = 1000U * (msec % 1000U);
-    timer.it_value.tv_sec = msec / 1000U;
-    timer.it_value.tv_usec = 1000U * (msec % 1000U);
-    if (running) return setitimer(ITIMER_REAL, &timer, 0);
+    if (!tickTimer)
+    {
+	tickTimer = PSC_Timer_create();
+	PSC_Event_register(PSC_Timer_expired(tickTimer), 0, raiseTick, 0);
+    }
+    PSC_Timer_setMs(tickTimer, msec);
+    if (running) PSC_Timer_start(tickTimer, 1);
     return 0;
 }
 
@@ -269,12 +279,6 @@ static int serviceLoop(int isRun)
 	goto done;
     }
 
-    if (setitimer(ITIMER_REAL, &timer, &otimer) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set periodic timer");
-	goto done;
-    }
-
     PSC_Event_raise(&startup, 0, &sea);
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
@@ -296,7 +300,6 @@ static int serviceLoop(int isRun)
 
     running = 1;
     shutdownRef = -1;
-    shutdownTicks = -1;
     PSC_Log_msg(PSC_L_INFO, "service started");
 
     if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
@@ -324,19 +327,13 @@ static int serviceLoop(int isRun)
 	{
 	    shutdownRequest = 0;
 	    shutdownRef = 0;
-	    shutdownTicks = 5;
 	    PSC_Event_raise(&shutdown, 0, 0);
 	    continue;
 	}
-	if (timerTick)
+	if (timerExpire)
 	{
-	    timerTick = 0;
-	    if (shutdownTicks > 0 && !--shutdownTicks)
-	    {
-		shutdownRef = 0;
-		break;
-	    }
-	    PSC_Event_raise(&tick, 0, 0);
+	    timerExpire = 0;
+	    PSC_Timer_underrun();
 	    continue;
 	}
 	if (src < 0)
@@ -365,6 +362,8 @@ static int serviceLoop(int isRun)
     PSC_Event_raise(&eventsDone, 0, 0);
 
 shutdown:
+    PSC_Timer_destroy(shutdownTimer);
+    shutdownTimer = 0;
     running = 0;
     PSC_Log_msg(PSC_L_INFO, "service shutting down");
 
@@ -375,11 +374,8 @@ done:
 	rc = EXIT_FAILURE;
     }
 
-    if (setitimer(ITIMER_REAL, &otimer, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot restore original periodic timer");
-	rc = EXIT_FAILURE;
-    }
+    PSC_Timer_destroy(tickTimer);
+    tickTimer = 0;
 
     return rc;
 }
@@ -392,10 +388,7 @@ static int serviceMain(void *data)
 
     if (PSC_ThreadPool_init() < 0) goto done;
 
-    if (!timer.it_interval.tv_sec &&
-	    !timer.it_interval.tv_usec &&
-	    !timer.it_value.tv_sec &&
-	    !timer.it_value.tv_usec) PSC_Service_setTickInterval(1000);
+    if (tickTimer) PSC_Service_setTickInterval(1000);
 
     rc = serviceLoop(1);
 
@@ -446,10 +439,26 @@ SOEXPORT void PSC_Service_quit(void)
     shutdownRequest = 1;
 }
 
+static void shutdownTimeout(void *receiver, void *sender, void *args)
+{
+    (void)receiver;
+    (void)sender;
+    (void)args;
+
+    shutdownRef = 0;
+}
+
 SOEXPORT void PSC_Service_shutdownLock(void)
 {
-    if (shutdownRef == 0) PSC_Service_setTickInterval(1000);
     if (shutdownRef >= 0) ++shutdownRef;
+    if (!shutdownTimer)
+    {
+	shutdownTimer = PSC_Timer_create();
+	PSC_Event_register(PSC_Timer_expired(shutdownTimer), 0,
+		shutdownTimeout, 0);
+	PSC_Timer_setMs(shutdownTimer, 5000);
+	PSC_Timer_start(shutdownTimer, 0);
+    }
 }
 
 SOEXPORT void PSC_Service_shutdownUnlock(void)
