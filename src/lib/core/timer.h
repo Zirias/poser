@@ -3,4 +3,6 @@
 
 #include <poser/core/timer.h>
 
+void PSC_Timer_underrun(void);
+
 #endif
