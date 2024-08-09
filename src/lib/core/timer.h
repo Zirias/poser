@@ -3,6 +3,4 @@
 
 #include <poser/core/timer.h>
 
-void PSC_Timer_expire(PSC_Timer *self);
-
 #endif
