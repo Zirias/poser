@@ -1,6 +1,7 @@
 .*.swp
 .*.cfg
 .*.pyc
+.path-cache
 *.o
 *.d
 *.exe
