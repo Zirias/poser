@@ -118,6 +118,16 @@ PSC_Log_setSilent(int silent);
 DECLEXPORT void
 PSC_Log_setAsync(int async);
 
+/** Check whether log level is enabled.
+ * Checks whether a given log level would currently produce a log message.
+ * @memberof PSC_Log
+ * @static
+ * @param level the log level to check
+ * @returns 1 if the level is enabled, 0 otherwise
+ */
+DECLEXPORT int
+PSC_Log_enabled(PSC_LogLevel level);
+
 /** Log a message.
  * @memberof PSC_Log
  * @static

@@ -104,6 +104,12 @@ SOEXPORT void PSC_Log_setAsync(int async)
     logasync = async;
 }
 
+SOEXPORT int PSC_Log_enabled(PSC_LogLevel level)
+{
+    if (logsilent && level > PSC_L_ERROR) return 0;
+    return level <= maxlevel;
+}
+
 SOEXPORT void PSC_Log_msg(PSC_LogLevel level, const char *message)
 {
     if (!currentwriter) return;
