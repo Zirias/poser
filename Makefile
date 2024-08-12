@@ -4,6 +4,7 @@ SINGLECONFVARS=	OPENSSLINC OPENSSLLIB
 # Default configuration
 WITH_TLS?=	1		# Build posercore with TLS support
 
+USES=	pkgconfig
 include zimk/zimk.mk
 
 INCLUDES += -I.$(PSEP)include
