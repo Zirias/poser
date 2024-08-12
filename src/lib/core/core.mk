@@ -38,9 +38,7 @@ posercore_HEADERS_INSTALL:=	core \
 posercore_LDFLAGS:=		-pthread
 posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
-posercore_V_MAJ:=		1
-posercore_V_MIN:=		1
-posercore_V_REV:=		0
+posercore_VERSION:=		1.2.0
 
 ifeq ($(WITH_TLS),1)
   ifneq ($(OPENSSLINC)$(OPENSSLLIB),)
