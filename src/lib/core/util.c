@@ -34,7 +34,7 @@ SOEXPORT char *PSC_lowerstr(const char *src)
     char *p = lower;
     if (p) while (*p)
     {
-	*p = tolower(*p);
+	*p = tolower((unsigned char)*p);
 	++p;
     }
     return lower;
