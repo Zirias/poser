@@ -678,7 +678,7 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 			&sockerr, &sockerrlen) >= 0
 		    && !sockerr))
         {
-            PSC_Log_fmt(PSC_L_ERROR,
+            PSC_Log_fmt(PSC_L_WARNING,
 		    "server: `%s' is already opened for listening",
 		    addr.sun_path);
             close(sock.fd);
