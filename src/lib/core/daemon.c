@@ -14,8 +14,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static int outfd;
-
 static FILE *openpidfile(const char *pidfile) ATTR_NONNULL((1));
 static int waitpflock(FILE *pf, const char *pidfile)
     ATTR_NONNULL((1)) ATTR_NONNULL((2));
@@ -130,7 +128,6 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
     int rc = EXIT_FAILURE;
     FILE *pf = 0;
 
-    outfd = -1;
     PSC_RunOpts *opts = runOpts();
     if (!opts->daemonize) return dmain(data);
 
@@ -234,39 +231,24 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
     }
 
     umask(0);
-    close(STDIN_FILENO);
 
-    outfd = open("/dev/null", O_WRONLY);
-    if (pfd[1] >= 0)
-    {
-	if (outfd < 0)
-	{
-	    close(STDOUT_FILENO);
-	}
-	else
-	{
-	    dup2(outfd, STDOUT_FILENO);
-	}
-	dup2(pfd[1], STDERR_FILENO);
-    }
-    else if (outfd < 0)
+    int nullfd = open("/dev/null", O_RDWR);
+    if (nullfd < 0)
     {
 	close(STDOUT_FILENO);
-	close(STDERR_FILENO);
+	if (pfd[1] < 0) close(STDERR_FILENO);
     }
     else
     {
-	dup2(outfd, STDOUT_FILENO);
-	dup2(outfd, STDERR_FILENO);
+	dup2(nullfd, STDIN_FILENO);
+	dup2(nullfd, STDOUT_FILENO);
+	if (pfd[1] < 0) dup2(nullfd, STDERR_FILENO);
+	close(nullfd);
     }
     if (pfd[1] >= 0)
     {
+	dup2(pfd[1], STDERR_FILENO);
 	close(pfd[1]);
-    }
-    else if (outfd >= 0)
-    {
-	close(outfd);
-	outfd = -1;
     }
 
     PSC_Log_msg(PSC_L_INFO, "forked into background");
@@ -289,11 +271,6 @@ done:
 
 SOEXPORT void PSC_Daemon_launched(void)
 {
-    if (outfd >= 0)
-    {
-	dup2(outfd, STDERR_FILENO);
-	close(outfd);
-	outfd = -1;
-    }
+    dup2(STDIN_FILENO, STDERR_FILENO);
 }
 
