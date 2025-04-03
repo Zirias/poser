@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -75,6 +76,7 @@ typedef struct Thread
     pthread_mutex_t donelock;
     pthread_cond_t start;
     pthread_cond_t done;
+    sem_t cancel;
     int pipefd[2];
     int stoprq;
 } Thread;
@@ -92,7 +94,7 @@ static int lastIdx;
 static THREADLOCAL int mainthread;
 static THREADLOCAL jmp_buf panicjmp;
 static THREADLOCAL const char *panicmsg;
-static THREADLOCAL volatile sig_atomic_t jobcanceled;
+static THREADLOCAL Thread *currentThread;
 
 static Thread *availableThread(void);
 static void checkThreadJobs(void *receiver, void *sender, void *args);
@@ -109,12 +111,12 @@ static void workerInterrupt(int signum);
 static void workerInterrupt(int signum)
 {
     (void) signum;
-    jobcanceled = 1;
 }
 
 static void *worker(void *arg)
 {
     Thread *t = arg;
+    currentThread = t;
 
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
@@ -128,7 +130,7 @@ static void *worker(void *arg)
     t->stoprq = 0;
     while (!t->stoprq)
     {
-	jobcanceled = 0;
+	sem_trywait(&t->cancel);
 	pthread_cond_wait(&t->start, &t->startlock);
 	if (t->stoprq) break;
 	if (!setjmp(panicjmp)) t->job->proc(t->job->arg);
@@ -179,7 +181,7 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 
 SOEXPORT int PSC_ThreadJob_canceled(void)
 {
-    return (int)jobcanceled;
+    return sem_trywait(&currentThread->cancel) == 0;
 }
 
 static void stopThreads(int nthr)
@@ -205,6 +207,7 @@ static void stopThreads(int nthr)
 	pthread_join(threads[i].handle, 0);
 	close(threads[i].pipefd[0]);
 	close(threads[i].pipefd[1]);
+	sem_destroy(&threads[i].cancel);
 	pthread_cond_destroy(&threads[i].done);
 	pthread_mutex_destroy(&threads[i].donelock);
 	pthread_cond_destroy(&threads[i].start);
@@ -429,27 +432,33 @@ SOEXPORT int PSC_ThreadPool_init(void)
 
     for (int i = 0; i < nthreads; ++i)
     {
-	if (pthread_mutex_init(&threads[i].startlock, 0) < 0)
+	if (pthread_mutex_init(&threads[i].startlock, 0) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating mutex");
 	    goto rollback;
 	}
-	if (pthread_cond_init(&threads[i].start, 0) < 0)
+	if (pthread_cond_init(&threads[i].start, 0) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR,
 		    "threadpool: error creating condition variable");
 	    goto rollback_startlock;
 	}
-	if (pthread_mutex_init(&threads[i].donelock, 0) < 0)
+	if (pthread_mutex_init(&threads[i].donelock, 0) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating mutex");
 	    goto rollback_start;
 	}
-	if (pthread_cond_init(&threads[i].done, 0) < 0)
+	if (pthread_cond_init(&threads[i].done, 0) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR,
 		    "threadpool: error creating condition variable");
 	    goto rollback_donelock;
+	}
+	if (sem_init(&threads[i].cancel, 0, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR,
+		    "threadpool: error creating semaphore");
+	    goto rollback_cancel;
 	}
 	if (pipe(threads[i].pipefd) < 0)
 	{
@@ -458,7 +467,7 @@ SOEXPORT int PSC_ThreadPool_init(void)
 	}
 	PSC_Event_register(PSC_Service_readyRead(), threads+i, threadJobDone,
 		threads[i].pipefd[0]);
-	if (pthread_create(&threads[i].handle, 0, worker, threads+i) < 0)
+	if (pthread_create(&threads[i].handle, 0, worker, threads+i) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating thread");
 	    PSC_Event_unregister(PSC_Service_readyRead(), threads+i,
@@ -470,6 +479,8 @@ SOEXPORT int PSC_ThreadPool_init(void)
 rollback_pipe:
 	close(threads[i].pipefd[0]);
 	close(threads[i].pipefd[1]);
+rollback_cancel:
+	sem_destroy(&threads[i].cancel);
 rollback_done:
 	pthread_cond_destroy(&threads[i].done);
 rollback_donelock:
@@ -545,8 +556,9 @@ SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 	{
 	    if (threads[i].job == job)
 	    {
-		pthread_kill(threads[i].handle, SIGUSR1);
 		threads[i].job->hasCompleted = 0;
+		sem_post(&threads[i].cancel);
+		pthread_kill(threads[i].handle, SIGUSR1);
 		return;
 	    }
 	}
