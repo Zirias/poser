@@ -50,9 +50,9 @@ $(error OPENSSLINC specified without OPENSSLLIB)
     endif
 posercore_INCLUDES+=		-I$(OPENSSLINC)
 posercore_LDFLAGS+=		-L$(OPENSSLLIB)
-posercore_LIBS+=		ssl
+posercore_LIBS+=		ssl crypto
   else
-posercore_PKGDEPS+=		libssl
+posercore_PKGDEPS+=		openssl
   endif
 posercore_DEFINES+=		-DWITH_TLS
 endif
