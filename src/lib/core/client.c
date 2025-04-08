@@ -145,9 +145,18 @@ static PSC_Connection *createFromAddrinfo(
 	if (opts->proto == PSC_P_IPv4 && res->ai_family != AF_INET) continue;
 	if (opts->proto == PSC_P_IPv6 && res->ai_family != AF_INET6) continue;
 	if (!blacklistcheck(res->ai_addrlen, res->ai_addr)) continue;
+#ifdef HAVE_ACCEPT4
+	fd = socket(res->ai_family,
+		res->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
+		res->ai_protocol);
+#else
 	fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+#endif
 	if (fd < 0) continue;
+#ifndef HAVE_ACCEPT4
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+#endif
 	errno = 0;
 	if (connect(fd, res->ai_addr, res->ai_addrlen) < 0
 		&& errno != EINPROGRESS)
@@ -447,19 +456,26 @@ SOEXPORT int PSC_Connection_createTcpClientAsync(const PSC_TcpClientOpts *opts,
 SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(
 	const PSC_UnixClientOpts *opts)
 {
+#ifdef HAVE_ACCEPT4
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#else
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+#endif
     if (fd < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "client: cannot create socket");
 	return 0;
     }
+#ifndef HAVE_ACCEPT4
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+#endif
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof addr);
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, opts->sockname, sizeof addr.sun_path - 1);
 
-    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     errno = 0;
     if (connect(fd, (struct sockaddr *)&addr, sizeof addr) < 0
 	    && errno != EINPROGRESS)

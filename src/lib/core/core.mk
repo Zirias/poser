@@ -1,3 +1,8 @@
+posercore_PRECHECK:=		ACCEPT4
+ACCEPT4_FUNC:=			accept4
+ACCEPT4_HEADERS:=		sys/types.h sys/socket.h
+ACCEPT4_ARGS:=			int, struct sockaddr *, socklen_t *, int
+
 posercore_MODULES:=		certinfo \
 				client \
 				connection \
@@ -58,3 +63,16 @@ posercore_DEFINES+=		-DWITH_TLS
 endif
 
 $(call librules, posercore)
+
+ifneq ($(posercore_HAVE_ACCEPT4),1)
+define posercore_warn
+**WARNING**
+
+GNU-style accept4() API not detected, falling back to non-atomic
+configuration of socket file descriptors.
+
+This introduces a small risk to leak sockets to child processes!
+
+endef
+$(warning $(posercore_warn))
+endif

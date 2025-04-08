@@ -208,12 +208,20 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	salen = sizeof sain6;
 	sl = &salen;
     }
+#ifdef HAVE_ACCEPT4
+    int connfd = accept4(*sockfd, sa, sl, SOCK_NONBLOCK|SOCK_CLOEXEC);
+#else
     int connfd = accept(*sockfd, sa, sl);
+#endif
     if (connfd < 0)
     {
 	PSC_Log_msg(PSC_L_WARNING, "server: failed to accept connection");
 	return;
     }
+#ifndef HAVE_ACCEPT4
+    fcntl(connfd, F_SETFD, FD_CLOEXEC);
+    fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK);
+#endif
     if (self->disabled)
     {
 	struct linger l = { 1, 0 };
@@ -222,7 +230,6 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	PSC_Log_msg(PSC_L_DEBUG, "server: rejected connection while disabled");
 	return;
     }
-    fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK);
     if (self->connsize == self->conncapa)
     {
 	self->conncapa += CONNCHUNK;
@@ -570,15 +577,25 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 		    && res->ai_family != AF_INET) continue;
 	    if (opts->proto == PSC_P_IPv6
 		    && res->ai_family != AF_INET6) continue;
+#ifdef HAVE_ACCEPT4
+	    socks[nsocks].fd = socket(res->ai_family,
+		    res->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
+		    res->ai_protocol);
+#else
 	    socks[nsocks].fd = socket(res->ai_family, res->ai_socktype,
 		    res->ai_protocol);
+#endif
 	    if (socks[nsocks].fd < 0)
 	    {
 		PSC_Log_msg(PSC_L_ERROR, "server: cannot create socket");
 		continue;
 	    }
+#ifndef HAVE_ACCEPT4
+	    fcntl(socks[nsocks].fd, F_SETFD, FD_CLOEXEC);
 	    fcntl(socks[nsocks].fd, F_SETFL,
 		    fcntl(socks[nsocks].fd, F_GETFL, 0) | O_NONBLOCK);
+#endif
+
 	    if (setsockopt(socks[nsocks].fd, SOL_SOCKET, SO_REUSEADDR,
 			&opt_true, sizeof opt_true) < 0)
 	    {
@@ -635,7 +652,11 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 {
     SockInfo sock = {
+#ifdef HAVE_ACCEPT4
+	.fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0),
+#else
 	.fd = socket(AF_UNIX, SOCK_STREAM, 0),
+#endif
 	.st = ST_UNIX
     };
     if (sock.fd < 0)
@@ -643,7 +664,10 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
         PSC_Log_msg(PSC_L_ERROR, "server: cannot create socket");
         return 0;
     }
+#ifndef HAVE_ACCEPT4
+    fcntl(sock.fd, F_SETFD, FD_CLOEXEC);
     fcntl(sock.fd, F_SETFL, fcntl(sock.fd, F_GETFL, 0) | O_NONBLOCK);
+#endif
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof addr);
@@ -695,8 +719,14 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 
         PSC_Log_fmt(PSC_L_WARNING, "server: removed stale socket `%s'",
                 addr.sun_path);
+#ifdef HAVE_ACCEPT4
+	sock.fd = socket(AF_UNIX,
+		SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+#else
 	sock.fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	fcntl(sock.fd, F_SETFD, FD_CLOEXEC);
 	fcntl(sock.fd, F_SETFL, fcntl(sock.fd, F_GETFL, 0) | O_NONBLOCK);
+#endif
     }
     else if (errno != ENOENT)
     {
