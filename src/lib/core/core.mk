@@ -1,5 +1,6 @@
 posercore_PRECHECK:=		ACCEPT4
 ACCEPT4_FUNC:=			accept4
+ACCEPT4_CFLAGS:=		-D_GNU_SOURCE
 ACCEPT4_HEADERS:=		sys/types.h sys/socket.h
 ACCEPT4_ARGS:=			int, struct sockaddr *, socklen_t *, int
 
