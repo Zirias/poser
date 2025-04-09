@@ -100,6 +100,34 @@ SOEXPORT int PSC_HashTable_delete(PSC_HashTable *self, const char *key)
     return 0;
 }
 
+SOEXPORT int PSC_HashTable_deleteAll(PSC_HashTable *self,
+	int (*matcher)(const char *, void *, const void *), const void *arg)
+{
+    int deleted = 0;
+    for (unsigned h = 0; h < HT_SIZE(self->bits); ++h)
+    {
+	PSC_HashTableEntry *parent = 0;
+	PSC_HashTableEntry *entry = self->bucket[h];
+	while (entry)
+	{
+	    PSC_HashTableEntry *next = entry->next;
+	    if (matcher(entry->key, entry->obj, arg))
+	    {
+		if (entry->deleter) entry->deleter(entry->obj);
+		if (parent) parent->next = next;
+		else self->bucket[h] = next;
+		free(entry->key);
+		free(entry);
+		--self->count;
+		++deleted;
+	    }
+	    else parent = entry;
+	    entry = next;
+	}
+    }
+    return deleted;
+}
+
 SOEXPORT size_t PSC_HashTable_count(const PSC_HashTable *self)
 {
     return self->count;

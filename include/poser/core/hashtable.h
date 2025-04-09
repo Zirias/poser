@@ -55,6 +55,21 @@ DECLEXPORT int
 PSC_HashTable_delete(PSC_HashTable *self, const char *key)
     CMETHOD ATTR_NONNULL((2));
 
+/** Deletes matching objects from the hashtable.
+ * Objects that have a deleter attached are also destroyed.
+ * @memberof PSC_HashTable
+ * @param self the PSC_HashTable
+ * @param matcher function to compare each entry, given by its key and the
+ *                stored object, to some specified value. Must return 1 for
+ *                entries to be deleted, 0 otherwise.
+ * @param arg some value for the matcher function to compare entries against.
+ * @returns the number of entries deleted
+ */
+DECLEXPORT int
+PSC_HashTable_deleteAll(PSC_HashTable *self,
+	int (*matcher)(const char *, void *, const void *), const void *arg)
+    CMETHOD ATTR_NONNULL((1));
+
 /** Number of entries.
  * @memberof PSC_HashTable
  * @param self the PSC_HashTable
