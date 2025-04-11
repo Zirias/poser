@@ -16,34 +16,12 @@ KQUEUEX_ARGS:=			u_int
 KQUEUE1_FUNC:=			kqueue1
 KQUEUE1_HEADERS:=		sys/types.h sys/event.h sys/time.h
 
-posercore_DEFINES:=		#
-
-ifeq ($(WITH_EPOLL),1)
-  ifeq ($(WITH_POLL),1)
-    $(error Cannot set both WITH_EPOLL and WITH_POLL)
-  endif
-posercore_DEFINES+=		-DHAVE_EPOLL
-posercore_HAVE_EPOLL:=		1
-else
-  ifneq ($(WITHOUT_EPOLL),1)
+ifneq ($(WITHOUT_EPOLL),1)
 posercore_PRECHECK+=		EPOLL
-  endif
 endif
 
-ifeq ($(WITH_KQUEUE),1)
-  ifeq ($(WITH_EPOLL),1)
-    $(error Cannot set both WITH_EPOLL and WITH_KQUEUE)
-  endif
-  ifeq ($(WITH_POLL),1)
-    $(error Cannot set both WITH_POLL and WITH_KQUEUE)
-  endif
-posercore_DEFINES+=		-DHAVE_KQUEUE
-posercore_HAVE_KQUEUE:=		1
-posercore_PRECHECK+=		KQUEUEX KQUEUE1
-else
-  ifneq ($(WITHOUT_KQUEUE),1)
+ifneq ($(WITHOUT_KQUEUE),1)
 posercore_PRECHECK+=		KQUEUE KQUEUEX KQUEUE1
-  endif
 endif
 
 posercore_MODULES:=		certinfo \
@@ -84,6 +62,7 @@ posercore_HEADERS_INSTALL:=	core \
 				decl
 
 posercore_PRECFLAGS?=		-I.$(PSEP)include
+posercore_DEFINES:=		#
 posercore_LDFLAGS:=		-pthread
 posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
@@ -117,6 +96,33 @@ ifneq ($(WITH_POLL),1)
     ifneq ($(posercore_HAVE_KQUEUE),1)
 posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
     endif
+  endif
+endif
+
+ifeq ($(WITH_EPOLL),1)
+  ifeq ($(WITHOUT_EPOLL),1)
+    $(error Cannot set both WITH_EPOLL and WITHOUT_EPOLL)
+  endif
+  ifeq ($(WITH_POLL),1)
+    $(error Cannot set both WITH_EPOLL and WITH_POLL)
+  endif
+  ifneq ($(posercore_HAVE_EPOLL),1)
+    $(error Requested epoll (WITH_EPOLL), but not found)
+  endif
+endif
+
+ifeq ($(WITH_KQUEUE),1)
+  ifeq ($(WITHOUT_KQUEUE),1)
+    $(error Cannot set both WITH_KQUEUE and WITHOUT_KQUEUE)
+  endif
+  ifeq ($(WITH_EPOLL),1)
+    $(error Cannot set both WITH_EPOLL and WITH_KQUEUE)
+  endif
+  ifeq ($(WITH_POLL),1)
+    $(error Cannot set both WITH_POLL and WITH_KQUEUE)
+  endif
+  ifneq ($(posercore_HAVE_KQUEUE),1)
+    $(error Requested kqueue (WITH_KQUEUE), but not found)
   endif
 endif
 
