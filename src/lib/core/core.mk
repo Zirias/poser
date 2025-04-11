@@ -23,7 +23,7 @@ ifeq ($(WITH_EPOLL),1)
     $(error Cannot set both WITH_EPOLL and WITH_POLL)
   endif
 posercore_DEFINES+=		-DHAVE_EPOLL
-HAVE_EPOLL:=			1
+posercore_HAVE_EPOLL:=		1
 else
   ifneq ($(WITHOUT_EPOLL),1)
 posercore_PRECHECK+=		EPOLL
@@ -38,7 +38,7 @@ ifeq ($(WITH_KQUEUE),1)
     $(error Cannot set both WITH_POLL and WITH_KQUEUE)
   endif
 posercore_DEFINES+=		-DHAVE_KQUEUE
-HAVE_KQUEUE:=			1
+posercore_HAVE_KQUEUE:=		1
 posercore_PRECHECK+=		KQUEUEX KQUEUE1
 else
   ifneq ($(WITHOUT_KQUEUE),1)
@@ -91,12 +91,6 @@ posercore_VERSION:=		1.2.2
 
 ifeq ($(WITH_POLL),1)
 posercore_DEFINES+=		-DWITH_POLL
-else
-  ifneq ($(HAVE_EPOLL),1)
-    ifneq ($(HAVE_KQUEUE),1)
-posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
-    endif
-  endif
 endif
 
 ifeq ($(WITH_TLS),1)
@@ -117,6 +111,14 @@ posercore_DEFINES+=		-DWITH_TLS
 endif
 
 $(call librules, posercore)
+
+ifneq ($(WITH_POLL),1)
+  ifneq ($(posercore_HAVE_EPOLL),1)
+    ifneq ($(posercore_HAVE_KQUEUE),1)
+posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
+    endif
+  endif
+endif
 
 ifneq ($(posercore_HAVE_ACCEPT4),1)
 define posercore_warn
