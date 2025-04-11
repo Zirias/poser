@@ -48,6 +48,10 @@ posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
 posercore_VERSION:=		1.2.2
 
+ifeq ($(WITH_POLL),1)
+posercore_DEFINES+=		-DWITH_POLL
+endif
+
 ifeq ($(WITH_TLS),1)
   ifneq ($(OPENSSLINC)$(OPENSSLLIB),)
     ifeq ($(OPENSSLINC),)

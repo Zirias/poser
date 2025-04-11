@@ -15,9 +15,28 @@
 #include <signal.h>
 #include <string.h>
 #include <sys/param.h>
-#include <sys/select.h>
 #include <syslog.h>
 #include <unistd.h>
+
+#ifdef WITH_POLL
+#  include <poll.h>
+#  include <poser/core/util.h>
+
+static nfds_t nfds;
+static size_t fdssz;
+static struct pollfd *fds;
+
+#else
+#  define WITH_SELECT
+#  include <sys/select.h>
+
+static fd_set readfds;
+static fd_set writefds;
+static int nread;
+static int nwrite;
+static int nfds;
+
+#endif
 
 #ifndef DEFLOGIDENT
 #define DEFLOGIDENT "posercore"
@@ -36,11 +55,6 @@ static PSC_Event shutdown;
 static PSC_Event tick;
 static PSC_Event eventsDone;
 
-static fd_set readfds;
-static fd_set writefds;
-static int nread;
-static int nwrite;
-static int nfds;
 static int running;
 
 static volatile sig_atomic_t shutdownRequest;
@@ -55,15 +69,13 @@ static jmp_buf panicjmp;
 static PSC_PanicHandler panicHandlers[MAXPANICHANDLERS];
 static int numPanicHandlers;
 
-static void handlesig(int signum);
-static void tryReduceNfds(int id);
-
 static void handlesig(int signum)
 {
     if (signum == SIGALRM) timerExpire = 1;
     else shutdownRequest = 1;
 }
 
+#ifdef WITH_SELECT
 static void tryReduceNfds(int id)
 {
     if (!nread && !nwrite)
@@ -83,6 +95,7 @@ static void tryReduceNfds(int id)
 	nfds = fd+1;
     }
 }
+#endif
 
 SOEXPORT PSC_Event *PSC_Service_readyRead(void)
 {
@@ -119,6 +132,7 @@ SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
     return &eventsDone;
 }
 
+#ifdef WITH_SELECT
 SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
 {
     if (id >= 0 && id < FD_SETSIZE) return 1;
@@ -169,6 +183,87 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
     --nwrite;
     tryReduceNfds(id);
 }
+#endif
+
+#ifdef WITH_POLL
+SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
+{
+    if (id >= 0) return 1;
+    if (errtopic) PSC_Log_fmt(PSC_L_FATAL,
+	    "%s: negative file descriptor", errtopic);
+    return 0;
+}
+
+static struct pollfd *findFd(int fd, size_t *idx)
+{
+    for (size_t i = 0; i < nfds; ++i)
+    {
+	if (fds[i].fd == fd)
+	{
+	    if (idx) *idx = i;
+	    return fds + i;
+	}
+    }
+    return 0;
+}
+
+static void registerPoll(int id, short flag)
+{
+    if (!PSC_Service_isValidFd(id, "service")) return;
+    struct pollfd *fd = findFd(id, 0);
+    if (fd)
+    {
+	if (fd->events & flag) return;
+	fd->events |= flag;
+    }
+    else
+    {
+	if (nfds == fdssz)
+	{
+	    fdssz += 16;
+	    fds = PSC_realloc(fds, fdssz * sizeof *fds);
+	}
+	fd = fds + (nfds++);
+	fd->fd = id;
+	fd->events = flag;
+	fd->revents = 0;
+    }
+}
+
+static void unregisterPoll(int id, short flag)
+{
+    if (!PSC_Service_isValidFd(id, 0)) return;
+    size_t i = 0;
+    struct pollfd *fd = findFd(id, &i);
+    if (!fd) return;
+    fd->events &= (~flag);
+    if (!fd->events)
+    {
+	--nfds;
+	memmove(fds + i, fds + i + 1, (nfds - i) * sizeof *fds);
+    }
+}
+
+SOEXPORT void PSC_Service_registerRead(int id)
+{
+    registerPoll(id, POLLIN);
+}
+
+SOEXPORT void PSC_Service_unregisterRead(int id)
+{
+    unregisterPoll(id, POLLIN);
+}
+
+SOEXPORT void PSC_Service_registerWrite(int id)
+{
+    registerPoll(id, POLLOUT);
+}
+
+SOEXPORT void PSC_Service_unregisterWrite(int id)
+{
+    unregisterPoll(id, POLLOUT);
+}
+#endif
 
 SOEXPORT void PSC_Service_registerPanic(PSC_PanicHandler handler)
 {
@@ -217,6 +312,111 @@ static int panicreturn(void)
 {
     return setjmp(panicjmp) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
+
+static int handleSigFlags(void)
+{
+    if (shutdownRequest)
+    {
+	shutdownRequest = 0;
+	shutdownRef = 0;
+	PSC_Event_raise(&shutdown, 0, 0);
+	return 1;
+    }
+    if (timerExpire)
+    {
+	timerExpire = 0;
+	PSC_Timer_underrun();
+	return 1;
+    }
+    return 0;
+}
+
+#ifdef WITH_SELECT
+static const char *eventBackendInfo(void)
+{
+    static const char infoFmt[] = "select, fd limit: %u";
+    static char info[sizeof infoFmt + 12] = { 0 };
+    if (!*info) snprintf(info, sizeof info, infoFmt, (unsigned)(FD_SETSIZE));
+    return info;
+}
+
+static int processEvents(sigset_t *sigmask)
+{
+    fd_set rfds;
+    fd_set wfds;
+    fd_set *r = 0;
+    fd_set *w = 0;
+    if (nread)
+    {
+	memcpy(&rfds, &readfds, sizeof rfds);
+	r = &rfds;
+    }
+    if (nwrite)
+    {
+	memcpy(&wfds, &writefds, sizeof wfds);
+	w = &wfds;
+    }
+    int src = 0;
+    if (!shutdownRequest) src = pselect(nfds, r, w, 0, 0, sigmask);
+    if (handleSigFlags()) return 0;
+    if (src < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
+	return -1;
+    }
+    if (w) for (int i = 0; src > 0 && i < nfds; ++i)
+    {
+	if (FD_ISSET(i, w))
+	{
+	    --src;
+	    PSC_Event_raise(&readyWrite, i, 0);
+	}
+    }
+    if (r) for (int i = 0; src > 0 && i < nfds; ++i)
+    {
+	if (FD_ISSET(i, r))
+	{
+	    --src;
+	    PSC_Event_raise(&readyRead, i, 0);
+	}
+    }
+    return 0;
+}
+#endif
+
+#ifdef WITH_POLL
+static const char *eventBackendInfo(void)
+{
+    return "poll";
+}
+
+static int processEvents(sigset_t *sigmask)
+{
+    int prc = 0;
+    if (!shutdownRequest) prc = ppoll(fds, nfds, 0, sigmask);
+    if (handleSigFlags()) return 0;
+    if (prc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "ppoll() failed");
+	return -1;
+    }
+    for (size_t i = 0; prc > 0 && i < nfds; ++i)
+    {
+	if (!fds[i].revents) continue;
+	--prc;
+	if (fds[i].revents & POLLOUT)
+	{
+	    PSC_Event_raise(&readyWrite, fds[i].fd, 0);
+	}
+	if (fds[i].revents & POLLIN)
+	{
+	    PSC_Event_raise(&readyRead, fds[i].fd, 0);
+	}
+	fds[i].revents = 0;
+    }
+    return 0;
+}
+#endif
 
 static int serviceLoop(int isRun)
 {
@@ -325,63 +525,18 @@ static int serviceLoop(int isRun)
 	PSC_Timer_setMs(tickTimer, 0);
     }
     else PSC_Timer_start(tickTimer, 1);
-    PSC_Log_msg(PSC_L_INFO, "service started");
+    PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: %s",
+	    eventBackendInfo());
 
     if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
 
-    int src = 0;
     while (shutdownRef != 0)
     {
 	PSC_Event_raise(&eventsDone, 0, 0);
-	fd_set rfds;
-	fd_set wfds;
-	fd_set *r = 0;
-	fd_set *w = 0;
-	if (nread)
+	if (processEvents(&mask) < 0)
 	{
-	    memcpy(&rfds, &readfds, sizeof rfds);
-	    r = &rfds;
-	}
-	if (nwrite)
-	{
-	    memcpy(&wfds, &writefds, sizeof wfds);
-	    w = &wfds;
-	}
-	if (!shutdownRequest) src = pselect(nfds, r, w, 0, 0, &mask);
-	if (shutdownRequest)
-	{
-	    shutdownRequest = 0;
-	    shutdownRef = 0;
-	    PSC_Event_raise(&shutdown, 0, 0);
-	    continue;
-	}
-	if (timerExpire)
-	{
-	    timerExpire = 0;
-	    PSC_Timer_underrun();
-	    continue;
-	}
-	if (src < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
 	    rc = EXIT_FAILURE;
 	    break;
-	}
-	if (w) for (int i = 0; src > 0 && i < nfds; ++i)
-	{
-	    if (FD_ISSET(i, w))
-	    {
-		--src;
-		PSC_Event_raise(&readyWrite, i, 0);
-	    }
-	}
-	if (r) for (int i = 0; src > 0 && i < nfds; ++i)
-	{
-	    if (FD_ISSET(i, r))
-	    {
-		--src;
-		PSC_Event_raise(&readyRead, i, 0);
-	    }
 	}
     }
     PSC_Event_raise(&eventsDone, 0, 0);
@@ -390,7 +545,7 @@ shutdown:
     PSC_Timer_destroy(shutdownTimer);
     shutdownTimer = 0;
     running = 0;
-    PSC_Log_msg(PSC_L_INFO, "service shutting down");
+    PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
 
 done:
     if (sigprocmask(SIG_SETMASK, &mask, 0) < 0)
@@ -401,6 +556,13 @@ done:
 
     PSC_Timer_destroy(tickTimer);
     tickTimer = 0;
+
+#ifdef WITH_POLL
+    free(fds);
+    fds = 0;
+    fdssz = 0;
+    nfds = 0;
+#endif
 
     return rc;
 }
