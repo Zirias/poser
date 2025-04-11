@@ -18,16 +18,39 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#if !defined(HAVE_EPOLL) && !defined(WITH_POLL)
+#  define WITH_SELECT
+#endif
+
+#ifdef HAVE_EPOLL
+#  undef WITH_POLL
+#  undef WITH_SELECT
+#  define EP_MAX_EVENTS 32
+#  include <poser/core/util.h>
+#  include <sys/epoll.h>
+
+typedef struct EpollWatch EpollWatch;
+struct EpollWatch
+{
+    EpollWatch *next;
+    int fd;
+    uint32_t events;
+};
+static EpollWatch *watches[32];
+static int epfd = -1;
+#endif
+
 #ifdef WITH_POLL
+#  undef WITH_SELECT
 #  include <poll.h>
 #  include <poser/core/util.h>
 
 static nfds_t nfds;
 static size_t fdssz;
 static struct pollfd *fds;
+#endif
 
-#else
-#  define WITH_SELECT
+#ifdef WITH_SELECT
 #  include <sys/select.h>
 
 static fd_set readfds;
@@ -147,45 +170,7 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
     }
     return 0;
 }
-
-SOEXPORT void PSC_Service_registerRead(int id)
-{
-    if (!PSC_Service_isValidFd(id, "service")) return;
-    if (FD_ISSET(id, &readfds)) return;
-    FD_SET(id, &readfds);
-    ++nread;
-    if (id >= nfds) nfds = id+1;
-}
-
-SOEXPORT void PSC_Service_unregisterRead(int id)
-{
-    if (!PSC_Service_isValidFd(id, 0)) return;
-    if (!FD_ISSET(id, &readfds)) return;
-    FD_CLR(id, &readfds);
-    --nread;
-    tryReduceNfds(id);
-}
-
-SOEXPORT void PSC_Service_registerWrite(int id)
-{
-    if (!PSC_Service_isValidFd(id, "service")) return;
-    if (FD_ISSET(id, &writefds)) return;
-    FD_SET(id, &writefds);
-    ++nwrite;
-    if (id >= nfds) nfds = id+1;
-}
-
-SOEXPORT void PSC_Service_unregisterWrite(int id)
-{
-    if (!PSC_Service_isValidFd(id, 0)) return;
-    if (!FD_ISSET(id, &writefds)) return;
-    FD_CLR(id, &writefds);
-    --nwrite;
-    tryReduceNfds(id);
-}
-#endif
-
-#ifdef WITH_POLL
+#else
 SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
 {
     if (id >= 0) return 1;
@@ -193,7 +178,103 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
 	    "%s: negative file descriptor", errtopic);
     return 0;
 }
+#endif
 
+#ifdef HAVE_EPOLL
+static EpollWatch *findWatch(int fd, EpollWatch **parent)
+{
+    if (fd < 0) return 0;
+    EpollWatch *w = watches[(unsigned)fd & 31U];
+    while (w)
+    {
+	if (w->fd == fd) break;
+	if (*parent) *parent = w;
+	w = w->next;
+    }
+    return w;
+}
+
+static void registerWatch(int id, uint32_t flag)
+{
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: epoll not initialized");
+	return;
+    }
+    if (!PSC_Service_isValidFd(id, "service")) return;
+    struct epoll_event ev = {.events = 0, .data = { .fd = id } };
+    EpollWatch *w = findWatch(id, 0);
+    if (w)
+    {
+	if (w->events & flag) return;
+	w->events |= flag;
+	ev.events = w->events;
+	epoll_ctl(epfd, EPOLL_CTL_MOD, id, &ev);
+    }
+    else
+    {
+	w = PSC_malloc(sizeof *w);
+	w->next = 0;
+	w->fd = id;
+	w->events = flag;
+	EpollWatch *p = watches[(unsigned)id & 31U];
+	while (p && p->next) p = p->next;
+	if (p) p->next = w;
+	else watches[(unsigned)id & 31U] = w;
+	ev.events = w->events;
+	epoll_ctl(epfd, EPOLL_CTL_ADD, id, &ev);
+    }
+}
+
+static void unregisterWatch(int id, uint32_t flag)
+{
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: epoll not initialized");
+	return;
+    }
+    if (!PSC_Service_isValidFd(id, 0)) return;
+    struct epoll_event ev = {.events = 0, .data = { .fd = id } };
+    EpollWatch *p = 0;
+    EpollWatch *w = findWatch(id, &p);
+    if (!w || !(w->events & flag)) return;
+    w->events &= (~flag);
+    if (w->events)
+    {
+	ev.events = w->events;
+	epoll_ctl(epfd, EPOLL_CTL_MOD, id, &ev);
+    }
+    else
+    {
+	if (p) p->next = w->next;
+	else watches[(unsigned)id & 31U] = w->next;
+	free(w);
+	epoll_ctl(epfd, EPOLL_CTL_DEL, id, 0);
+    }
+}
+
+SOEXPORT void PSC_Service_registerRead(int id)
+{
+    registerWatch(id, EPOLLIN);
+}
+
+SOEXPORT void PSC_Service_unregisterRead(int id)
+{
+    unregisterWatch(id, EPOLLIN);
+}
+
+SOEXPORT void PSC_Service_registerWrite(int id)
+{
+    registerWatch(id, EPOLLOUT);
+}
+
+SOEXPORT void PSC_Service_unregisterWrite(int id)
+{
+    unregisterWatch(id, EPOLLOUT);
+}
+#endif
+
+#ifdef WITH_POLL
 static struct pollfd *findFd(int fd, size_t *idx)
 {
     for (size_t i = 0; i < nfds; ++i)
@@ -265,6 +346,44 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 }
 #endif
 
+#ifdef WITH_SELECT
+SOEXPORT void PSC_Service_registerRead(int id)
+{
+    if (!PSC_Service_isValidFd(id, "service")) return;
+    if (FD_ISSET(id, &readfds)) return;
+    FD_SET(id, &readfds);
+    ++nread;
+    if (id >= nfds) nfds = id+1;
+}
+
+SOEXPORT void PSC_Service_unregisterRead(int id)
+{
+    if (!PSC_Service_isValidFd(id, 0)) return;
+    if (!FD_ISSET(id, &readfds)) return;
+    FD_CLR(id, &readfds);
+    --nread;
+    tryReduceNfds(id);
+}
+
+SOEXPORT void PSC_Service_registerWrite(int id)
+{
+    if (!PSC_Service_isValidFd(id, "service")) return;
+    if (FD_ISSET(id, &writefds)) return;
+    FD_SET(id, &writefds);
+    ++nwrite;
+    if (id >= nfds) nfds = id+1;
+}
+
+SOEXPORT void PSC_Service_unregisterWrite(int id)
+{
+    if (!PSC_Service_isValidFd(id, 0)) return;
+    if (!FD_ISSET(id, &writefds)) return;
+    FD_CLR(id, &writefds);
+    --nwrite;
+    tryReduceNfds(id);
+}
+#endif
+
 SOEXPORT void PSC_Service_registerPanic(PSC_PanicHandler handler)
 {
     if (numPanicHandlers >= MAXPANICHANDLERS) return;
@@ -331,6 +450,73 @@ static int handleSigFlags(void)
     return 0;
 }
 
+#ifdef HAVE_EPOLL
+static const char *eventBackendInfo(void)
+{
+    return "epoll";
+}
+
+static int processEvents(sigset_t *sigmask)
+{
+    int prc = 0;
+    struct epoll_event ev[EP_MAX_EVENTS];
+    if (!shutdownRequest) prc = epoll_pwait2(epfd,
+	    ev, EP_MAX_EVENTS, 0, sigmask);
+    if (handleSigFlags()) return 0;
+    if (prc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
+	return -1;
+    }
+    for (int i = 0; i < prc; ++i)
+    {
+	if (ev[i].events & EPOLLOUT)
+	{
+	    PSC_Event_raise(&readyWrite, ev[i].data.fd, 0);
+	}
+	if (ev[i].events & EPOLLIN)
+	{
+	    PSC_Event_raise(&readyRead, ev[i].data.fd, 0);
+	}
+    }
+    return 0;
+}
+#endif
+
+#ifdef WITH_POLL
+static const char *eventBackendInfo(void)
+{
+    return "poll";
+}
+
+static int processEvents(sigset_t *sigmask)
+{
+    int prc = 0;
+    if (!shutdownRequest) prc = ppoll(fds, nfds, 0, sigmask);
+    if (handleSigFlags()) return 0;
+    if (prc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "ppoll() failed");
+	return -1;
+    }
+    for (size_t i = 0; prc > 0 && i < nfds; ++i)
+    {
+	if (!fds[i].revents) continue;
+	--prc;
+	if (fds[i].revents & POLLOUT)
+	{
+	    PSC_Event_raise(&readyWrite, fds[i].fd, 0);
+	}
+	if (fds[i].revents & POLLIN)
+	{
+	    PSC_Event_raise(&readyRead, fds[i].fd, 0);
+	}
+	fds[i].revents = 0;
+    }
+    return 0;
+}
+#endif
+
 #ifdef WITH_SELECT
 static const char *eventBackendInfo(void)
 {
@@ -384,45 +570,20 @@ static int processEvents(sigset_t *sigmask)
 }
 #endif
 
-#ifdef WITH_POLL
-static const char *eventBackendInfo(void)
-{
-    return "poll";
-}
-
-static int processEvents(sigset_t *sigmask)
-{
-    int prc = 0;
-    if (!shutdownRequest) prc = ppoll(fds, nfds, 0, sigmask);
-    if (handleSigFlags()) return 0;
-    if (prc < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "ppoll() failed");
-	return -1;
-    }
-    for (size_t i = 0; prc > 0 && i < nfds; ++i)
-    {
-	if (!fds[i].revents) continue;
-	--prc;
-	if (fds[i].revents & POLLOUT)
-	{
-	    PSC_Event_raise(&readyWrite, fds[i].fd, 0);
-	}
-	if (fds[i].revents & POLLIN)
-	{
-	    PSC_Event_raise(&readyRead, fds[i].fd, 0);
-	}
-	fds[i].revents = 0;
-    }
-    return 0;
-}
-#endif
-
 static int serviceLoop(int isRun)
 {
     int rc = EXIT_FAILURE;
 
     PSC_RunOpts *opts = runOpts();
+
+#ifdef HAVE_EPOLL
+    epfd = epoll_create1(EPOLL_CLOEXEC);
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: cannot open epoll");
+	goto done;
+    }
+#endif
 
     PSC_EAStartup sea = { EXIT_SUCCESS };
     PSC_Event_raise(&prestartup, 0, &sea);
@@ -562,6 +723,26 @@ done:
     fds = 0;
     fdssz = 0;
     nfds = 0;
+#endif
+
+#ifdef HAVE_EPOLL
+    if (epfd >= 0)
+    {
+	close(epfd);
+	epfd = -1;
+    }
+    for (int i = 0; i < 32; ++i)
+    {
+	EpollWatch *n = 0;
+	EpollWatch *w = watches[i];
+	while (w)
+	{
+	    n = w->next;
+	    free(w);
+	    w = n;
+	}
+	watches[i] = 0;
+    }
 #endif
 
     return rc;

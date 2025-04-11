@@ -4,6 +4,24 @@ ACCEPT4_CFLAGS:=		-D_GNU_SOURCE
 ACCEPT4_HEADERS:=		sys/types.h sys/socket.h
 ACCEPT4_ARGS:=			int, struct sockaddr *, socklen_t *, int
 
+posercore_DEFINES:=		#
+
+ifeq ($(WITH_EPOLL),1)
+  ifeq ($(WITH_POLL),1)
+    $(error Cannot set both WITH_EPOLL and WITH_POLL)
+  endif
+posercore_DEFINES+=		-DHAVE_EPOLL
+HAVE_EPOLL:=			1
+else
+  ifneq ($(WITHOUT_EPOLL),1)
+posercore_PRECHECK+=		EPOLL
+EPOLL_FUNC:=			epoll_pwait2
+EPOLL_HEADERS:=			sys/epoll.h
+EPOLL_ARGS:=			int, struct epoll_event [], int, \
+				const struct timespec *, const sigset_t *
+  endif
+endif
+
 posercore_MODULES:=		certinfo \
 				client \
 				connection \
@@ -42,7 +60,6 @@ posercore_HEADERS_INSTALL:=	core \
 				decl
 
 posercore_PRECFLAGS?=		-I.$(PSEP)include
-posercore_DEFINES:=		-DFD_SETSIZE=$(FD_SETSIZE)
 posercore_LDFLAGS:=		-pthread
 posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
@@ -50,6 +67,10 @@ posercore_VERSION:=		1.2.2
 
 ifeq ($(WITH_POLL),1)
 posercore_DEFINES+=		-DWITH_POLL
+else
+  ifneq ($(HAVE_EPOLL),1)
+posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
+  endif
 endif
 
 ifeq ($(WITH_TLS),1)
