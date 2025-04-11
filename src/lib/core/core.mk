@@ -1,8 +1,12 @@
-posercore_PRECHECK:=		ACCEPT4
+posercore_PRECHECK:=		ACCEPT4 GETRANDOM
 ACCEPT4_FUNC:=			accept4
 ACCEPT4_CFLAGS:=		-D_GNU_SOURCE
 ACCEPT4_HEADERS:=		sys/types.h sys/socket.h
 ACCEPT4_ARGS:=			int, struct sockaddr *, socklen_t *, int
+GETRANDOM_FUNC:=		getrandom
+GETRANDOM_HEADERS:=		sys/random.h
+GETRANDOM_RETURN:=		ssize_t
+GETRANDOM_ARGS:=		void *, size_t, unsigned
 EPOLL_FUNC:=			epoll_pwait2
 EPOLL_HEADERS:=			sys/epoll.h
 EPOLL_ARGS:=			int, struct epoll_event [], int, \
@@ -33,6 +37,7 @@ posercore_MODULES:=		certinfo \
 				list \
 				log \
 				queue \
+				random \
 				runopts \
 				server \
 				service \
