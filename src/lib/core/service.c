@@ -27,6 +27,7 @@
 #  undef WITH_POLL
 #  undef WITH_SELECT
 #  define KQ_MAX_EVENTS 32
+#  define KQ_MAX_CHANGES 128
 #  include <errno.h>
 #  include <fcntl.h>
 #  include <sys/types.h>
@@ -34,6 +35,8 @@
 #  include <sys/time.h>
 
 static int kqfd = -1;
+static int nchanges;
+static struct kevent changes[KQ_MAX_CHANGES];
 #endif
 
 #ifdef HAVE_EPOLL
@@ -206,36 +209,42 @@ static int verifyKqueue(int fd, int log)
     return 0;
 }
 
+static struct kevent *addChange(void)
+{
+    if (nchanges == KQ_MAX_CHANGES)
+    {
+	kevent(kqfd, changes, nchanges, 0, 0, 0);
+	nchanges = 0;
+    }
+    return changes + nchanges++;
+}
+
 SOEXPORT void PSC_Service_registerRead(int id)
 {
     if (verifyKqueue(id, 1) < 0) return;
-    struct kevent ev;
-    EV_SET(&ev, id, EVFILT_READ, EV_ADD, 0, 0, 0);
-    kevent(kqfd, &ev, 1, 0, 0, 0);
+    struct kevent *ev = addChange();
+    EV_SET(ev, id, EVFILT_READ, EV_ADD, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_unregisterRead(int id)
 {
     if (verifyKqueue(id, 0) < 0) return;
-    struct kevent ev;
-    EV_SET(&ev, id, EVFILT_READ, EV_DELETE, 0, 0, 0);
-    kevent(kqfd, &ev, 1, 0, 0, 0);
+    struct kevent *ev = addChange();
+    EV_SET(ev, id, EVFILT_READ, EV_DELETE, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_registerWrite(int id)
 {
     if (verifyKqueue(id, 1) < 0) return;
-    struct kevent ev;
-    EV_SET(&ev, id, EVFILT_WRITE, EV_ADD, 0, 0, 0);
-    kevent(kqfd, &ev, 1, 0, 0, 0);
+    struct kevent *ev = addChange();
+    EV_SET(ev, id, EVFILT_WRITE, EV_ADD, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_unregisterWrite(int id)
 {
     if (verifyKqueue(id, 0) < 0) return;
-    struct kevent ev;
-    EV_SET(&ev, id, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
-    kevent(kqfd, &ev, 1, 0, 0, 0);
+    struct kevent *ev = addChange();
+    EV_SET(ev, id, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
 }
 #endif
 
@@ -525,9 +534,10 @@ static int processEvents(sigset_t *sigmask)
     {
 	pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
 	errno = 0;
-	qrc = kevent(kqfd, 0, 0, ev, KQ_MAX_EVENTS, 0);
+	qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
 	kqerr = errno;
 	pthread_sigmask(SIG_SETMASK, &origmask, 0);
+	if (qrc >= 0) nchanges = 0;
     }
     if (handleSigFlags()) return 0;
     if (qrc < 0)
@@ -538,6 +548,7 @@ static int processEvents(sigset_t *sigmask)
     }
     for (int i = 0; i <	qrc; ++i)
     {
+	if (ev[i].flags & EV_ERROR) continue;
 	if (ev[i].filter == EVFILT_WRITE)
 	{
 	    PSC_Event_raise(&readyWrite, ev[i].ident, 0);
@@ -810,14 +821,13 @@ static int serviceLoop(int isRun)
 
     while (shutdownRef != 0)
     {
-	PSC_Event_raise(&eventsDone, 0, 0);
 	if (processEvents(&mask) < 0)
 	{
 	    rc = EXIT_FAILURE;
 	    break;
 	}
+	PSC_Event_raise(&eventsDone, 0, 0);
     }
-    PSC_Event_raise(&eventsDone, 0, 0);
 
 shutdown:
     PSC_Timer_destroy(shutdownTimer);
