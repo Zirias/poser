@@ -153,6 +153,12 @@ static PSC_Connection *createFromAddrinfo(
 	fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 #endif
 	if (fd < 0) continue;
+	if (!PSC_Service_isValidFd(fd, "client"))
+	{
+	    close(fd);
+	    fd = -1;
+	    break;
+	}
 #ifndef HAVE_ACCEPT4
 	fcntl(fd, F_SETFD, FD_CLOEXEC);
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);

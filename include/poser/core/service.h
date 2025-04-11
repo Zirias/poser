@@ -122,6 +122,19 @@ DECLEXPORT PSC_Event *
 PSC_Service_eventsDone(void)
     ATTR_RETNONNULL ATTR_PURE;
 
+/** Check a file descriptor.
+ * This checks whether a given file descriptor is valid for read/write
+ * monitoring. Optionally log an appropriate error message if it isn't.
+ * @memberof PSC_Service
+ * @static
+ * @param id the file descriptor to check
+ * @param errortopic the topic for the error message (prepended with a colon).
+ *                   NULL means don't log anything.
+ * @returns 1 if valid for monitoring, 0 otherwise
+ */
+DECLEXPORT int
+PSC_Service_isValidFd(int id, const char *errortopic);
+
 /** Register a file descriptor for read monitoring.
  * For a file descriptor registered for read monitoring, a
  * PSC_Service_readyRead() event will be created when it's ready to read.

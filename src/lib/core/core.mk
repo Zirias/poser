@@ -42,6 +42,7 @@ posercore_HEADERS_INSTALL:=	core \
 				decl
 
 posercore_PRECFLAGS?=		-I.$(PSEP)include
+posercore_DEFINES:=		-DFD_SETSIZE=$(FD_SETSIZE)
 posercore_LDFLAGS:=		-pthread
 posercore_HEADERDIR:=		include$(PSEP)poser
 posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser

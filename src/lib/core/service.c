@@ -119,8 +119,24 @@ SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
     return &eventsDone;
 }
 
+SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
+{
+    if (id >= 0 && id < FD_SETSIZE) return 1;
+    if (errtopic)
+    {
+	if (id < 0) PSC_Log_fmt(PSC_L_FATAL,
+		"%s: negative file descriptor", errtopic);
+	else PSC_Log_fmt(PSC_L_ERROR, "%s: ran out of file descriptors "
+		"usable with select(), fd=%d is greater or equal to "
+		"FD_SETSIZE=%d. Try increasing FD_SETSIZE for building poser.",
+		errtopic, id, (int)(FD_SETSIZE));
+    }
+    return 0;
+}
+
 SOEXPORT void PSC_Service_registerRead(int id)
 {
+    if (!PSC_Service_isValidFd(id, "service")) return;
     if (FD_ISSET(id, &readfds)) return;
     FD_SET(id, &readfds);
     ++nread;
@@ -129,6 +145,7 @@ SOEXPORT void PSC_Service_registerRead(int id)
 
 SOEXPORT void PSC_Service_unregisterRead(int id)
 {
+    if (!PSC_Service_isValidFd(id, 0)) return;
     if (!FD_ISSET(id, &readfds)) return;
     FD_CLR(id, &readfds);
     --nread;
@@ -137,6 +154,7 @@ SOEXPORT void PSC_Service_unregisterRead(int id)
 
 SOEXPORT void PSC_Service_registerWrite(int id)
 {
+    if (!PSC_Service_isValidFd(id, "service")) return;
     if (FD_ISSET(id, &writefds)) return;
     FD_SET(id, &writefds);
     ++nwrite;
@@ -145,6 +163,7 @@ SOEXPORT void PSC_Service_registerWrite(int id)
 
 SOEXPORT void PSC_Service_unregisterWrite(int id)
 {
+    if (!PSC_Service_isValidFd(id, 0)) return;
     if (!FD_ISSET(id, &writefds)) return;
     FD_CLR(id, &writefds);
     --nwrite;

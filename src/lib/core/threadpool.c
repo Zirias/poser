@@ -465,6 +465,13 @@ SOEXPORT int PSC_ThreadPool_init(void)
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
 	    goto rollback_done;
 	}
+	int cfd = threads[i].pipefd[1];
+	if (threads[i].pipefd[0] > cfd) cfd = threads[i].pipefd[0];
+	if (!PSC_Service_isValidFd(cfd, "threadpool"))
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
+	    goto rollback_pipe;
+	}
 	PSC_Event_register(PSC_Service_readyRead(), threads+i, threadJobDone,
 		threads[i].pipefd[0]);
 	if (pthread_create(&threads[i].handle, 0, worker, threads+i) != 0)

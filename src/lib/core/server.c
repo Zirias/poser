@@ -222,12 +222,13 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     fcntl(connfd, F_SETFD, FD_CLOEXEC);
     fcntl(connfd, F_SETFL, fcntl(connfd, F_GETFL, 0) | O_NONBLOCK);
 #endif
-    if (self->disabled)
+    if (self->disabled || !PSC_Service_isValidFd(connfd, "server"))
     {
 	struct linger l = { 1, 0 };
 	setsockopt(connfd, SOL_SOCKET, SO_LINGER, &l, sizeof l);
 	close(connfd);
-	PSC_Log_msg(PSC_L_DEBUG, "server: rejected connection while disabled");
+	if (self->disabled) PSC_Log_msg(PSC_L_DEBUG,
+		"server: rejected connection while disabled");
 	return;
     }
     if (self->connsize == self->conncapa)
@@ -595,6 +596,11 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 	    fcntl(socks[nsocks].fd, F_SETFL,
 		    fcntl(socks[nsocks].fd, F_GETFL, 0) | O_NONBLOCK);
 #endif
+	    if (!PSC_Service_isValidFd(socks[nsocks].fd, "server"))
+	    {
+		close(socks[nsocks].fd);
+		break;
+	    }
 
 	    if (setsockopt(socks[nsocks].fd, SOL_SOCKET, SO_REUSEADDR,
 			&opt_true, sizeof opt_true) < 0)
@@ -668,6 +674,11 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
     fcntl(sock.fd, F_SETFD, FD_CLOEXEC);
     fcntl(sock.fd, F_SETFL, fcntl(sock.fd, F_GETFL, 0) | O_NONBLOCK);
 #endif
+    if (!PSC_Service_isValidFd(sock.fd, "server"))
+    {
+	close(sock.fd);
+	return 0;
+    }
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof addr);
