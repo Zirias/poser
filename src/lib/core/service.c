@@ -18,8 +18,22 @@
 #include <syslog.h>
 #include <unistd.h>
 
-#if !defined(HAVE_EPOLL) && !defined(WITH_POLL)
+#if !defined(HAVE_KQUEUE) && !defined(HAVE_EPOLL) && !defined(WITH_POLL)
 #  define WITH_SELECT
+#endif
+
+#ifdef HAVE_KQUEUE
+#  undef HAVE_EPOLL
+#  undef WITH_POLL
+#  undef WITH_SELECT
+#  define KQ_MAX_EVENTS 32
+#  include <errno.h>
+#  include <fcntl.h>
+#  include <sys/types.h>
+#  include <sys/event.h>
+#  include <sys/time.h>
+
+static int kqfd = -1;
 #endif
 
 #ifdef HAVE_EPOLL
@@ -177,6 +191,51 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
     if (errtopic) PSC_Log_fmt(PSC_L_FATAL,
 	    "%s: negative file descriptor", errtopic);
     return 0;
+}
+#endif
+
+#ifdef HAVE_KQUEUE
+static int verifyKqueue(int fd, int log)
+{
+    if (kqfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: kqueue not initialized");
+	return -1;
+    }
+    if (!PSC_Service_isValidFd(fd, log ? "service" : 0)) return -1;
+    return 0;
+}
+
+SOEXPORT void PSC_Service_registerRead(int id)
+{
+    if (verifyKqueue(id, 1) < 0) return;
+    struct kevent ev;
+    EV_SET(&ev, id, EVFILT_READ, EV_ADD, 0, 0, 0);
+    kevent(kqfd, &ev, 1, 0, 0, 0);
+}
+
+SOEXPORT void PSC_Service_unregisterRead(int id)
+{
+    if (verifyKqueue(id, 0) < 0) return;
+    struct kevent ev;
+    EV_SET(&ev, id, EVFILT_READ, EV_DELETE, 0, 0, 0);
+    kevent(kqfd, &ev, 1, 0, 0, 0);
+}
+
+SOEXPORT void PSC_Service_registerWrite(int id)
+{
+    if (verifyKqueue(id, 1) < 0) return;
+    struct kevent ev;
+    EV_SET(&ev, id, EVFILT_WRITE, EV_ADD, 0, 0, 0);
+    kevent(kqfd, &ev, 1, 0, 0, 0);
+}
+
+SOEXPORT void PSC_Service_unregisterWrite(int id)
+{
+    if (verifyKqueue(id, 0) < 0) return;
+    struct kevent ev;
+    EV_SET(&ev, id, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+    kevent(kqfd, &ev, 1, 0, 0, 0);
 }
 #endif
 
@@ -450,6 +509,48 @@ static int handleSigFlags(void)
     return 0;
 }
 
+#ifdef HAVE_KQUEUE
+static const char *eventBackendInfo(void)
+{
+    return "kqueue";
+}
+
+static int processEvents(sigset_t *sigmask)
+{
+    int qrc = 0;
+    int kqerr = 0;
+    sigset_t origmask;
+    struct kevent ev[KQ_MAX_EVENTS];
+    if (!shutdownRequest)
+    {
+	pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+	errno = 0;
+	qrc = kevent(kqfd, 0, 0, ev, KQ_MAX_EVENTS, 0);
+	kqerr = errno;
+	pthread_sigmask(SIG_SETMASK, &origmask, 0);
+    }
+    if (handleSigFlags()) return 0;
+    if (qrc < 0)
+    {
+	if (kqerr == EINTR) return 0;
+	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
+	return -1;
+    }
+    for (int i = 0; i <	qrc; ++i)
+    {
+	if (ev[i].filter == EVFILT_WRITE)
+	{
+	    PSC_Event_raise(&readyWrite, ev[i].ident, 0);
+	}
+	else if (ev[i].filter == EVFILT_READ)
+	{
+	    PSC_Event_raise(&readyRead, ev[i].ident, 0);
+	}
+    }
+    return 0;
+}
+#endif
+
 #ifdef HAVE_EPOLL
 static const char *eventBackendInfo(void)
 {
@@ -575,6 +676,22 @@ static int serviceLoop(int isRun)
     int rc = EXIT_FAILURE;
 
     PSC_RunOpts *opts = runOpts();
+
+#ifdef HAVE_KQUEUE
+#  if defined(HAVE_KQUEUEX)
+    kqfd = kqueuex(KQUEUE_CLOEXEC);
+#  elif defined(HAVE_KQUEUE1)
+    kqfd = kqueue1(O_CLOEXEC);
+#  else
+    kqfd = kqueue();
+    if (kqfd >= 0) fcntl(kqfd, F_SETFD, FD_CLOEXEC);
+#  endif
+    if (kqfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: cannot open kqueue");
+	goto done;
+    }
+#endif
 
 #ifdef HAVE_EPOLL
     epfd = epoll_create1(EPOLL_CLOEXEC);
@@ -723,6 +840,14 @@ done:
     fds = 0;
     fdssz = 0;
     nfds = 0;
+#endif
+
+#ifdef HAVE_KQUEUE
+    if (kqfd >= 0)
+    {
+	close(kqfd);
+	kqfd = -1;
+    }
 #endif
 
 #ifdef HAVE_EPOLL
