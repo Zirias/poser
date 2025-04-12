@@ -1,3 +1,6 @@
 [submodule "zimk"]
 	path = zimk
 	url = https://github.com/Zirias/zimk.git
+[submodule "src/lib/core/contrib/xxHash"]
+	path = src/lib/core/contrib/xxHash
+	url = https://github.com/Cyan4973/xxHash.git
