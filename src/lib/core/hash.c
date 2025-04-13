@@ -4,6 +4,7 @@
 
 #include <poser/core/random.h>
 #include <poser/core/util.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,30 +12,47 @@
 
 struct PSC_Hash
 {
-    int flags;
-    uint8_t secret[];
+    uint8_t *secret;
 };
+
+static uint8_t *getSecret(void)
+{
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static int haveSecret = 0;
+    static uint8_t secret[SECRETSIZE];
+
+    uint8_t *s = 0;
+
+    pthread_mutex_lock(&lock);
+    if (haveSecret) s = secret;
+    else
+    {
+	if (PSC_Random_bytes(secret, SECRETSIZE, 0) == SECRETSIZE)
+	{
+	    s = secret;
+	    haveSecret = 1;
+	}
+    }
+    pthread_mutex_unlock(&lock);
+    return s;
+}
 
 DECLEXPORT PSC_Hash *PSC_Hash_create(int func, int flags)
 {
     (void)func;
 
-    PSC_Hash *self = PSC_malloc(sizeof *self + (flags ? SECRETSIZE : 0));
-    if ((self->flags = flags))
-    {
-	if (PSC_Random_bytes(self->secret, SECRETSIZE, 0) != SECRETSIZE)
-	{
-	    free(self);
-	    return 0;
-	}
-    }
+    uint8_t *secret = 0;
+    if (flags && !(secret = getSecret())) return 0;
+
+    PSC_Hash *self = PSC_malloc(sizeof *self);
+    self->secret = secret;
     return self;
 }
 
 DECLEXPORT uint64_t PSC_Hash_bytes(PSC_Hash *self,
 	const uint8_t *data, size_t size)
 {
-    return self->flags
+    return self->secret
 	? XXH3_64bits_withSecret(data, size, self->secret, SECRETSIZE)
 	: XXH3_64bits(data, size);
 }

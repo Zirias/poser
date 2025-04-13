@@ -22,7 +22,8 @@ C_CLASS_DECL(PSC_Hash);
  * @param func the hash function to use, currently ignored, only xxhash3 is
  *             available
  * @param flags settings for the selected hash function, 0 means defaults.
- *              For xxhash3, 1 means use a random secret while hashing.
+ *              For xxhash3, 1 means use a random secret (created only once
+ *              for all PSC_Hash instances) while hashing
  * @returns a newly created PSC_Hash, or NULL on error
  */
 DECLEXPORT PSC_Hash *
