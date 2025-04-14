@@ -79,16 +79,6 @@ SOEXPORT const char *PSC_basename(const char *path)
     return ".";
 }
 
-SOLOCAL uint8_t hashstr(const char *key, uint8_t mask)
-{
-    size_t h = 5381;
-    while (*key)
-    {
-	h += (h << 5) + ((uint8_t)*key++);
-    }
-    return h & mask;
-}
-
 static uint8_t dec1(char val) ATTR_CONST;
 static char enc1(uint8_t val) ATTR_CONST;
 
