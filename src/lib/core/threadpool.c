@@ -72,10 +72,8 @@ typedef struct Thread
 {
     PSC_ThreadJob *job;
     pthread_t handle;
-    pthread_mutex_t startlock;
-    pthread_mutex_t donelock;
-    pthread_cond_t start;
-    pthread_cond_t done;
+    pthread_mutex_t lock;
+    sem_t start;
     sem_t cancel;
     int pipefd[2];
     int stoprq;
@@ -126,12 +124,13 @@ static void *worker(void *arg)
     if (sigaction(SIGUSR1, &handler, 0) < 0) return 0;
     if (pthread_sigmask(SIG_UNBLOCK, &handler.sa_mask, 0) < 0) return 0;
 
-    if (pthread_mutex_lock(&t->startlock) < 0) return 0;
-    t->stoprq = 0;
-    while (!t->stoprq)
+    for (;;)
     {
-	sem_trywait(&t->cancel);
-	pthread_cond_wait(&t->start, &t->startlock);
+	sem_wait(&t->start);
+	pthread_mutex_lock(&t->lock);
+	int iscanceled = 0;
+	sem_getvalue(&t->cancel, &iscanceled);
+	if (iscanceled) sem_trywait(&t->cancel);
 	if (t->stoprq) break;
 	if (!setjmp(panicjmp)) t->job->proc(t->job->arg);
 	else t->job->panicmsg = panicmsg;
@@ -140,12 +139,10 @@ static void *worker(void *arg)
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: can't notify main thread");
 	    return 0;
 	}
-	pthread_mutex_lock(&t->donelock);
-	pthread_cond_signal(&t->done);
-	pthread_mutex_unlock(&t->donelock);
+	pthread_mutex_unlock(&t->lock);
     }
 
-    pthread_mutex_unlock(&t->startlock);
+    pthread_mutex_unlock(&t->lock);
     return 0;
 }
 
@@ -181,7 +178,9 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 
 SOEXPORT int PSC_ThreadJob_canceled(void)
 {
-    return sem_trywait(&currentThread->cancel) == 0;
+    int rc = 0;
+    sem_getvalue(&currentThread->cancel, &rc);
+    return rc;
 }
 
 static void stopThreads(int nthr)
@@ -190,28 +189,21 @@ static void stopThreads(int nthr)
     {
 	if (pthread_kill(threads[i].handle, 0) >= 0)
 	{
-	    if (pthread_mutex_trylock(&threads[i].startlock) != 0)
+	    if (pthread_mutex_trylock(&threads[i].lock) != 0)
 	    {
-		threads[i].stoprq = 1;
 		pthread_kill(threads[i].handle, SIGUSR1);
-		pthread_cond_wait(&threads[i].done, &threads[i].donelock);
-		pthread_mutex_unlock(&threads[i].donelock);
+		pthread_mutex_lock(&threads[i].lock);
 	    }
-	    else
-	    {
-		threads[i].stoprq = 1;
-		pthread_cond_signal(&threads[i].start);
-		pthread_mutex_unlock(&threads[i].startlock);
-	    }
+	    threads[i].stoprq = 1;
+	    pthread_mutex_unlock(&threads[i].lock);
+	    sem_post(&threads[i].start);
 	}
 	pthread_join(threads[i].handle, 0);
 	close(threads[i].pipefd[0]);
 	close(threads[i].pipefd[1]);
 	sem_destroy(&threads[i].cancel);
-	pthread_cond_destroy(&threads[i].done);
-	pthread_mutex_destroy(&threads[i].donelock);
-	pthread_cond_destroy(&threads[i].start);
-	pthread_mutex_destroy(&threads[i].startlock);
+	sem_destroy(&threads[i].start);
+	pthread_mutex_destroy(&threads[i].lock);
     }
 }
 
@@ -267,12 +259,11 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 	}
 	return;
     }
-    pthread_mutex_lock(&t->startlock);
+    pthread_mutex_lock(&t->lock);
     t->job = j;
     PSC_Service_registerRead(t->pipefd[0]);
-    pthread_cond_signal(&t->start);
-    pthread_mutex_lock(&t->donelock);
-    pthread_mutex_unlock(&t->startlock);
+    pthread_mutex_unlock(&t->lock);
+    sem_post(&t->start);
 }
 
 static void threadJobDone(void *receiver, void *sender, void *args)
@@ -287,19 +278,19 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     {
 	PSC_Service_panic("threadpool: error reading internal pipe");
     }
-    pthread_cond_wait(&t->done, &t->donelock);
+    pthread_mutex_lock(&t->lock);
     if (t->job->panicmsg)
     {
 	const char *msg = t->job->panicmsg;
 	PSC_ThreadJob_destroy(t->job);
 	t->job = 0;
-	pthread_mutex_unlock(&t->donelock);
+	pthread_mutex_unlock(&t->lock);
 	PSC_Service_panic(msg);
     }
     PSC_Event_raise(t->job->finished, 0, t->job->arg);
     PSC_ThreadJob_destroy(t->job);
     t->job = 0;
-    pthread_mutex_unlock(&t->donelock);
+    pthread_mutex_unlock(&t->lock);
     PSC_ThreadJob *next = dequeueJob();
     if (next) startThreadJob(t, next);
 }
@@ -432,38 +423,27 @@ SOEXPORT int PSC_ThreadPool_init(void)
 
     for (int i = 0; i < nthreads; ++i)
     {
-	if (pthread_mutex_init(&threads[i].startlock, 0) != 0)
+	if (pthread_mutex_init(&threads[i].lock, 0) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating mutex");
 	    goto rollback;
 	}
-	if (pthread_cond_init(&threads[i].start, 0) != 0)
+	if (sem_init(&threads[i].start, 0, 0) < 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR,
-		    "threadpool: error creating condition variable");
-	    goto rollback_startlock;
-	}
-	if (pthread_mutex_init(&threads[i].donelock, 0) != 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating mutex");
-	    goto rollback_start;
-	}
-	if (pthread_cond_init(&threads[i].done, 0) != 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR,
-		    "threadpool: error creating condition variable");
-	    goto rollback_donelock;
+		    "threadpool: error creating semaphore");
+	    goto rollback_lock;
 	}
 	if (sem_init(&threads[i].cancel, 0, 0) < 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR,
 		    "threadpool: error creating semaphore");
-	    goto rollback_cancel;
+	    goto rollback_start;
 	}
 	if (pipe(threads[i].pipefd) < 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
-	    goto rollback_done;
+	    goto rollback_cancel;
 	}
 	int cfd = threads[i].pipefd[1];
 	if (threads[i].pipefd[0] > cfd) cfd = threads[i].pipefd[0];
@@ -488,14 +468,10 @@ rollback_pipe:
 	close(threads[i].pipefd[1]);
 rollback_cancel:
 	sem_destroy(&threads[i].cancel);
-rollback_done:
-	pthread_cond_destroy(&threads[i].done);
-rollback_donelock:
-	pthread_mutex_destroy(&threads[i].donelock);
 rollback_start:
-	pthread_cond_destroy(&threads[i].start);
-rollback_startlock:
-	pthread_mutex_destroy(&threads[i].startlock);
+	sem_destroy(&threads[i].start);
+rollback_lock:
+	pthread_mutex_destroy(&threads[i].lock);
 rollback:
 	stopThreads(i);
 	goto done;
