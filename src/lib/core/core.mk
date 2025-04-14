@@ -36,6 +36,7 @@ posercore_MODULES:=		certinfo \
 				client \
 				connection \
 				daemon \
+				dictionary \
 				event \
 				hash \
 				hashtable \

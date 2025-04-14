@@ -5,6 +5,7 @@
 #include <poser/core/client.h>
 #include <poser/core/connection.h>
 #include <poser/core/daemon.h>
+#include <poser/core/dictionary.h>
 #include <poser/core/event.h>
 #include <poser/core/hash.h>
 #include <poser/core/hashtable.h>
