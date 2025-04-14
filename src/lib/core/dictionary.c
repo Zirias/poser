@@ -140,7 +140,7 @@ static void set(PSC_Dictionary *self, HashBucket *bucket, int depth,
 	    e = bucket->content;
 	    if (depth >= MAXNEST)
 	    {
-		EntryL *parent = bucket->content;
+		EntryL *parent = 0;
 		EntryL *el = bucket->content;
 		while (el)
 		{
@@ -167,7 +167,18 @@ static void set(PSC_Dictionary *self, HashBucket *bucket, int depth,
 			}
 			else
 			{
-			    parent->next = el->next;
+			    if (parent)
+			    {
+				parent->next = el->next;
+			    }
+			    else
+			    {
+				if (el->next)
+				{
+				    bucket->content = el->next;
+				}
+				else bucket->type = BT_EMPTY;
+			    }
 			    free(el->base.key);
 			    free(el);
 			    --self->count;
@@ -345,6 +356,123 @@ SOEXPORT void *PSC_Dictionary_get(const PSC_Dictionary *self,
 SOEXPORT size_t PSC_Dictionary_count(const PSC_Dictionary *self)
 {
     return self->count;
+}
+
+static void removeAll(PSC_Dictionary *self,
+	HashBucket *bucket, int depth, size_t *removed,
+	int (*matcher)(const void *, size_t, void *, const void *),
+	const void *arg)
+{
+    HashTable8 *ht8 = 0;
+    HashTable4 *ht4 = 0;
+
+    switch (bucket->type)
+    {
+	case BT_ITEM:
+	    if (depth >= MAXNEST)
+	    {
+		EntryL *parent = 0;
+		EntryL *el = bucket->content;
+		while (el)
+		{
+		    if (matcher(el->base.key, el->base.keysz,
+				el->base.obj, arg))
+		    {
+			if (self->deleter)
+			{
+			    if (self->deleter != PSC_DICT_NODELETE)
+			    {
+				self->deleter(el->base.obj);
+			    }
+			}
+			else
+			{
+			    EntryDL *edl = (EntryDL *)el;
+			    if (edl->deleter) edl->deleter(el->base.obj);
+			}
+			if (parent) parent->next = el->next;
+			else
+			{
+			    if (el->next) bucket->content = el->next;
+			    else bucket->type = BT_EMPTY;
+			}
+			free(el->base.key);
+			free(el);
+			--self->count;
+			++*removed;
+			if (parent) el = (EntryL *)parent->next;
+			else if (bucket->type == BT_ITEM) el = bucket->content;
+			else el = 0;
+		    }
+		    else
+		    {
+			parent = el;
+			el = (EntryL *)el->next;
+		    }
+		}
+	    }
+	    else
+	    {
+		Entry *e = bucket->content;
+		if (matcher(e->key, e->keysz, e->obj, arg))
+		{
+		    if (self->deleter)
+		    {
+			if (self->deleter != PSC_DICT_NODELETE)
+			{
+			    self->deleter(e->obj);
+			}
+		    }
+		    else
+		    {
+			EntryD *ed = (EntryD *)e;
+			if (ed->deleter) ed->deleter(e->obj);
+		    }
+		    free(e->key);
+		    free(e);
+		    bucket->type = BT_EMPTY;
+		    --self->count;
+		    ++*removed;
+		}
+	    }
+	    break;
+
+	case BT_HT8:
+	    if (!self->count) return;
+	    ht8 = bucket->content;
+	    for (size_t i = 0; i < HT8_SIZE; ++i)
+	    {
+		removeAll(self, ht8->buckets + i, depth + 1, removed,
+			matcher, arg);
+	    }
+	    break;
+
+	case BT_HT4:
+	    if (!self->count) return;
+	    ht4 = bucket->content;
+	    for (size_t i = 0; i < HT4_SIZE; ++i)
+	    {
+		removeAll(self, ht4->buckets + i, depth + 1, removed,
+			matcher, arg);
+	    }
+	    break;
+
+	default:
+	    break;
+    }
+}
+
+SOEXPORT size_t PSC_Dictionary_removeAll(PSC_Dictionary *self,
+	int (*matcher)(const void *, size_t, void *, const void *),
+	const void *arg)
+{
+    if (!self->count) return 0;
+    size_t removed = 0;
+    for (size_t i = 0; i < HT8_SIZE; ++i)
+    {
+	removeAll(self, self->buckets + i, 1, &removed, matcher, arg);
+    }
+    return removed;
 }
 
 static void destroy(PSC_Dictionary *self, HashBucket *bucket, int depth)
