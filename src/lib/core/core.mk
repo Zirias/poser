@@ -56,16 +56,20 @@ posercore_MODULES:=		base64 \
 				xxhx86
 
 posercore_HEADERS_INSTALL:=	core \
+				core/base64 \
 				core/certinfo \
 				core/client \
 				core/connection \
 				core/daemon \
+				core/dictionary \
 				core/event \
+				core/hash \
 				core/hashtable \
 				core/list \
 				core/log \
 				core/proto \
 				core/queue \
+				core/random \
 				core/runopts \
 				core/server \
 				core/service \
