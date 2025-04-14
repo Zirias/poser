@@ -1,7 +1,7 @@
 #define _DEFAULT_SOURCE
 #include <poser/core/list.h>
 
-#include "util.h"
+#include <poser/core/util.h>
 
 #include <stdlib.h>
 #include <string.h>

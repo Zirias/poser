@@ -2,10 +2,11 @@
 
 #include <poser/core/random.h>
 
-#include "util.h"
+#include <poser/core/base64.h>
+#include <poser/core/log.h>
+#include <poser/core/util.h>
 
 #include <errno.h>
-#include <poser/core/log.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -89,11 +90,11 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count, int onlyReal)
 
 SOEXPORT size_t PSC_Random_string(char *str, size_t size, int onlyReal)
 {
-    size_t count = base64decsz(size - 1);
+    size_t count = PSC_Base64_decodedSize(size - 1);
     uint8_t *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, onlyReal);
-    if (got < count) size = base64encsz(got) + 1;
-    base64enc(str, buf, got);
+    if (got < count) size = PSC_Base64_encodedLen(got) + 1;
+    PSC_Base64_encodeTo(str, buf, got);
     free(buf);
     return size;
 }
@@ -103,12 +104,7 @@ SOEXPORT char *PSC_Random_createStr(size_t count, int onlyReal)
     uint8_t *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, onlyReal);
     char *str = 0;
-    if (got == count)
-    {
-	size_t strsz = base64encsz(count) + 1;
-	str = PSC_malloc(strsz);
-	base64enc(str, buf, count);
-    }
+    if (got == count) str = PSC_Base64_encode(buf, count);
     free(buf);
     return str;
 }

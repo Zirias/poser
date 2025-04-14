@@ -1,8 +1,10 @@
 #define _POSIX_C_SOURCE 200112L
+#include <poser/core/timer.h>
 
 #include "event.h"
 #include "timer.h"
-#include "util.h"
+
+#include <poser/core/util.h>
 
 #include <stdlib.h>
 #include <sys/time.h>

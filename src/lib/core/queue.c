@@ -1,6 +1,6 @@
 #include <poser/core/queue.h>
 
-#include "util.h"
+#include <poser/core/util.h>
 
 #include <stdlib.h>
 #include <string.h>

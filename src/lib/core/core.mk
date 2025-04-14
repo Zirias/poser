@@ -32,7 +32,8 @@ ifneq ($(WITHOUT_KQUEUE),1)
 posercore_PRECHECK+=		KQUEUE KQUEUEX KQUEUE1
 endif
 
-posercore_MODULES:=		certinfo \
+posercore_MODULES:=		base64 \
+				certinfo \
 				client \
 				connection \
 				daemon \
