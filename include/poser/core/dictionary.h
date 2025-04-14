@@ -64,7 +64,7 @@ PSC_Dictionary_create(void (*deleter)(void *));
 DECLEXPORT void
 PSC_Dictionary_set(PSC_Dictionary *self, const void *key, size_t keysz,
 	void *obj, void (*deleter)(void *))
-    CMETHOD ATTR_NONNULL((2)) ATTR_NONNULL((4));
+    CMETHOD ATTR_NONNULL((2));
 
 /** Retrieve a stored object by its key.
  * @memberof PSC_Dictionary
