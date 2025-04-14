@@ -1,6 +1,7 @@
 #include <poser/core/hashtable.h>
 
-#include "util.h"
+#include <poser/core/hash.h>
+#include <poser/core/util.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -17,7 +18,9 @@ struct PSC_HashTableEntry
 
 struct PSC_HashTable
 {
+    PSC_Hash *hash;
     size_t count;
+    size_t mask;
     uint8_t bits;
     PSC_HashTableEntry *bucket[];
 };
@@ -35,20 +38,31 @@ struct PSC_HashTableIterator
     IteratorEntry entries[];
 };
 
+static size_t hashstr(const PSC_HashTable *self, const char *key)
+{
+    uint64_t hash = PSC_Hash_string(self->hash, key);
+    return hash & self->mask;
+}
+
 SOEXPORT PSC_HashTable *PSC_HashTable_create(uint8_t bits)
 {
-    size_t htsize = HT_SIZE(bits);
+    if (bits < 2) bits = 2;
+    else if (bits > 16) bits = 16;
+    size_t htsize = (1U << bits);
     PSC_HashTable *self = PSC_malloc(
 	    sizeof *self + htsize * sizeof *self->bucket);
-    memset(self, 0, sizeof *self + htsize * sizeof *self->bucket);
+    self->hash = PSC_Hash_create(0, 0);
+    self->count = 0;
+    self->mask = htsize - 1;
     self->bits = bits;
+    memset(self->bucket, 0, htsize * sizeof *self->bucket);
     return self;
 }
 
 SOEXPORT void PSC_HashTable_set(PSC_HashTable *self, const char *key,
 	void *obj, void (*deleter)(void *))
 {
-    uint8_t h = hashstr(key, self->bits);
+    size_t h = hashstr(self, key);
     PSC_HashTableEntry *parent = 0;
     PSC_HashTableEntry *entry = self->bucket[h];
     while (entry)
@@ -78,7 +92,7 @@ SOEXPORT void PSC_HashTable_set(PSC_HashTable *self, const char *key,
 
 SOEXPORT int PSC_HashTable_delete(PSC_HashTable *self, const char *key)
 {
-    uint8_t h = hashstr(key, self->bits);
+    size_t h = hashstr(self, key);
     PSC_HashTableEntry *parent = 0;
     PSC_HashTableEntry *entry = self->bucket[h];
     while (entry)
@@ -104,7 +118,7 @@ SOEXPORT int PSC_HashTable_deleteAll(PSC_HashTable *self,
 	int (*matcher)(const char *, void *, const void *), const void *arg)
 {
     int deleted = 0;
-    for (unsigned h = 0; h < HT_SIZE(self->bits); ++h)
+    for (size_t h = 0; h < self->mask - 1; ++h)
     {
 	PSC_HashTableEntry *parent = 0;
 	PSC_HashTableEntry *entry = self->bucket[h];
@@ -135,7 +149,7 @@ SOEXPORT size_t PSC_HashTable_count(const PSC_HashTable *self)
 
 SOEXPORT void *PSC_HashTable_get(const PSC_HashTable *self, const char *key)
 {
-    PSC_HashTableEntry *entry = self->bucket[hashstr(key, self->bits)];
+    PSC_HashTableEntry *entry = self->bucket[hashstr(self, key)];
     while (entry)
     {
 	if (!strcmp(entry->key, key)) return entry->obj;
@@ -151,7 +165,7 @@ SOEXPORT PSC_HashTableIterator *PSC_HashTable_iterator(const PSC_HashTable *self
     iter->count = self->count;
     iter->pos = self->count;
     size_t pos = 0;
-    for (unsigned h = 0; h < HT_SIZE(self->bits); ++h)
+    for (size_t h = 0; h < self->mask - 1; ++h)
     {
 	PSC_HashTableEntry *entry = self->bucket[h];
 	while (entry)
@@ -168,7 +182,7 @@ SOEXPORT PSC_HashTableIterator *PSC_HashTable_iterator(const PSC_HashTable *self
 SOEXPORT void PSC_HashTable_destroy(PSC_HashTable *self)
 {
     if (!self) return;
-    for (unsigned h = 0; h < HT_SIZE(self->bits); ++h)
+    for (size_t h = 0; h < self->mask - 1; ++h)
     {
 	PSC_HashTableEntry *entry = self->bucket[h];
 	PSC_HashTableEntry *next;
