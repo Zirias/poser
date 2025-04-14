@@ -23,7 +23,7 @@ C_CLASS_DECL(PSC_HashTableIterator);
 /** PSC_HashTable default constructor.
  * Creates a new PSC_HashTable
  * @memberof PSC_HashTable
- * @param bits number of bits for the hashes (valid range [2..8])
+ * @param bits number of bits for the hashes (valid range [2..16])
  * @returns a newly created PSC_HashTable
  */
 DECLEXPORT PSC_HashTable *
