@@ -118,7 +118,7 @@ SOEXPORT int PSC_HashTable_deleteAll(PSC_HashTable *self,
 	int (*matcher)(const char *, void *, const void *), const void *arg)
 {
     int deleted = 0;
-    for (size_t h = 0; h < self->mask - 1; ++h)
+    for (size_t h = 0; h <= self->mask; ++h)
     {
 	PSC_HashTableEntry *parent = 0;
 	PSC_HashTableEntry *entry = self->bucket[h];
@@ -165,7 +165,7 @@ SOEXPORT PSC_HashTableIterator *PSC_HashTable_iterator(const PSC_HashTable *self
     iter->count = self->count;
     iter->pos = self->count;
     size_t pos = 0;
-    for (size_t h = 0; h < self->mask - 1; ++h)
+    for (size_t h = 0; h <= self->mask; ++h)
     {
 	PSC_HashTableEntry *entry = self->bucket[h];
 	while (entry)
@@ -182,7 +182,7 @@ SOEXPORT PSC_HashTableIterator *PSC_HashTable_iterator(const PSC_HashTable *self
 SOEXPORT void PSC_HashTable_destroy(PSC_HashTable *self)
 {
     if (!self) return;
-    for (size_t h = 0; h < self->mask - 1; ++h)
+    for (size_t h = 0; h <= self->mask; ++h)
     {
 	PSC_HashTableEntry *entry = self->bucket[h];
 	PSC_HashTableEntry *next;
