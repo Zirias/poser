@@ -19,6 +19,7 @@ struct PSC_Resolver
     PSC_Event *done;
     PSC_ThreadJob *job;
     PSC_List *entries;
+    int handling;
 };
 
 struct PSC_ResolverEntry
@@ -42,6 +43,7 @@ SOEXPORT PSC_Resolver *PSC_Resolver_create(void)
     self->done = PSC_Event_create(self);
     self->job = 0;
     self->entries = PSC_List_create();
+    self->handling = 0;
     return self;
 }
 
@@ -97,7 +99,14 @@ static void resolveDone(void *receiver, void *sender, void *args)
     {
 	if (PSC_ThreadJob_hasCompleted(self->job))
 	{
+	    self->handling = 1;
 	    PSC_Event_raise(self->done, 0, 0);
+	    if (self->handling < 0)
+	    {
+		self->job = 0;
+		PSC_Resolver_destroy(self);
+	    }
+	    self->handling = 0;
 	}
 	self->job = 0;
     }
@@ -144,6 +153,11 @@ SOEXPORT const PSC_List *PSC_Resolver_entries(const PSC_Resolver *self)
 SOEXPORT void PSC_Resolver_destroy(PSC_Resolver *self)
 {
     if (!self) return;
+    if (self->handling)
+    {
+	self->handling = -1;
+	return;
+    }
     PSC_Event_destroy(self->done);
     if (self->job)
     {
