@@ -2,6 +2,7 @@
 
 #include "client.h"
 #include "connection.h"
+#include "ipaddr.h"
 #include "service.h"
 
 #include <poser/core/event.h>
@@ -34,9 +35,6 @@ struct PSC_EADataReceived
     char *text;
     int handling;
 };
-
-static char hostbuf[NI_MAXHOST];
-static char servbuf[NI_MAXSERV];
 
 typedef struct WriteRecord
 {
@@ -75,6 +73,7 @@ struct PSC_Connection
 #ifdef WITH_TLS
     SSL *tls;
 #endif
+    PSC_IpAddr *ipAddr;
     char *addr;
     char *name;
     void *data;
@@ -679,6 +678,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->connecting = 0;
     self->paused = 0;
     self->port = 0;
+    self->ipAddr = 0;
     self->addr = 0;
     self->name = 0;
     self->data = 0;
@@ -785,8 +785,15 @@ SOEXPORT PSC_Event *PSC_Connection_nameResolved(PSC_Connection *self)
     return self->nameResolved;
 }
 
+SOEXPORT const PSC_IpAddr *PSC_Connection_remoteIpAddr(
+	const PSC_Connection *self)
+{
+    return self->ipAddr;
+}
+
 SOEXPORT const char *PSC_Connection_remoteAddr(const PSC_Connection *self)
 {
+    if (self->ipAddr) return PSC_IpAddr_string(self->ipAddr);
     if (!self->addr) return "<unknown>";
     return self->addr;
 }
@@ -838,24 +845,24 @@ static void resolveRemoteAddrFinished(void *receiver, void *sender, void *args)
     PSC_ThreadJob *job = sender;
     RemoteAddrResolveArgs *rara = args;
 
+    const char *addr = PSC_Connection_remoteAddr(self);
     if (PSC_ThreadJob_hasCompleted(job))
     {
-	if (rara->rc >= 0 && strcmp(rara->name, self->addr) != 0)
+	if (rara->rc >= 0 && strcmp(rara->name, addr) != 0)
 	{
-	    PSC_Log_fmt(PSC_L_DEBUG, "connection: %s is %s",
-		    self->addr, rara->name);
+	    PSC_Log_fmt(PSC_L_DEBUG, "connection: %s is %s", addr, rara->name);
 	    self->name = PSC_copystr(rara->name);
 	}
 	else
 	{
 	    PSC_Log_fmt(PSC_L_DEBUG, "connection: error resolving name for %s",
-		    self->addr);
+		    addr);
 	}
     }
     else
     {
 	PSC_Log_fmt(PSC_L_DEBUG, "connection: timeout resolving name for %s",
-		self->addr);
+		addr);
     }
     self->resolveJob = 0;
     PSC_Event_raise(self->nameResolved, 0, 0);
@@ -864,15 +871,18 @@ static void resolveRemoteAddrFinished(void *receiver, void *sender, void *args)
 SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
 	struct sockaddr *addr, socklen_t addrlen, int numericOnly)
 {
+    PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
     free(self->name);
+    self->ipAddr = 0;
     self->addr = 0;
     self->name = 0;
-    if (getnameinfo(addr, addrlen, hostbuf, sizeof hostbuf,
-		servbuf, sizeof servbuf, NI_NUMERICHOST|NI_NUMERICSERV) >= 0)
+    self->port = 0;
+    PSC_IpAddr *ipAddr = PSC_IpAddr_fromSockAddr(addr);
+    if (ipAddr)
     {
-	self->addr = PSC_copystr(hostbuf);
-	sscanf(servbuf, "%d", &self->port);
+	self->ipAddr = ipAddr;
+	self->port = PSC_IpAddr_port(ipAddr);
 	if (!self->resolveJob && !numericOnly && PSC_ThreadPool_active())
 	{
 	    memcpy(&self->resolveArgs.sa, addr, addrlen);
@@ -889,10 +899,13 @@ SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
 SOLOCAL void PSC_Connection_setRemoteAddrStr(PSC_Connection *self,
 	const char *addr)
 {
+    PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
     free(self->name);
+    self->ipAddr = 0;
     self->addr = PSC_copystr(addr);
     self->name = 0;
+    self->port = 0;
 }
 
 SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
@@ -1062,6 +1075,7 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_Event_unregister(PSC_Service_readyWrite(), self,
 	    writeConnection, self->fd);
     if (self->deleter) self->deleter(self->data);
+    PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
     free(self->name);
     PSC_Event_destroy(self->nameResolved);

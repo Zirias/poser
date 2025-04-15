@@ -31,6 +31,7 @@ C_CLASS_DECL(PSC_Connection);
 C_CLASS_DECL(PSC_EADataReceived);
 
 C_CLASS_DECL(PSC_Event);
+C_CLASS_DECL(PSC_IpAddr);
 
 /** Callback to find the end of a text message.
  * When receiving in text mode, this is called to find the end of the message.
@@ -109,9 +110,19 @@ DECLEXPORT PSC_Event *
 PSC_Connection_nameResolved(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** The remote IP address.
+ * The address of the peer as a PSC_IpAddr instance.
+ * @memberof PSC_Connection
+ * @param self the PSC_Connection
+ * @returns the remote IP address, or NULL if the connection doesn't use IP.
+ */
+DECLEXPORT const PSC_IpAddr *
+PSC_Connection_remoteIpAddr(const PSC_Connection *self)
+    CMETHOD ATTR_PURE;
+
 /** The remote address.
- * The address of the peer. For TCP connections, an IPv4 or IPv6 address. For
- * local UNIX connections, the name of the socket.
+ * The address of the peer as a string. For TCP connections, an IPv4 or
+ * IPv6 address. For local UNIX connections, the name of the socket.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  * @returns the remote address
