@@ -2342,7 +2342,8 @@ PREDEFINED             = DECLEXPORT:= \
                          ATTR_NORETURN:= \
                          ATTR_RETNONNULL:= \
                          ATTR_PURE:= \
-                         C_CLASS_DECL(x):=
+                         C_CLASS_DECL(x):= \
+                         OBSOLETE(x):="/** \deprecated x */"
 
 # If the MACRO_EXPANSION and EXPAND_ONLY_PREDEF tags are set to YES then this
 # tag can be used to specify a list of macro names that should be expanded. The

@@ -9,7 +9,6 @@
 #define ATTR_ACCESS(x)
 #define ATTR_ALLOCSZ(x)
 #define ATTR_CONST
-#define ATTR_DEPRECATED(x)
 #define ATTR_FALLTHROUGH
 #define ATTR_FORMAT(x)
 #define ATTR_MALLOC
@@ -18,6 +17,7 @@
 #define ATTR_RETNONNULL
 #define ATTR_PURE
 #define CMETHOD
+#define OBSOLETE(x)
 
 #ifdef __cplusplus
 #  define poser___cdecl extern "C"
@@ -41,10 +41,6 @@
 #  if __has_attribute (const)
 #    undef ATTR_CONST
 #    define ATTR_CONST __attribute__ ((const))
-#  endif
-#  if __has_attribute (deprecated)
-#    undef ATTR_DEPRECATED
-#    define ATTR_DEPRECATED(x) __attribute__ ((deprecated x))
 #  endif
 #  if __has_attribute (fallthrough)
 #    undef ATTR_FALLTHROUGH
@@ -82,6 +78,10 @@
 #  else
 #    define SOEXPORT poser___cdecl
 #    define SOLOCAL
+#  endif
+#  if __has_attribute (deprecated)
+#    undef OBSOLETE
+#    define OBSOLETE(x) __attribute__ ((deprecated ( #x )))
 #  endif
 #endif
 #define DECLEXPORT poser___cdecl
