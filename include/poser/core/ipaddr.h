@@ -27,6 +27,16 @@ DECLEXPORT PSC_IpAddr *
 PSC_IpAddr_create(const char *str)
     ATTR_NONNULL((1));
 
+/** PSC_IpAddr copy constructor.
+ * Creates a clone of a PSC_IpAddr.
+ * @memberof PSC_IpAddr
+ * @param other the PSC_IpAddr to copy
+ * @returns a newly created PSC_IpAddr
+ */
+DECLEXPORT PSC_IpAddr *
+PSC_IpAddr_clone(const PSC_IpAddr *other)
+    CMETHOD ATTR_RETNONNULL;
+
 /** Create IPv4 equivalent of a given IPv6 address.
  * The given address must be an IPv6 address with a prefix length of at least
  * 96, which is then matched against a given list of prefixes. These prefixes

@@ -22,6 +22,7 @@ struct PSC_IpAddr
     uint8_t data[16];
     char str[44];
 };
+#define IPADDR_CLONEOFFSET offsetof(PSC_IpAddr, proto)
 
 static int parsev4(uint8_t *data, const char *buf)
 {
@@ -167,6 +168,16 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
     memcpy(self->data, data, 16);
     self->str[0] = 0;
 
+    return self;
+}
+
+SOEXPORT PSC_IpAddr *PSC_IpAddr_clone(const PSC_IpAddr *other)
+{
+    PSC_IpAddr *self = PSC_malloc(sizeof *self);
+    pthread_mutex_init(&self->strlock, 0);
+    memcpy(((char *)self) + IPADDR_CLONEOFFSET,
+	    ((const char *)other) + IPADDR_CLONEOFFSET,
+	    sizeof *self - IPADDR_CLONEOFFSET);
     return self;
 }
 
