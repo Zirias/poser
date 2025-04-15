@@ -37,7 +37,7 @@ static uint8_t *getSecret(void)
     return s;
 }
 
-DECLEXPORT PSC_Hash *PSC_Hash_create(int func, int flags)
+SOEXPORT PSC_Hash *PSC_Hash_create(int func, int flags)
 {
     (void)func;
 
@@ -49,7 +49,7 @@ DECLEXPORT PSC_Hash *PSC_Hash_create(int func, int flags)
     return self;
 }
 
-DECLEXPORT uint64_t PSC_Hash_bytes(PSC_Hash *self,
+SOEXPORT uint64_t PSC_Hash_bytes(PSC_Hash *self,
 	const uint8_t *data, size_t size)
 {
     return self->secret
@@ -57,12 +57,12 @@ DECLEXPORT uint64_t PSC_Hash_bytes(PSC_Hash *self,
 	: XXH3_64bits(data, size);
 }
 
-DECLEXPORT uint64_t PSC_Hash_string(PSC_Hash *self, const char *str)
+SOEXPORT uint64_t PSC_Hash_string(PSC_Hash *self, const char *str)
 {
     return PSC_Hash_bytes(self, (const uint8_t *)str, strlen(str));
 }
 
-DECLEXPORT void PSC_Hash_destroy(PSC_Hash *self)
+SOEXPORT void PSC_Hash_destroy(PSC_Hash *self)
 {
     free(self);
 }
