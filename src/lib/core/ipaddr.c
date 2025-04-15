@@ -18,6 +18,7 @@ struct PSC_IpAddr
     pthread_mutex_t strlock;
     PSC_Proto proto;
     unsigned prefixlen;
+    int port;
     uint8_t data[16];
     char str[44];
 };
@@ -86,6 +87,7 @@ SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
     uint8_t data[16] = {0};
     PSC_Proto proto = PSC_P_ANY;
     unsigned prefixlen = 0;
+    int port = -1;
     const struct sockaddr_in *sain;
     const struct sockaddr_in6 *sain6;
 
@@ -96,6 +98,7 @@ SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
 	    memcpy(data+12, &sain->sin_addr.s_addr, 4);
 	    proto = PSC_P_IPv4;
 	    prefixlen = 32;
+	    port = sain->sin_port;
 	    break;
 
 	case AF_INET6:
@@ -103,6 +106,7 @@ SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
 	    memcpy(data, sain6->sin6_addr.s6_addr, 16);
 	    proto = PSC_P_IPv6;
 	    prefixlen = 128;
+	    port = sain6->sin6_port;
 	    break;
 
 	default:
@@ -113,6 +117,7 @@ SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
     pthread_mutex_init(&self->strlock, 0);
     self->proto = proto;
     self->prefixlen = prefixlen;
+    self->port = port;
     memcpy(self->data, data, 16);
     self->str[0] = 0;
 
@@ -158,6 +163,7 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
     pthread_mutex_init(&self->strlock, 0);
     self->proto = proto;
     self->prefixlen = prefixlen;
+    self->port = -1;
     memcpy(self->data, data, 16);
     self->str[0] = 0;
 
@@ -185,6 +191,7 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_tov4(const PSC_IpAddr *self,
     pthread_mutex_init(&mapped->strlock, 0);
     mapped->proto = PSC_P_IPv4;
     mapped->prefixlen = self->prefixlen - 96;
+    mapped->port = -1;
     memset(mapped->data, 0, 12);
     memcpy(mapped->data+12, self->data+12, 4);
     mapped->str[0] = 0;
@@ -216,6 +223,11 @@ SOEXPORT PSC_Proto PSC_IpAddr_proto(const PSC_IpAddr *self)
 SOEXPORT unsigned PSC_IpAddr_prefixlen(const PSC_IpAddr *self)
 {
     return self->prefixlen;
+}
+
+SOLOCAL int PSC_IpAddr_port(const PSC_IpAddr *self)
+{
+    return self->port;
 }
 
 static void toString(PSC_IpAddr *self)
