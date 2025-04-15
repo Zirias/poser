@@ -46,6 +46,7 @@ posercore_MODULES:=		base64 \
 				event \
 				hash \
 				hashtable \
+				ipaddr \
 				list \
 				log \
 				queue \
@@ -70,6 +71,7 @@ posercore_HEADERS_INSTALL:=	core \
 				core/event \
 				core/hash \
 				core/hashtable \
+				core/ipaddr \
 				core/list \
 				core/log \
 				core/proto \

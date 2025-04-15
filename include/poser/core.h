@@ -10,6 +10,7 @@
 #include <poser/core/event.h>
 #include <poser/core/hash.h>
 #include <poser/core/hashtable.h>
+#include <poser/core/ipaddr.h>
 #include <poser/core/list.h>
 #include <poser/core/log.h>
 #include <poser/core/proto.h>
