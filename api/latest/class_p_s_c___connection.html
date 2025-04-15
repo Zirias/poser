@@ -125,9 +125,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:afddf59b4ff29b1bee16ba4ba3b97837d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#afddf59b4ff29b1bee16ba4ba3b97837d">PSC_Connection_dataSent</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:afddf59b4ff29b1bee16ba4ba3b97837d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Data sent.  <br /></td></tr>
 <tr class="separator:afddf59b4ff29b1bee16ba4ba3b97837d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad1630fef0429d2fee71022ff5a59fd99"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#ad1630fef0429d2fee71022ff5a59fd99">PSC_Connection_nameResolved</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
-<tr class="memdesc:ad1630fef0429d2fee71022ff5a59fd99"><td class="mdescLeft">&#160;</td><td class="mdescRight">Remote name resolved.  <br /></td></tr>
-<tr class="separator:ad1630fef0429d2fee71022ff5a59fd99"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1a2219f5530476b1be8d60d24d39f930"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a1a2219f5530476b1be8d60d24d39f930">PSC_Connection_nameResolved</a> (<a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self) ATTR_DEPRECATED((&quot;Resolving remote hosts is disabled</td></tr>
+<tr class="memdesc:a1a2219f5530476b1be8d60d24d39f930"><td class="mdescLeft">&#160;</td><td class="mdescRight">Remote name resolved.  <br /></td></tr>
+<tr class="separator:a1a2219f5530476b1be8d60d24d39f930"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a45383d123508919e3748f5c6fb92c2c1"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="class_p_s_c___ip_addr.html">PSC_IpAddr</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a45383d123508919e3748f5c6fb92c2c1">PSC_Connection_remoteIpAddr</a> (const <a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
+<tr class="memdesc:a45383d123508919e3748f5c6fb92c2c1"><td class="mdescLeft">&#160;</td><td class="mdescRight">The remote IP address.  <br /></td></tr>
+<tr class="separator:a45383d123508919e3748f5c6fb92c2c1"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a42fe18bb601b8de86e4d096938638166"><td class="memItemLeft" align="right" valign="top">const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___connection.html#a42fe18bb601b8de86e4d096938638166">PSC_Connection_remoteAddr</a> (const <a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *self)</td></tr>
 <tr class="memdesc:a42fe18bb601b8de86e4d096938638166"><td class="mdescLeft">&#160;</td><td class="mdescRight">The remote address.  <br /></td></tr>
 <tr class="separator:a42fe18bb601b8de86e4d096938638166"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -490,8 +493,8 @@ Public Member Functions</h2></td></tr>
 
 </div>
 </div>
-<a id="ad1630fef0429d2fee71022ff5a59fd99" name="ad1630fef0429d2fee71022ff5a59fd99"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad1630fef0429d2fee71022ff5a59fd99">&#9670;&#160;</a></span>PSC_Connection_nameResolved()</h2>
+<a id="a1a2219f5530476b1be8d60d24d39f930" name="a1a2219f5530476b1be8d60d24d39f930"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1a2219f5530476b1be8d60d24d39f930">&#9670;&#160;</a></span>PSC_Connection_nameResolved()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -670,7 +673,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>The remote address. </p>
-<p>The address of the peer. For TCP connections, an IPv4 or IPv6 address. For local UNIX connections, the name of the socket.</p>
+<p>The address of the peer as a string. For TCP connections, an IPv4 or IPv6 address. For local UNIX connections, the name of the socket.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
@@ -706,6 +709,34 @@ Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>the remote hostname </dd></dl>
+
+</div>
+</div>
+<a id="a45383d123508919e3748f5c6fb92c2c1" name="a45383d123508919e3748f5c6fb92c2c1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a45383d123508919e3748f5c6fb92c2c1">&#9670;&#160;</a></span>PSC_Connection_remoteIpAddr()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const <a class="el" href="class_p_s_c___ip_addr.html">PSC_IpAddr</a> * PSC_Connection_remoteIpAddr </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="class_p_s_c___connection.html">PSC_Connection</a> *&#160;</td>
+          <td class="paramname"><em>self</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>The remote IP address. </p>
+<p>The address of the peer as a <a class="el" href="class_p_s_c___ip_addr.html" title="An IPv4 or IPv6 address or network.">PSC_IpAddr</a> instance.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>the remote IP address, or NULL if the connection doesn't use IP. </dd></dl>
 
 </div>
 </div>

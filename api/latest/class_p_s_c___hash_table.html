@@ -113,6 +113,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a9909cc1a299eeaa6731f7f9d4b000fec"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___hash_table.html#a9909cc1a299eeaa6731f7f9d4b000fec">PSC_HashTable_delete</a> (<a class="el" href="class_p_s_c___hash_table.html">PSC_HashTable</a> *self, const char *key)</td></tr>
 <tr class="memdesc:a9909cc1a299eeaa6731f7f9d4b000fec"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deletes the object with the specified key.  <br /></td></tr>
 <tr class="separator:a9909cc1a299eeaa6731f7f9d4b000fec"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab9e6f89fa7ff2e5d349fdec1b5903a1b"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___hash_table.html#ab9e6f89fa7ff2e5d349fdec1b5903a1b">PSC_HashTable_deleteAll</a> (<a class="el" href="class_p_s_c___hash_table.html">PSC_HashTable</a> *self, int(*matcher)(const char *, void *, const void *), const void *arg)</td></tr>
+<tr class="memdesc:ab9e6f89fa7ff2e5d349fdec1b5903a1b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deletes matching objects from the hashtable.  <br /></td></tr>
+<tr class="separator:ab9e6f89fa7ff2e5d349fdec1b5903a1b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afa226bdc2c3c801fe391764f2be30e28"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___hash_table.html#afa226bdc2c3c801fe391764f2be30e28">PSC_HashTable_count</a> (const <a class="el" href="class_p_s_c___hash_table.html">PSC_HashTable</a> *self)</td></tr>
 <tr class="memdesc:afa226bdc2c3c801fe391764f2be30e28"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of entries.  <br /></td></tr>
 <tr class="separator:afa226bdc2c3c801fe391764f2be30e28"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -176,7 +179,7 @@ Public Member Functions</h2></td></tr>
 <p>Creates a new <a class="el" href="class_p_s_c___hash_table.html" title="A hash table storing any data objects using string keys.">PSC_HashTable</a></p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">bits</td><td>number of bits for the hashes (valid range [2..8]) </td></tr>
+    <tr><td class="paramname">bits</td><td>number of bits for the hashes (valid range [2..16]) </td></tr>
   </table>
   </dd>
 </dl>
@@ -220,6 +223,52 @@ Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>1 if an object was deleted, 0 otherwise </dd></dl>
+
+</div>
+</div>
+<a id="ab9e6f89fa7ff2e5d349fdec1b5903a1b" name="ab9e6f89fa7ff2e5d349fdec1b5903a1b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab9e6f89fa7ff2e5d349fdec1b5903a1b">&#9670;&#160;</a></span>PSC_HashTable_deleteAll()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_HashTable_deleteAll </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___hash_table.html">PSC_HashTable</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int(*)(const char *, void *, const void *)&#160;</td>
+          <td class="paramname"><em>matcher</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const void *&#160;</td>
+          <td class="paramname"><em>arg</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Deletes matching objects from the hashtable. </p>
+<p>Objects that have a deleter attached are also destroyed.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___hash_table.html" title="A hash table storing any data objects using string keys.">PSC_HashTable</a> </td></tr>
+    <tr><td class="paramname">matcher</td><td>function to compare each entry, given by its key and the stored object, to some specified value. Must return 1 for entries to be deleted, 0 otherwise. </td></tr>
+    <tr><td class="paramname">arg</td><td>some value for the matcher function to compare entries against. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>the number of entries deleted </dd></dl>
 
 </div>
 </div>

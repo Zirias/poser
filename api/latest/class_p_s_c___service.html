@@ -125,6 +125,9 @@ Static Public Member Functions</h2></td></tr>
 <tr class="memitem:a76c5e97ed7e2c4d611890763b24de66d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">PSC_Service_eventsDone</a> (void)</td></tr>
 <tr class="memdesc:a76c5e97ed7e2c4d611890763b24de66d"><td class="mdescLeft">&#160;</td><td class="mdescRight">All events for one loop iteration are processed.  <br /></td></tr>
 <tr class="separator:a76c5e97ed7e2c4d611890763b24de66d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac0104d814310d7997508f676c7c9597c"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">PSC_Service_isValidFd</a> (int id, const char *errortopic)</td></tr>
+<tr class="memdesc:ac0104d814310d7997508f676c7c9597c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check a file descriptor.  <br /></td></tr>
+<tr class="separator:ac0104d814310d7997508f676c7c9597c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a2a731fb7c5d36dd373bce11cdfaced14"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#a2a731fb7c5d36dd373bce11cdfaced14">PSC_Service_registerRead</a> (int id)</td></tr>
 <tr class="memdesc:a2a731fb7c5d36dd373bce11cdfaced14"><td class="mdescLeft">&#160;</td><td class="mdescRight">Register a file descriptor for read monitoring.  <br /></td></tr>
 <tr class="separator:a2a731fb7c5d36dd373bce11cdfaced14"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -197,6 +200,53 @@ Static Public Member Functions</h2></td></tr>
 
 <p>All events for one loop iteration are processed. </p>
 <p>This event fires once per loop iteration. It can be used to delay an action until all events for the current iteration were processed. </p>
+
+</div>
+</div>
+<a id="ac0104d814310d7997508f676c7c9597c" name="ac0104d814310d7997508f676c7c9597c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac0104d814310d7997508f676c7c9597c">&#9670;&#160;</a></span>PSC_Service_isValidFd()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_Service_isValidFd </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *&#160;</td>
+          <td class="paramname"><em>errortopic</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Check a file descriptor. </p>
+<p>This checks whether a given file descriptor is valid for read/write monitoring. Optionally log an appropriate error message if it isn't.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>the file descriptor to check </td></tr>
+    <tr><td class="paramname">errortopic</td><td>the topic for the error message (prepended with a colon). NULL means don't log anything. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>1 if valid for monitoring, 0 otherwise </dd></dl>
 
 </div>
 </div>
