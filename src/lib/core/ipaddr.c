@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include "ipaddr.h"
 
 #include <errno.h>
@@ -8,6 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 struct PSC_IpAddr
 {
@@ -75,6 +79,44 @@ static int parsev6(uint8_t *data, const char *buf)
 
     if (taillen > 0) memcpy(data + 16 - taillen, taildat, taillen);
     return 0;
+}
+
+SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
+{
+    uint8_t data[16] = {0};
+    PSC_Proto proto = PSC_P_ANY;
+    unsigned prefixlen = 0;
+    const struct sockaddr_in *sain;
+    const struct sockaddr_in6 *sain6;
+
+    switch (addr->sa_family)
+    {
+	case AF_INET:
+	    sain = (const struct sockaddr_in *)addr;
+	    memcpy(data+12, &sain->sin_addr.s_addr, 4);
+	    proto = PSC_P_IPv4;
+	    prefixlen = 32;
+	    break;
+
+	case AF_INET6:
+	    sain6 = (const struct sockaddr_in6 *)addr;
+	    memcpy(data, sain6->sin6_addr.s6_addr, 16);
+	    proto = PSC_P_IPv6;
+	    prefixlen = 128;
+	    break;
+
+	default:
+	    return 0;
+    }
+
+    PSC_IpAddr *self = PSC_malloc(sizeof *self);
+    pthread_mutex_init(&self->strlock, 0);
+    self->proto = proto;
+    self->prefixlen = prefixlen;
+    memcpy(self->data, data, 16);
+    self->str[0] = 0;
+
+    return self;
 }
 
 SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
