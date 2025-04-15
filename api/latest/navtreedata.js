@@ -26,6 +26,7 @@ var NAVTREE =
 [
   [ "poser", "index.html", [
     [ "poser – a C framework for POsix SERvices", "index.html", "index" ],
+    [ "Deprecated List", "deprecated.html", null ],
     [ "Classes", "annotated.html", [
       [ "Class List", "annotated.html", "annotated_dup" ],
       [ "Class Index", "classes.html", null ],
@@ -52,7 +53,7 @@ var NAVTREE =
 var NAVTREEINDEX =
 [
 "annotated.html",
-"resolver_8h.html"
+"random_8h_source.html"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronisation';

@@ -10,7 +10,7 @@ var class_p_s_c___connection =
     [ "PSC_Connection_data", "class_p_s_c___connection.html#a055d6483985ff7ccec0bfa832b84b6a0", null ],
     [ "PSC_Connection_dataReceived", "class_p_s_c___connection.html#a71d758d0cb15f46d06ab86ab070e4927", null ],
     [ "PSC_Connection_dataSent", "class_p_s_c___connection.html#afddf59b4ff29b1bee16ba4ba3b97837d", null ],
-    [ "PSC_Connection_nameResolved", "class_p_s_c___connection.html#a1a2219f5530476b1be8d60d24d39f930", null ],
+    [ "PSC_Connection_nameResolved", "class_p_s_c___connection.html#ad1630fef0429d2fee71022ff5a59fd99", null ],
     [ "PSC_Connection_pause", "class_p_s_c___connection.html#a10a78ef04aa8b6c4bc64b7a8d4f033bc", null ],
     [ "PSC_Connection_receiveBinary", "class_p_s_c___connection.html#ad3252d9e8102f88d2903ea852d41b939", null ],
     [ "PSC_Connection_receiveLine", "class_p_s_c___connection.html#a1244ccd45d5dcb6cecb380b50736cc71", null ],
