@@ -27,7 +27,8 @@ static uint8_t *getSecret(void)
     if (haveSecret) s = secret;
     else
     {
-	if (PSC_Random_bytes(secret, SECRETSIZE, 0) == SECRETSIZE)
+	if (PSC_Random_bytes(secret, SECRETSIZE, PSC_RF_NONBLOCK)
+		== SECRETSIZE)
 	{
 	    s = secret;
 	    haveSecret = 1;
