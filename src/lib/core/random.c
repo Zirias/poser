@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200112L
+#define _DEFAULT_SOURCE
 
 #include <poser/core/random.h>
 
@@ -18,6 +18,7 @@
 #  include <sys/random.h>
 #endif
 
+#ifndef HAVE_ARC4R
 static uint64_t prng(void)
 {
     static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -46,11 +47,17 @@ static uint64_t prng(void)
 
     return num;
 }
+#endif
 
 SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count, int onlyReal)
 {
+#ifdef HAVE_ARC4R
+    (void) onlyReal;
+    arc4random_buf(buf, count);
+    return count;
+#else
     size_t pos = 0;
-#ifdef HAVE_GETRANDOM
+#  ifdef HAVE_GETRANDOM
     while (pos < count)
     {
 	errno = 0;
@@ -62,14 +69,14 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count, int onlyReal)
 	}
 	pos += rc;
     }
-#endif
+#  endif
     if (pos < count)
     {
 	if (onlyReal) return pos;
-#ifdef HAVE_GETRANDOM
+#  ifdef HAVE_GETRANDOM
 	PSC_Log_msg(PSC_L_WARNING, "random: Could not obtain entropy from "
 		"the OS, falling back to internal PRNG.");
-#endif
+#  endif
 	size_t chunks = (count - pos) / sizeof(uint64_t);
 	size_t bytes = (count - pos) % sizeof(uint64_t);
 	if (bytes)
@@ -86,6 +93,7 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count, int onlyReal)
 	}
     }
     return pos;
+#endif
 }
 
 SOEXPORT size_t PSC_Random_string(char *str, size_t size, int onlyReal)

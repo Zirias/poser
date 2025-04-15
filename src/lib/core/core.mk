@@ -1,8 +1,13 @@
-posercore_PRECHECK=		ACCEPT4 GETRANDOM XXHX86
+posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM XXHX86
 ACCEPT4_FUNC=			accept4
 ACCEPT4_CFLAGS=			-D_GNU_SOURCE
 ACCEPT4_HEADERS=		sys/types.h sys/socket.h
 ACCEPT4_ARGS=			int, struct sockaddr *, socklen_t *, int
+ARC4R_FUNC=			arc4random_buf
+ARC4R_CFLAGS=			-D_DEFAULT_SOURCE
+ARC4R_HEADERS=			stdlib.h
+ARC4R_ARGS=			void *, size_t
+ARC4R_RETURN=			void
 GETRANDOM_FUNC=			getrandom
 GETRANDOM_HEADERS=		sys/random.h
 GETRANDOM_RETURN=		ssize_t
