@@ -149,7 +149,8 @@ PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self, PSC_Proto proto)
  */
 DECLEXPORT void
 PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
-    CMETHOD;
+    CMETHOD ATTR_DEPRECATED(("Resolving remote hosts is disabled, "
+		"use PSC_Resolver instead"));
 
 /** PSC_TcpServerOpts destructor.
  * @memberof PSC_TcpServerOpts

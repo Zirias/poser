@@ -11,9 +11,18 @@ struct PSC_Event
 {
     void *sender;
     EvHandler *handlers;
-    size_t size;
-    size_t capa;
+    union
+    {
+	struct
+	{
+	    size_t size;
+	    size_t capa;
+	};
+	void *arg;
+    };
     int dirty;
 };
+
+PSC_Event *PSC_Event_createDummyFire(void *sender, void *arg);
 
 #endif

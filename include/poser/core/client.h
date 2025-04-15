@@ -90,7 +90,8 @@ PSC_TcpClientOpts_setProto(PSC_TcpClientOpts *self, PSC_Proto proto)
  */
 DECLEXPORT void
 PSC_TcpClientOpts_numericHosts(PSC_TcpClientOpts *self)
-    CMETHOD;
+    CMETHOD ATTR_DEPRECATED(("Resolving remote hosts is disabled, "
+		"use PSC_Resolver instead"));
 
 /** Enable blacklisting of failed remote addresses.
  * When this is set to a non-zero value, a remote address is put on a

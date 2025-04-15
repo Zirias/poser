@@ -7,5 +7,6 @@
 
 PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr);
 int PSC_IpAddr_port(const PSC_IpAddr *self);
+int PSC_IpAddr_sockAddr(const PSC_IpAddr *self, struct sockaddr *addr);
 
 #endif

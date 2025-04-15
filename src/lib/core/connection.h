@@ -51,8 +51,7 @@ PSC_Connection_create(int fd, const ConnOpts *opts)
     ATTR_RETNONNULL ATTR_NONNULL((2));
 
 void
-PSC_Connection_setRemoteAddr(PSC_Connection *self,
-	struct sockaddr *addr, socklen_t addrlen, int numericOnly)
+PSC_Connection_setRemoteAddr(PSC_Connection *self, struct sockaddr *addr)
     CMETHOD ATTR_NONNULL((2));
 
 void

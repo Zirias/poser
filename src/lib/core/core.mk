@@ -51,6 +51,7 @@ posercore_MODULES:=		base64 \
 				log \
 				queue \
 				random \
+				resolver \
 				runopts \
 				server \
 				service \
@@ -77,6 +78,7 @@ posercore_HEADERS_INSTALL:=	core \
 				core/proto \
 				core/queue \
 				core/random \
+				core/resolver \
 				core/runopts \
 				core/server \
 				core/service \

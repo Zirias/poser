@@ -63,7 +63,6 @@ struct PSC_TcpServerOpts
     enum ccertmode tls_client_cert;
 #endif
     int port;
-    int numerichosts;
 };
 
 struct PSC_UnixServerOpts
@@ -124,7 +123,6 @@ struct PSC_Server
     size_t nsocks;
     size_t rdbufsz;
     int disabled;
-    int numericHosts;
 #ifdef WITH_TLS
     enum tlslevel tls;
 #endif
@@ -264,7 +262,7 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     }
     else if (sa)
     {
-	PSC_Connection_setRemoteAddr(newconn, sa, salen, self->numericHosts);
+	PSC_Connection_setRemoteAddr(newconn, sa);
     }
     PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
 	    PSC_Connection_remoteAddr(newconn));
@@ -360,7 +358,6 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->conncapa = CONNCHUNK;
     self->connsize = 0;
     self->rdbufsz = opts->rdbufsz;
-    self->numericHosts = opts->numerichosts;
     self->disabled = 0;
 #ifdef WITH_TLS
     self->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
@@ -489,7 +486,7 @@ SOEXPORT void PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self,
 
 SOEXPORT void PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
 {
-    self->numerichosts = 1;
+    (void) self;
 }
 
 SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)

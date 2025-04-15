@@ -16,6 +16,7 @@
 #include <poser/core/proto.h>
 #include <poser/core/queue.h>
 #include <poser/core/random.h>
+#include <poser/core/resolver.h>
 #include <poser/core/runopts.h>
 #include <poser/core/server.h>
 #include <poser/core/service.h>

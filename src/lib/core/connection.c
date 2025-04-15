@@ -2,20 +2,18 @@
 
 #include "client.h"
 #include "connection.h"
+#include "event.h"
 #include "ipaddr.h"
 #include "service.h"
 
-#include <poser/core/event.h>
 #include <poser/core/log.h>
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
 
 #include <errno.h>
-#include <netdb.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -50,17 +48,6 @@ typedef struct WriteNotifyRecord
     uint16_t wrbufpos;
 } WriteNotifyRecord;
 
-typedef struct RemoteAddrResolveArgs
-{
-    union {
-	struct sockaddr sa;
-	struct sockaddr_storage ss;
-    };
-    socklen_t addrlen;
-    int rc;
-    char name[NI_MAXHOST];
-} RemoteAddrResolveArgs;
-
 struct PSC_Connection
 {
     PSC_MessageEndLocator rdlocator;
@@ -69,7 +56,6 @@ struct PSC_Connection
     PSC_Event *dataReceived;
     PSC_Event *dataSent;
     PSC_Event *nameResolved;
-    PSC_ThreadJob *resolveJob;
 #ifdef WITH_TLS
     SSL *tls;
 #endif
@@ -85,7 +71,6 @@ struct PSC_Connection
     WriteRecord writerecs[NWRITERECS];
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
-    RemoteAddrResolveArgs resolveArgs;
     int fd;
     int connecting;
     int paused;
@@ -123,9 +108,6 @@ static void deleteConnection(void *receiver, void *sender, void *args);
 static void deleteLater(PSC_Connection *self);
 static void doread(PSC_Connection *self) CMETHOD;
 static void readConnection(void *receiver, void *sender, void *args);
-static void resolveRemoteAddrFinished(
-	void *receiver, void *sender, void *args);
-static void resolveRemoteAddrProc(void *arg);
 static void writeConnection(void *receiver, void *sender, void *args);
 static const char *locateeol(const char *str) ATTR_NONNULL((1));
 static void raisereceivedevents(PSC_Connection *self) CMETHOD;
@@ -668,12 +650,11 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->closed = PSC_Event_create(self);
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
-    self->nameResolved = PSC_Event_create(self);
+    self->nameResolved = PSC_Event_createDummyFire(self, 0);
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
     self->rdbufpos = 0;
     self->rdexpect = 0;
-    self->resolveJob = 0;
     self->fd = fd;
     self->connecting = 0;
     self->paused = 0;
@@ -828,48 +809,8 @@ SOEXPORT void PSC_Connection_receiveLine(PSC_Connection *self)
     self->rdlocator = locateeol;
 }
 
-static void resolveRemoteAddrProc(void *arg)
-{
-    RemoteAddrResolveArgs *rara = arg;
-    RemoteAddrResolveArgs tmp;
-    memcpy(&tmp, rara, sizeof tmp);
-    char buf[NI_MAXSERV];
-    tmp.rc = getnameinfo(&tmp.sa, tmp.addrlen,
-	    tmp.name, sizeof tmp.name, buf, sizeof buf, NI_NUMERICSERV);
-    if (!PSC_ThreadJob_canceled()) memcpy(rara, &tmp, sizeof *rara);
-}
-
-static void resolveRemoteAddrFinished(void *receiver, void *sender, void *args)
-{
-    PSC_Connection *self = receiver;
-    PSC_ThreadJob *job = sender;
-    RemoteAddrResolveArgs *rara = args;
-
-    const char *addr = PSC_Connection_remoteAddr(self);
-    if (PSC_ThreadJob_hasCompleted(job))
-    {
-	if (rara->rc >= 0 && strcmp(rara->name, addr) != 0)
-	{
-	    PSC_Log_fmt(PSC_L_DEBUG, "connection: %s is %s", addr, rara->name);
-	    self->name = PSC_copystr(rara->name);
-	}
-	else
-	{
-	    PSC_Log_fmt(PSC_L_DEBUG, "connection: error resolving name for %s",
-		    addr);
-	}
-    }
-    else
-    {
-	PSC_Log_fmt(PSC_L_DEBUG, "connection: timeout resolving name for %s",
-		addr);
-    }
-    self->resolveJob = 0;
-    PSC_Event_raise(self->nameResolved, 0, 0);
-}
-
 SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
-	struct sockaddr *addr, socklen_t addrlen, int numericOnly)
+	struct sockaddr *addr)
 {
     PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
@@ -883,16 +824,6 @@ SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
     {
 	self->ipAddr = ipAddr;
 	self->port = PSC_IpAddr_port(ipAddr);
-	if (!self->resolveJob && !numericOnly && PSC_ThreadPool_active())
-	{
-	    memcpy(&self->resolveArgs.sa, addr, addrlen);
-	    self->resolveArgs.addrlen = addrlen;
-	    self->resolveJob = PSC_ThreadJob_create(resolveRemoteAddrProc,
-		    &self->resolveArgs, RESOLVTICKS);
-	    PSC_Event_register(PSC_ThreadJob_finished(self->resolveJob), self,
-		    resolveRemoteAddrFinished, 0);
-	    PSC_ThreadPool_enqueue(self->resolveJob);
-	}
     }
 }
 
@@ -964,10 +895,9 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
 SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 {
     if (self->deleteScheduled) return;
-    if (blacklist && self->blacklisthits && self->resolveArgs.addrlen)
+    if (blacklist && self->blacklisthits && self->ipAddr)
     {
-	PSC_Connection_blacklistAddress(self->blacklisthits,
-		self->resolveArgs.addrlen, &self->resolveArgs.sa);
+	PSC_Connection_blacklistAddress(self->blacklisthits, self->ipAddr);
     }
 #ifdef WITH_TLS
     if (self->tls && !self->connecting && !self->tls_connect_st)
@@ -1010,12 +940,6 @@ static void cleanForDelete(PSC_Connection *self)
     PSC_Service_unregisterRead(self->fd);
     PSC_Service_unregisterWrite(self->fd);
     close(self->fd);
-    if (self->resolveJob)
-    {
-	PSC_Event_unregister(PSC_ThreadJob_finished(self->resolveJob), self,
-		resolveRemoteAddrFinished, 0);
-	PSC_ThreadPool_cancel(self->resolveJob);
-    }
 }
 
 static void deleteLater(PSC_Connection *self)

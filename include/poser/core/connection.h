@@ -108,7 +108,9 @@ PSC_Connection_dataSent(PSC_Connection *self)
  */
 DECLEXPORT PSC_Event *
 PSC_Connection_nameResolved(PSC_Connection *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+    CMETHOD ATTR_RETNONNULL ATTR_PURE
+    ATTR_DEPRECATED(("Resolving remote hosts is disabled, "
+		"use PSC_Resolver instead"));
 
 /** The remote IP address.
  * The address of the peer as a PSC_IpAddr instance.

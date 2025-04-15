@@ -4,13 +4,15 @@
 #include <poser/core/client.h>
 #include <sys/socket.h>
 
+C_CLASS_DECL(PSC_IpAddr);
+
 #ifdef WITH_TLS
 void
 PSC_Connection_unreftlsctx(void);
 #endif
 
 void
-PSC_Connection_blacklistAddress(int hits, socklen_t len, struct sockaddr *addr)
-    ATTR_NONNULL((3));
+PSC_Connection_blacklistAddress(int hits, const PSC_IpAddr *addr)
+    ATTR_NONNULL((2));
 
 #endif

@@ -2,6 +2,7 @@
 
 #include "client.h"
 #include "connection.h"
+#include "ipaddr.h"
 
 #include <poser/core/event.h>
 #include <poser/core/log.h>
@@ -35,7 +36,6 @@ struct PSC_TcpClientOpts
 #endif
     PSC_Proto proto;
     int port;
-    int numerichosts;
 #ifdef WITH_TLS
     int tls;
     int noverify;
@@ -53,8 +53,7 @@ struct PSC_UnixClientOpts
 
 typedef struct BlacklistEntry
 {
-    socklen_t len;
-    struct sockaddr_storage val;
+    PSC_IpAddr *addr;
     int hits;
 } BlacklistEntry;
 
@@ -103,30 +102,38 @@ SOLOCAL void PSC_Connection_unreftlsctx(void)
 }
 #endif
 
-SOLOCAL void PSC_Connection_blacklistAddress(int hits,
-	socklen_t len, struct sockaddr *addr)
+SOLOCAL void PSC_Connection_blacklistAddress(int hits, const PSC_IpAddr *addr)
 {
     for (size_t i = 0; i < BLACKLISTSIZE; ++i)
     {
-	if (blacklist[i].len) continue;
-	memcpy(&blacklist[i].val, addr, len);
-	blacklist[i].len = len;
+	if (blacklist[i].addr) continue;
+	blacklist[i].addr = PSC_IpAddr_clone(addr);
 	blacklist[i].hits = hits;
 	return;
     }
 }
 
-static int blacklistcheck(socklen_t len, struct sockaddr *addr)
+static int blacklistcheck(struct sockaddr *addr)
 {
+    PSC_IpAddr *ip = 0;
+    if (!addr) return 0;
+    int ok = 1;
     for (size_t i = 0; i < BLACKLISTSIZE; ++i)
     {
-	if (blacklist[i].len == len && !memcmp(&blacklist[i].val, addr, len))
+	if (!blacklist[i].addr) continue;
+	if (!ip) ip = PSC_IpAddr_fromSockAddr(addr);
+	if (PSC_IpAddr_equals(ip, blacklist[i].addr))
 	{
-	    if (!--blacklist[i].hits) blacklist[i].len = 0;
-	    return 0;
+	    if (!--blacklist[i].hits)
+	    {
+		PSC_IpAddr_destroy(blacklist[i].addr);
+		blacklist[i].addr = 0;
+	    }
+	    ok = 0;
 	}
     }
-    return 1;
+    PSC_IpAddr_destroy(ip);
+    return ok;
 }
 
 static PSC_Connection *createFromAddrinfo(
@@ -144,7 +151,7 @@ static PSC_Connection *createFromAddrinfo(
 	if (res->ai_family != AF_INET && res->ai_family != AF_INET6) continue;
 	if (opts->proto == PSC_P_IPv4 && res->ai_family != AF_INET) continue;
 	if (opts->proto == PSC_P_IPv6 && res->ai_family != AF_INET6) continue;
-	if (!blacklistcheck(res->ai_addrlen, res->ai_addr)) continue;
+	if (!blacklistcheck(res->ai_addr)) continue;
 #ifdef HAVE_ACCEPT4
 	fd = socket(res->ai_family,
 		res->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC,
@@ -197,8 +204,7 @@ static PSC_Connection *createFromAddrinfo(
 	.blacklisthits = opts->blacklisthits
     };
     PSC_Connection *conn = PSC_Connection_create(fd, &copts);
-    PSC_Connection_setRemoteAddr(conn, res->ai_addr, res->ai_addrlen,
-	    opts->numerichosts);
+    PSC_Connection_setRemoteAddr(conn, res->ai_addr);
     freeaddrinfo(res0);
     return conn;
 }
@@ -375,7 +381,7 @@ SOEXPORT void PSC_TcpClientOpts_setProto(PSC_TcpClientOpts *self,
 
 SOEXPORT void PSC_TcpClientOpts_numericHosts(PSC_TcpClientOpts *self)
 {
-    self->numerichosts = 1;
+    (void)self;
 }
 
 SOEXPORT void PSC_TcpClientOpts_setBlacklistHits(PSC_TcpClientOpts *self,

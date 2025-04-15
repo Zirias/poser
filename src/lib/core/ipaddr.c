@@ -241,6 +241,28 @@ SOLOCAL int PSC_IpAddr_port(const PSC_IpAddr *self)
     return self->port;
 }
 
+SOLOCAL int PSC_IpAddr_sockAddr(const PSC_IpAddr *self,
+	struct sockaddr *addr)
+{
+    if (self->proto == PSC_P_IPv4)
+    {
+	struct sockaddr_in *sain = (struct sockaddr_in *)addr;
+	memset(sain, 0, sizeof *sain);
+	sain->sin_family = AF_INET;
+	memcpy(&sain->sin_addr.s_addr, self->data+12, 4);
+	return 0;
+    }
+    if (self->proto == PSC_P_IPv6)
+    {
+	struct sockaddr_in6 *sain6 = (struct sockaddr_in6 *)addr;
+	memset(sain6, 0, sizeof *sain6);
+	sain6->sin6_family = AF_INET6;
+	memcpy(sain6->sin6_addr.s6_addr, self->data, 16);
+	return 0;
+    }
+    return -1;
+}
+
 static void toString(PSC_IpAddr *self)
 {
     int len = 0;
