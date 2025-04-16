@@ -583,8 +583,7 @@ static int processEvents(sigset_t *sigmask)
 	pthread_sigmask(SIG_SETMASK, &origmask, 0);
 	if (qrc >= 0) nchanges = 0;
     }
-    if (handleSigFlags()) return 0;
-    if (qrc < 0)
+    if (!handleSigFlags() && qrc < 0)
     {
 	if (kqerr == EINTR) return 0;
 	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
@@ -618,8 +617,7 @@ static int processEvents(sigset_t *sigmask)
     struct epoll_event ev[EP_MAX_EVENTS];
     if (!shutdownRequest) prc = epoll_pwait2(epfd,
 	    ev, EP_MAX_EVENTS, 0, sigmask);
-    if (handleSigFlags()) return 0;
-    if (prc < 0)
+    if (!handleSigFlags() && prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
 	return -1;
@@ -649,8 +647,7 @@ static int processEvents(sigset_t *sigmask)
 {
     int prc = 0;
     if (!shutdownRequest) prc = ppoll(fds, nfds, 0, sigmask);
-    if (handleSigFlags()) return 0;
-    if (prc < 0)
+    if (!handleSigFlags() && prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "ppoll() failed");
 	return -1;
@@ -700,8 +697,7 @@ static int processEvents(sigset_t *sigmask)
     }
     int src = 0;
     if (!shutdownRequest) src = pselect(nfds, r, w, 0, 0, sigmask);
-    if (handleSigFlags()) return 0;
-    if (src < 0)
+    if (!handleSigFlags() && src < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
 	return -1;
