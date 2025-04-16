@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <string.h>
 #include <sys/param.h>
+#include <sys/wait.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -87,6 +88,13 @@ struct PSC_EAStartup
     int rc;
 };
 
+struct PSC_EAChildExited
+{
+    pid_t pid;
+    int val;
+    int signaled;
+};
+
 static PSC_Event readyRead;
 static PSC_Event readyWrite;
 static PSC_Event prestartup;
@@ -94,10 +102,12 @@ static PSC_Event startup;
 static PSC_Event shutdown;
 static PSC_Event tick;
 static PSC_Event eventsDone;
+static PSC_Event childExited;
 
 static int running;
 
 static volatile sig_atomic_t shutdownRequest;
+static volatile sig_atomic_t childExit;
 static volatile sig_atomic_t timerExpire;
 
 static int shutdownRef;
@@ -111,8 +121,12 @@ static int numPanicHandlers;
 
 static void handlesig(int signum)
 {
-    if (signum == SIGALRM) timerExpire = 1;
-    else shutdownRequest = 1;
+    switch (signum)
+    {
+	case SIGALRM:	timerExpire = 1; break;
+	case SIGCHLD:	childExit = 1; break;
+	default:	shutdownRequest = 1; break;
+    }
 }
 
 #ifdef WITH_SELECT
@@ -170,6 +184,11 @@ SOEXPORT PSC_Event *PSC_Service_tick(void)
 SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 {
     return &eventsDone;
+}
+
+SOEXPORT PSC_Event *PSC_Service_childExited(void)
+{
+    return &childExited;
 }
 
 #ifdef WITH_SELECT
@@ -502,20 +521,45 @@ static int panicreturn(void)
 
 static int handleSigFlags(void)
 {
+    int handled = 0;
     if (shutdownRequest)
     {
 	shutdownRequest = 0;
 	shutdownRef = 0;
 	PSC_Event_raise(&shutdown, 0, 0);
-	return 1;
+	handled = 1;
     }
     if (timerExpire)
     {
 	timerExpire = 0;
 	PSC_Timer_underrun();
-	return 1;
+	handled = 1;
     }
-    return 0;
+    if (childExit)
+    {
+	childExit = 0;
+	PSC_EAChildExited ea;
+	int status;
+	pid_t pid;
+	while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) >= 0)
+	{
+	    ea.pid = pid;
+	    if (WIFEXITED(status))
+	    {
+		ea.val = WEXITSTATUS(status);
+		ea.signaled = 0;
+	    }
+	    else if (WIFSIGNALED(status))
+	    {
+		ea.val = WTERMSIG(status);
+		ea.signaled = 1;
+	    }
+	    else continue;
+	    PSC_Event_raise(&childExited, (int)pid, &ea);
+	}
+	handled = 1;
+    }
+    return handled;
 }
 
 #ifdef HAVE_KQUEUE
@@ -761,6 +805,7 @@ static int serviceLoop(int isRun)
     sigaddset(&handler.sa_mask, SIGTERM);
     sigaddset(&handler.sa_mask, SIGINT);
     sigaddset(&handler.sa_mask, SIGALRM);
+    sigaddset(&handler.sa_mask, SIGCHLD);
     sigset_t mask;
 
     if (sigprocmask(SIG_BLOCK, &handler.sa_mask, &mask) < 0)
@@ -784,6 +829,12 @@ static int serviceLoop(int isRun)
     if (sigaction(SIGALRM, &handler, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
+	goto done;
+    }
+
+    if (sigaction(SIGCHLD, &handler, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
 	goto done;
     }
 
@@ -905,6 +956,7 @@ done:
     free(shutdown.handlers);
     free(tick.handlers);
     free(eventsDone.handlers);
+    free(childExited.handlers);
     memset(&readyRead, 0, sizeof readyRead);
     memset(&readyWrite, 0, sizeof readyWrite);
     memset(&prestartup, 0, sizeof prestartup);
@@ -912,6 +964,7 @@ done:
     memset(&shutdown, 0, sizeof shutdown);
     memset(&tick, 0, sizeof tick);
     memset(&eventsDone, 0, sizeof eventsDone);
+    memset(&childExited, 0, sizeof childExited);
 
     return rc;
 }
@@ -984,6 +1037,23 @@ SOEXPORT void PSC_Service_panic(const char *msg)
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
 {
     self->rc = rc;
+}
+
+SOEXPORT pid_t PSC_EAChildExited_pid(const PSC_EAChildExited *self)
+{
+    return self->pid;
+}
+
+SOEXPORT int PSC_EAChildExited_status(const PSC_EAChildExited *self)
+{
+    if (self->signaled) return PSC_CHILD_SIGNALED;
+    return self->val;
+}
+
+SOEXPORT int PSC_EAChildExited_signal(const PSC_EAChildExited *self)
+{
+    if (!self->signaled) return 0;
+    return self->val;
 }
 
 SOLOCAL int PSC_Service_shutsdown(void)

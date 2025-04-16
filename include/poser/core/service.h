@@ -6,9 +6,13 @@
  */
 
 #include <poser/decl.h>
+#include <sys/types.h>
 
 /** Maximum number of panic handlers that can be registered */
 #define MAXPANICHANDLERS 8
+
+/** Invalid exit code for a child process that was terminated by a signal */
+#define PSC_CHILD_SIGNALED 256
 
 /** A main service loop.
  * This class provides a service loop monitoring a set of file descriptors
@@ -29,6 +33,11 @@
  * @class PSC_EAStartup service.h <poser/core/service.h>
  */
 C_CLASS_DECL(PSC_EAStartup);
+
+/** Event arguments for child exited events.
+ * @class PSC_EAChildExited service.h <poser/core/service.h>
+ */
+C_CLASS_DECL(PSC_EAChildExited);
 
 C_CLASS_DECL(PSC_Event);
 
@@ -120,6 +129,26 @@ PSC_Service_tick(void)
  */
 DECLEXPORT PSC_Event *
 PSC_Service_eventsDone(void)
+    ATTR_RETNONNULL ATTR_PURE;
+
+/** A child process terminated.
+ * This event fires whenever a child process exits.
+ *
+ * The pid is used as the id for the event, so handlers must be registered
+ * for specific child processes.
+ *
+ * A PSC_EAChildExited object is passed as the event args, which allows to
+ * retrieve the pid as well as the exit status or the terminating signal.
+ *
+ * Note that there's no guarantee that an int (used as the event id) can hold
+ * all valid values of a pid_t (used for process ids), although this is
+ * normally the case in practice. To be really sure, double-check the pid
+ * from the event arguments when getting this event.
+ * @memberof PSC_Service
+ * @static
+ */
+DECLEXPORT PSC_Event *
+PSC_Service_childExited(void)
     ATTR_RETNONNULL ATTR_PURE;
 
 /** Check a file descriptor.
@@ -281,6 +310,35 @@ PSC_Service_panic(const char *msg)
  */
 DECLEXPORT void
 PSC_EAStartup_return(PSC_EAStartup *self, int rc)
+    CMETHOD;
+
+/** The pid of a child that exited.
+ * @memberof PSC_EAChildExited
+ * @param self the PSC_EAChildExited
+ * @returns the process id of the child
+ */
+DECLEXPORT pid_t
+PSC_EAChildExited_pid(const PSC_EAChildExited *self)
+    CMETHOD;
+
+/** The exit status of a child that exited.
+ * @memberof PSC_EAChildExited
+ * @param self the PSC_EAChildExited
+ * @returns the child's exit status, of PSC_CHILD_SIGNALED if the child was
+ *	    terminated by a signal
+ */
+DECLEXPORT int
+PSC_EAChildExited_status(const PSC_EAChildExited *self)
+    CMETHOD;
+
+/** The signal that terminated the child.
+ * @memberof PSC_EAChildExited
+ * @param self the PSC_EAChildExited
+ * @returns the signal number of the signal terminating the child, or 0 if
+ *          the child exited normally
+ */
+DECLEXPORT int
+PSC_EAChildExited_signal(const PSC_EAChildExited *self)
     CMETHOD;
 
 #endif
