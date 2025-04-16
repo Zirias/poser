@@ -13,6 +13,7 @@
 #include <poser/core/ipaddr.h>
 #include <poser/core/list.h>
 #include <poser/core/log.h>
+#include <poser/core/process.h>
 #include <poser/core/proto.h>
 #include <poser/core/queue.h>
 #include <poser/core/random.h>

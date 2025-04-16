@@ -49,6 +49,7 @@ posercore_MODULES:=		base64 \
 				ipaddr \
 				list \
 				log \
+				process \
 				queue \
 				random \
 				resolver \
@@ -75,6 +76,7 @@ posercore_HEADERS_INSTALL:=	core \
 				core/ipaddr \
 				core/list \
 				core/log \
+				core/process \
 				core/proto \
 				core/queue \
 				core/random \
