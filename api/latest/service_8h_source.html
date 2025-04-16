@@ -97,95 +97,118 @@ $(document).ready(function(){initNavTree('service_8h_source.html',''); initResiz
 <div class="line"><a id="l00002" name="l00002"></a><span class="lineno">    2</span><span class="preprocessor">#define POSER_CORE_SERVICE_H</span></div>
 <div class="line"><a id="l00003" name="l00003"></a><span class="lineno">    3</span> </div>
 <div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;poser/decl.h&gt;</span></div>
-<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span> </div>
-<div class="line"><a id="l00011" name="l00011"></a><span class="lineno"><a class="line" href="service_8h.html#a4dff1a093c65986499f6bdb23b362dc8">   11</a></span><span class="preprocessor">#define MAXPANICHANDLERS 8</span></div>
-<div class="line"><a id="l00012" name="l00012"></a><span class="lineno">   12</span> </div>
-<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span>C_CLASS_DECL(<a class="code hl_class" href="class_p_s_c___e_a_startup.html">PSC_EAStartup</a>);</div>
-<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span> </div>
-<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span>C_CLASS_DECL(<a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a>);</div>
-<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span> </div>
-<div class="line"><a id="l00038" name="l00038"></a><span class="lineno"><a class="line" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">   38</a></span><span class="keyword">typedef</span> void (*<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a>)(<span class="keyword">const</span> <span class="keywordtype">char</span> *msg) ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span> </div>
-<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00048" name="l00048"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ad465f718fbf675f4605660b8c29e8894">   48</a></span><a class="code hl_function" href="class_p_s_c___service.html#ad465f718fbf675f4605660b8c29e8894">PSC_Service_readyRead</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00049" name="l00049"></a><span class="lineno">   49</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span> </div>
-<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac76d2ee8a24ef0c15f9555fd15b3fe53">   59</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac76d2ee8a24ef0c15f9555fd15b3fe53">PSC_Service_readyWrite</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span> </div>
-<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00074" name="l00074"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#afdda6bf727166d7d65b0044664dfd7de">   74</a></span><a class="code hl_function" href="class_p_s_c___service.html#afdda6bf727166d7d65b0044664dfd7de">PSC_Service_prestartup</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span> </div>
-<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00089" name="l00089"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac0beb89e8cc58a5e5c2546223e2aad11">   89</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac0beb89e8cc58a5e5c2546223e2aad11">PSC_Service_startup</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span> </div>
-<div class="line"><a id="l00101" name="l00101"></a><span class="lineno">  101</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00102" name="l00102"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#acef87c33753313c9b1deb1c369647916">  102</a></span><a class="code hl_function" href="class_p_s_c___service.html#acef87c33753313c9b1deb1c369647916">PSC_Service_shutdown</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00103" name="l00103"></a><span class="lineno">  103</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span> </div>
-<div class="line"><a id="l00111" name="l00111"></a><span class="lineno">  111</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00112" name="l00112"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#adf392855cf95193b46a4da549d3fc2f3">  112</a></span><a class="code hl_function" href="class_p_s_c___service.html#adf392855cf95193b46a4da549d3fc2f3">PSC_Service_tick</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00113" name="l00113"></a><span class="lineno">  113</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00114" name="l00114"></a><span class="lineno">  114</span> </div>
-<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
-<div class="line"><a id="l00122" name="l00122"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">  122</a></span><a class="code hl_function" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">PSC_Service_eventsDone</a>(<span class="keywordtype">void</span>)</div>
-<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span>    ATTR_RETNONNULL ATTR_PURE;</div>
-<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span> </div>
-<div class="line"><a id="l00135" name="l00135"></a><span class="lineno">  135</span>DECLEXPORT <span class="keywordtype">int</span></div>
-<div class="line"><a id="l00136" name="l00136"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">  136</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">PSC_Service_isValidFd</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>, <span class="keyword">const</span> <span class="keywordtype">char</span> *errortopic);</div>
-<div class="line"><a id="l00137" name="l00137"></a><span class="lineno">  137</span> </div>
-<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00146" name="l00146"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2a731fb7c5d36dd373bce11cdfaced14">  146</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2a731fb7c5d36dd373bce11cdfaced14">PSC_Service_registerRead</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
-<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span> </div>
-<div class="line"><a id="l00155" name="l00155"></a><span class="lineno">  155</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00156" name="l00156"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a947f2fddef0d9e489adef6bbeb948ff1">  156</a></span><a class="code hl_function" href="class_p_s_c___service.html#a947f2fddef0d9e489adef6bbeb948ff1">PSC_Service_unregisterRead</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
-<div class="line"><a id="l00157" name="l00157"></a><span class="lineno">  157</span> </div>
-<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00166" name="l00166"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2e23c535d21ee25eb342b02176164182">  166</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2e23c535d21ee25eb342b02176164182">PSC_Service_registerWrite</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
-<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span> </div>
-<div class="line"><a id="l00175" name="l00175"></a><span class="lineno">  175</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00176" name="l00176"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a1c005146623534a921c7189b663669b1">  176</a></span><a class="code hl_function" href="class_p_s_c___service.html#a1c005146623534a921c7189b663669b1">PSC_Service_unregisterWrite</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
-<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span> </div>
-<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00186" name="l00186"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4f2306d1f22adb1ac956835b8cf0824f">  186</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4f2306d1f22adb1ac956835b8cf0824f">PSC_Service_registerPanic</a>(<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a> handler)</div>
-<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span> </div>
-<div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00196" name="l00196"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a17e2c881aa49769dc9e2bd40dd78bcad">  196</a></span><a class="code hl_function" href="class_p_s_c___service.html#a17e2c881aa49769dc9e2bd40dd78bcad">PSC_Service_unregisterPanic</a>(<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a> handler)</div>
-<div class="line"><a id="l00197" name="l00197"></a><span class="lineno">  197</span>    ATTR_NONNULL((1));</div>
-<div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span> </div>
-<div class="line"><a id="l00207" name="l00207"></a><span class="lineno">  207</span>DECLEXPORT <span class="keywordtype">int</span></div>
-<div class="line"><a id="l00208" name="l00208"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ae7d1f83cfd355b5fa8cbcb27d8006024">  208</a></span><a class="code hl_function" href="class_p_s_c___service.html#ae7d1f83cfd355b5fa8cbcb27d8006024">PSC_Service_setTickInterval</a>(<span class="keywordtype">unsigned</span> msec);</div>
-<div class="line"><a id="l00209" name="l00209"></a><span class="lineno">  209</span> </div>
-<div class="line"><a id="l00219" name="l00219"></a><span class="lineno">  219</span>DECLEXPORT <span class="keywordtype">int</span></div>
-<div class="line"><a id="l00220" name="l00220"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#aa30cc03aea9d2761869b3938cf0981ad">  220</a></span><a class="code hl_function" href="class_p_s_c___service.html#aa30cc03aea9d2761869b3938cf0981ad">PSC_Service_loop</a>(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00221" name="l00221"></a><span class="lineno">  221</span> </div>
-<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span>DECLEXPORT <span class="keywordtype">int</span></div>
-<div class="line"><a id="l00231" name="l00231"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4119741ca5b09aa0842e5185dc007107">  231</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4119741ca5b09aa0842e5185dc007107">PSC_Service_run</a>(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span> </div>
-<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00240" name="l00240"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a39a3d5d8cda362329a33ec6afd18cfac">  240</a></span><a class="code hl_function" href="class_p_s_c___service.html#a39a3d5d8cda362329a33ec6afd18cfac">PSC_Service_quit</a>(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span> </div>
-<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00252" name="l00252"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4fe59bacec328553a6e5a2f239fdd5fd">  252</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4fe59bacec328553a6e5a2f239fdd5fd">PSC_Service_shutdownLock</a>(<span class="keywordtype">void</span>);</div>
-<div class="line"><a id="l00253" name="l00253"></a><span class="lineno">  253</span> </div>
-<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00260" name="l00260"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a13c75bef0649759d6252806ab5f87aa7">  260</a></span><a class="code hl_function" href="class_p_s_c___service.html#a13c75bef0649759d6252806ab5f87aa7">PSC_Service_shutdownUnlock</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span><span class="preprocessor">#include &lt;sys/types.h&gt;</span></div>
+<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span> </div>
+<div class="line"><a id="l00012" name="l00012"></a><span class="lineno"><a class="line" href="service_8h.html#a4dff1a093c65986499f6bdb23b362dc8">   12</a></span><span class="preprocessor">#define MAXPANICHANDLERS 8</span></div>
+<div class="line"><a id="l00013" name="l00013"></a><span class="lineno">   13</span> </div>
+<div class="line"><a id="l00015" name="l00015"></a><span class="lineno"><a class="line" href="service_8h.html#a0f9a19fa0734478523da1f65773e8b6b">   15</a></span><span class="preprocessor">#define PSC_CHILD_SIGNALED 256</span></div>
+<div class="line"><a id="l00016" name="l00016"></a><span class="lineno">   16</span> </div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span>C_CLASS_DECL(<a class="code hl_class" href="class_p_s_c___e_a_startup.html">PSC_EAStartup</a>);</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span> </div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span>C_CLASS_DECL(<a class="code hl_class" href="class_p_s_c___e_a_child_exited.html">PSC_EAChildExited</a>);</div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span> </div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span>C_CLASS_DECL(<a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a>);</div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span> </div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno"><a class="line" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">   47</a></span><span class="keyword">typedef</span> void (*<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a>)(<span class="keyword">const</span> <span class="keywordtype">char</span> *msg) ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span> </div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ad465f718fbf675f4605660b8c29e8894">   57</a></span><a class="code hl_function" href="class_p_s_c___service.html#ad465f718fbf675f4605660b8c29e8894">PSC_Service_readyRead</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span> </div>
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno">   67</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac76d2ee8a24ef0c15f9555fd15b3fe53">   68</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac76d2ee8a24ef0c15f9555fd15b3fe53">PSC_Service_readyWrite</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span> </div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#afdda6bf727166d7d65b0044664dfd7de">   83</a></span><a class="code hl_function" href="class_p_s_c___service.html#afdda6bf727166d7d65b0044664dfd7de">PSC_Service_prestartup</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00084" name="l00084"></a><span class="lineno">   84</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span> </div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac0beb89e8cc58a5e5c2546223e2aad11">   98</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac0beb89e8cc58a5e5c2546223e2aad11">PSC_Service_startup</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span> </div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#acef87c33753313c9b1deb1c369647916">  111</a></span><a class="code hl_function" href="class_p_s_c___service.html#acef87c33753313c9b1deb1c369647916">PSC_Service_shutdown</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno">  112</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00113" name="l00113"></a><span class="lineno">  113</span> </div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#adf392855cf95193b46a4da549d3fc2f3">  121</a></span><a class="code hl_function" href="class_p_s_c___service.html#adf392855cf95193b46a4da549d3fc2f3">PSC_Service_tick</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span> </div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">  131</a></span><a class="code hl_function" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">PSC_Service_eventsDone</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span> </div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span>DECLEXPORT <a class="code hl_class" href="class_p_s_c___event.html">PSC_Event</a> *</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a0511fd25438c04f002401d680cdee819">  151</a></span><a class="code hl_function" href="class_p_s_c___service.html#a0511fd25438c04f002401d680cdee819">PSC_Service_childExited</a>(<span class="keywordtype">void</span>)</div>
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno">  152</span>    ATTR_RETNONNULL ATTR_PURE;</div>
+<div class="line"><a id="l00153" name="l00153"></a><span class="lineno">  153</span> </div>
+<div class="line"><a id="l00164" name="l00164"></a><span class="lineno">  164</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">  165</a></span><a class="code hl_function" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">PSC_Service_isValidFd</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>, <span class="keyword">const</span> <span class="keywordtype">char</span> *errortopic);</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno">  166</span> </div>
+<div class="line"><a id="l00174" name="l00174"></a><span class="lineno">  174</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2a731fb7c5d36dd373bce11cdfaced14">  175</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2a731fb7c5d36dd373bce11cdfaced14">PSC_Service_registerRead</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span> </div>
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a947f2fddef0d9e489adef6bbeb948ff1">  185</a></span><a class="code hl_function" href="class_p_s_c___service.html#a947f2fddef0d9e489adef6bbeb948ff1">PSC_Service_unregisterRead</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span> </div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2e23c535d21ee25eb342b02176164182">  195</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2e23c535d21ee25eb342b02176164182">PSC_Service_registerWrite</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span> </div>
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno">  204</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a1c005146623534a921c7189b663669b1">  205</a></span><a class="code hl_function" href="class_p_s_c___service.html#a1c005146623534a921c7189b663669b1">PSC_Service_unregisterWrite</a>(<span class="keywordtype">int</span> <span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span> </div>
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno">  214</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00215" name="l00215"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4f2306d1f22adb1ac956835b8cf0824f">  215</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4f2306d1f22adb1ac956835b8cf0824f">PSC_Service_registerPanic</a>(<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a> handler)</div>
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno">  216</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno">  217</span> </div>
+<div class="line"><a id="l00224" name="l00224"></a><span class="lineno">  224</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00225" name="l00225"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a17e2c881aa49769dc9e2bd40dd78bcad">  225</a></span><a class="code hl_function" href="class_p_s_c___service.html#a17e2c881aa49769dc9e2bd40dd78bcad">PSC_Service_unregisterPanic</a>(<a class="code hl_typedef" href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a> handler)</div>
+<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span>    ATTR_NONNULL((1));</div>
+<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span> </div>
+<div class="line"><a id="l00236" name="l00236"></a><span class="lineno">  236</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00237" name="l00237"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#ae7d1f83cfd355b5fa8cbcb27d8006024">  237</a></span><a class="code hl_function" href="class_p_s_c___service.html#ae7d1f83cfd355b5fa8cbcb27d8006024">PSC_Service_setTickInterval</a>(<span class="keywordtype">unsigned</span> msec);</div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span> </div>
+<div class="line"><a id="l00248" name="l00248"></a><span class="lineno">  248</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#aa30cc03aea9d2761869b3938cf0981ad">  249</a></span><a class="code hl_function" href="class_p_s_c___service.html#aa30cc03aea9d2761869b3938cf0981ad">PSC_Service_loop</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno">  250</span> </div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4119741ca5b09aa0842e5185dc007107">  260</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4119741ca5b09aa0842e5185dc007107">PSC_Service_run</a>(<span class="keywordtype">void</span>);</div>
 <div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span> </div>
-<div class="line"><a id="l00270" name="l00270"></a><span class="lineno">  270</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00271" name="l00271"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2bea0a15772d5edc762d9b88143e1157">  271</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2bea0a15772d5edc762d9b88143e1157">PSC_Service_panic</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *msg)</div>
-<div class="line"><a id="l00272" name="l00272"></a><span class="lineno">  272</span>    ATTR_NONNULL((1)) ATTR_NORETURN;</div>
-<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span> </div>
-<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>DECLEXPORT <span class="keywordtype">void</span></div>
-<div class="line"><a id="l00283" name="l00283"></a><span class="lineno"><a class="line" href="class_p_s_c___e_a_startup.html#a383b1ea465a2a386253362fb5c4f9506">  283</a></span>PSC_EAStartup_return(<a class="code hl_class" href="class_p_s_c___e_a_startup.html">PSC_EAStartup</a> *self, <span class="keywordtype">int</span> rc)</div>
-<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>    CMETHOD;</div>
-<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span> </div>
-<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00268" name="l00268"></a><span class="lineno">  268</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00269" name="l00269"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a39a3d5d8cda362329a33ec6afd18cfac">  269</a></span><a class="code hl_function" href="class_p_s_c___service.html#a39a3d5d8cda362329a33ec6afd18cfac">PSC_Service_quit</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00270" name="l00270"></a><span class="lineno">  270</span> </div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a4fe59bacec328553a6e5a2f239fdd5fd">  281</a></span><a class="code hl_function" href="class_p_s_c___service.html#a4fe59bacec328553a6e5a2f239fdd5fd">PSC_Service_shutdownLock</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span> </div>
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno">  288</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00289" name="l00289"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a13c75bef0649759d6252806ab5f87aa7">  289</a></span><a class="code hl_function" href="class_p_s_c___service.html#a13c75bef0649759d6252806ab5f87aa7">PSC_Service_shutdownUnlock</a>(<span class="keywordtype">void</span>);</div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span> </div>
+<div class="line"><a id="l00299" name="l00299"></a><span class="lineno">  299</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno"><a class="line" href="class_p_s_c___service.html#a2bea0a15772d5edc762d9b88143e1157">  300</a></span><a class="code hl_function" href="class_p_s_c___service.html#a2bea0a15772d5edc762d9b88143e1157">PSC_Service_panic</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *msg)</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>    ATTR_NONNULL((1)) ATTR_NORETURN;</div>
+<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span> </div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>DECLEXPORT <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno"><a class="line" href="class_p_s_c___e_a_startup.html#a383b1ea465a2a386253362fb5c4f9506">  312</a></span>PSC_EAStartup_return(<a class="code hl_class" href="class_p_s_c___e_a_startup.html">PSC_EAStartup</a> *self, <span class="keywordtype">int</span> rc)</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span>    CMETHOD;</div>
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span> </div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>DECLEXPORT pid_t</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno"><a class="line" href="class_p_s_c___e_a_child_exited.html#a1c2e77428dbaa5af790ffcffe9fb53a1">  321</a></span>PSC_EAChildExited_pid(const <a class="code hl_class" href="class_p_s_c___e_a_child_exited.html">PSC_EAChildExited</a> *self)</div>
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>    CMETHOD;</div>
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span> </div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno"><a class="line" href="class_p_s_c___e_a_child_exited.html#ab0b1fcfdcf9c46378fe3296ce73d2dd4">  331</a></span>PSC_EAChildExited_status(const <a class="code hl_class" href="class_p_s_c___e_a_child_exited.html">PSC_EAChildExited</a> *self)</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>    CMETHOD;</div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span> </div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span>DECLEXPORT <span class="keywordtype">int</span></div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno"><a class="line" href="class_p_s_c___e_a_child_exited.html#abbef67f51cc70d3fe233b2d6b2c657a1">  341</a></span>PSC_EAChildExited_signal(const <a class="code hl_class" href="class_p_s_c___e_a_child_exited.html">PSC_EAChildExited</a> *self)</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span>    CMETHOD;</div>
+<div class="line"><a id="l00343" name="l00343"></a><span class="lineno">  343</span> </div>
+<div class="line"><a id="l00344" name="l00344"></a><span class="lineno">  344</span><span class="preprocessor">#endif</span></div>
+<div class="ttc" id="aclass_p_s_c___e_a_child_exited_html"><div class="ttname"><a href="class_p_s_c___e_a_child_exited.html">PSC_EAChildExited</a></div><div class="ttdoc">Event arguments for child exited events.</div></div>
 <div class="ttc" id="aclass_p_s_c___e_a_startup_html"><div class="ttname"><a href="class_p_s_c___e_a_startup.html">PSC_EAStartup</a></div><div class="ttdoc">Event arguments for service (pre)startup events.</div></div>
 <div class="ttc" id="aclass_p_s_c___event_html"><div class="ttname"><a href="class_p_s_c___event.html">PSC_Event</a></div><div class="ttdoc">A simple event class.</div></div>
+<div class="ttc" id="aclass_p_s_c___service_html_a0511fd25438c04f002401d680cdee819"><div class="ttname"><a href="class_p_s_c___service.html#a0511fd25438c04f002401d680cdee819">PSC_Service::PSC_Service_childExited</a></div><div class="ttdeci">PSC_Event * PSC_Service_childExited(void)</div><div class="ttdoc">A child process terminated.</div></div>
 <div class="ttc" id="aclass_p_s_c___service_html_a13c75bef0649759d6252806ab5f87aa7"><div class="ttname"><a href="class_p_s_c___service.html#a13c75bef0649759d6252806ab5f87aa7">PSC_Service::PSC_Service_shutdownUnlock</a></div><div class="ttdeci">void PSC_Service_shutdownUnlock(void)</div><div class="ttdoc">Allow shutdown to continue.</div></div>
 <div class="ttc" id="aclass_p_s_c___service_html_a17e2c881aa49769dc9e2bd40dd78bcad"><div class="ttname"><a href="class_p_s_c___service.html#a17e2c881aa49769dc9e2bd40dd78bcad">PSC_Service::PSC_Service_unregisterPanic</a></div><div class="ttdeci">void PSC_Service_unregisterPanic(PSC_PanicHandler handler)</div><div class="ttdoc">Unregister a panic handler.</div></div>
 <div class="ttc" id="aclass_p_s_c___service_html_a1c005146623534a921c7189b663669b1"><div class="ttname"><a href="class_p_s_c___service.html#a1c005146623534a921c7189b663669b1">PSC_Service::PSC_Service_unregisterWrite</a></div><div class="ttdeci">void PSC_Service_unregisterWrite(int id)</div><div class="ttdoc">Unregister a file descriptor for write monitoring.</div></div>
@@ -207,7 +230,7 @@ $(document).ready(function(){initNavTree('service_8h_source.html',''); initResiz
 <div class="ttc" id="aclass_p_s_c___service_html_adf392855cf95193b46a4da549d3fc2f3"><div class="ttname"><a href="class_p_s_c___service.html#adf392855cf95193b46a4da549d3fc2f3">PSC_Service::PSC_Service_tick</a></div><div class="ttdeci">PSC_Event * PSC_Service_tick(void)</div><div class="ttdoc">The timer ticks.</div></div>
 <div class="ttc" id="aclass_p_s_c___service_html_ae7d1f83cfd355b5fa8cbcb27d8006024"><div class="ttname"><a href="class_p_s_c___service.html#ae7d1f83cfd355b5fa8cbcb27d8006024">PSC_Service::PSC_Service_setTickInterval</a></div><div class="ttdeci">int PSC_Service_setTickInterval(unsigned msec)</div><div class="ttdoc">Set the timer tick interval.</div></div>
 <div class="ttc" id="aclass_p_s_c___service_html_afdda6bf727166d7d65b0044664dfd7de"><div class="ttname"><a href="class_p_s_c___service.html#afdda6bf727166d7d65b0044664dfd7de">PSC_Service::PSC_Service_prestartup</a></div><div class="ttdeci">PSC_Event * PSC_Service_prestartup(void)</div><div class="ttdoc">The service is about to start.</div></div>
-<div class="ttc" id="aservice_8h_html_a8c64699d484aba164fa0ae7baedeb360"><div class="ttname"><a href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a></div><div class="ttdeci">void(* PSC_PanicHandler)(const char *msg)</div><div class="ttdoc">A handler for a service panic.</div><div class="ttdef"><b>Definition:</b> service.h:38</div></div>
+<div class="ttc" id="aservice_8h_html_a8c64699d484aba164fa0ae7baedeb360"><div class="ttname"><a href="service_8h.html#a8c64699d484aba164fa0ae7baedeb360">PSC_PanicHandler</a></div><div class="ttdeci">void(* PSC_PanicHandler)(const char *msg)</div><div class="ttdoc">A handler for a service panic.</div><div class="ttdef"><b>Definition:</b> service.h:47</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->

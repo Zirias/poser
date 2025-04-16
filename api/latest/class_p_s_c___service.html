@@ -125,6 +125,9 @@ Static Public Member Functions</h2></td></tr>
 <tr class="memitem:a76c5e97ed7e2c4d611890763b24de66d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#a76c5e97ed7e2c4d611890763b24de66d">PSC_Service_eventsDone</a> (void)</td></tr>
 <tr class="memdesc:a76c5e97ed7e2c4d611890763b24de66d"><td class="mdescLeft">&#160;</td><td class="mdescRight">All events for one loop iteration are processed.  <br /></td></tr>
 <tr class="separator:a76c5e97ed7e2c4d611890763b24de66d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0511fd25438c04f002401d680cdee819"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#a0511fd25438c04f002401d680cdee819">PSC_Service_childExited</a> (void)</td></tr>
+<tr class="memdesc:a0511fd25438c04f002401d680cdee819"><td class="mdescLeft">&#160;</td><td class="mdescRight">A child process terminated.  <br /></td></tr>
+<tr class="separator:a0511fd25438c04f002401d680cdee819"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac0104d814310d7997508f676c7c9597c"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___service.html#ac0104d814310d7997508f676c7c9597c">PSC_Service_isValidFd</a> (int id, const char *errortopic)</td></tr>
 <tr class="memdesc:ac0104d814310d7997508f676c7c9597c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check a file descriptor.  <br /></td></tr>
 <tr class="separator:ac0104d814310d7997508f676c7c9597c"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -174,6 +177,38 @@ Static Public Member Functions</h2></td></tr>
 <p>Status changes on file descriptors are published as events. It also offers a configurable periodic "tick" event and handles standard signals (SIGINT and SIGTERM) for termination.</p>
 <p>Finally, there's a panic function to quickly exit the loop and still give a chance for some (minimal) cleanup. </p>
 </div><h2 class="groupheader">Member Function Documentation</h2>
+<a id="a0511fd25438c04f002401d680cdee819" name="a0511fd25438c04f002401d680cdee819"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0511fd25438c04f002401d680cdee819">&#9670;&#160;</a></span>PSC_Service_childExited()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> * PSC_Service_childExited </td>
+          <td>(</td>
+          <td class="paramtype">void&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>A child process terminated. </p>
+<p>This event fires whenever a child process exits.</p>
+<p>The pid is used as the id for the event, so handlers must be registered for specific child processes.</p>
+<p>A <a class="el" href="class_p_s_c___e_a_child_exited.html" title="Event arguments for child exited events.">PSC_EAChildExited</a> object is passed as the event args, which allows to retrieve the pid as well as the exit status or the terminating signal.</p>
+<p>Note that there's no guarantee that an int (used as the event id) can hold all valid values of a pid_t (used for process ids), although this is normally the case in practice. To be really sure, double-check the pid from the event arguments when getting this event. </p>
+
+</div>
+</div>
 <a id="a76c5e97ed7e2c4d611890763b24de66d" name="a76c5e97ed7e2c4d611890763b24de66d"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a76c5e97ed7e2c4d611890763b24de66d">&#9670;&#160;</a></span>PSC_Service_eventsDone()</h2>
 

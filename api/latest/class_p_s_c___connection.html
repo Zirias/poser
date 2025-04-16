@@ -510,7 +510,7 @@ Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Remote name resolved. </p>
-<p>This event fires as soon as the name of the peer was successfully resolved.</p>
+<p>This event used to fire as soon as the name of the peer was resolved. It now fires immediately when a handler is registered on it, to retain backwards compatibility, although nothing was actually resolved.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___connection.html" title="A socket connection.">PSC_Connection</a> </td></tr>

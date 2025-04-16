@@ -7,5 +7,7 @@ var searchData=
   ['psc_5flogwriter_4',['PSC_LogWriter',['../log_8h.html#a1f392463fbff859b3ef8ea3cb6f93fe4',1,'log.h']]],
   ['psc_5fmessageendlocator_5',['PSC_MessageEndLocator',['../connection_8h.html#a4ee29c6c80f8fe484928f9a11b528e21',1,'connection.h']]],
   ['psc_5fpanichandler_6',['PSC_PanicHandler',['../service_8h.html#a8c64699d484aba164fa0ae7baedeb360',1,'service.h']]],
-  ['psc_5fthreadproc_7',['PSC_ThreadProc',['../threadpool_8h.html#a7afc2d5920328dd2c3f82b5c7cb9c31f',1,'threadpool.h']]]
+  ['psc_5fprocessmain_7',['PSC_ProcessMain',['../process_8h.html#a4a43793d027e0de203da76cfbf60819d',1,'process.h']]],
+  ['psc_5fstreamcallback_8',['PSC_StreamCallback',['../process_8h.html#a7214376becec1656ad0d3d28d1d45191',1,'process.h']]],
+  ['psc_5fthreadproc_9',['PSC_ThreadProc',['../threadpool_8h.html#a7afc2d5920328dd2c3f82b5c7cb9c31f',1,'threadpool.h']]]
 ];
