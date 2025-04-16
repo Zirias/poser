@@ -48,6 +48,13 @@ typedef struct WriteNotifyRecord
     uint16_t wrbufpos;
 } WriteNotifyRecord;
 
+typedef enum ConectionType
+{
+    CT_SOCKET,
+    CT_PIPERD,
+    CT_PIPEWR
+} ConnectionType;
+
 struct PSC_Connection
 {
     PSC_MessageEndLocator rdlocator;
@@ -86,6 +93,7 @@ struct PSC_Connection
     int tls_noverify;
 #endif
     int blacklisthits;
+    ConnectionType type;
     uint16_t wrbuflen;
     uint16_t wrbufpos;
     uint8_t deleteScheduled;
@@ -449,25 +457,29 @@ static const char *locateeol(const char *str)
 
 static void raisereceivedevents(PSC_Connection *self)
 {
+    uint8_t *rdbuf;
+    if (self->type == CT_PIPERD) rdbuf = self->wrbuf;
+    else rdbuf = self->rdbuf;
+
     while (!self->args.handling && self->rdbufused)
     {
 	if (self->rdtextsave)
 	{
-	    self->rdbuf[self->rdbufpos] = self->rdtextsave;
+	    rdbuf[self->rdbufpos] = self->rdtextsave;
 	    self->rdtextsave = 0;
 	}
 	size_t len = 0;
 	if (self->rdlocator)
 	{
 	    while (self->rdbufpos < self->rdbufused &&
-		    !self->rdbuf[self->rdbufpos]) ++self->rdbufpos;
+		    !rdbuf[self->rdbufpos]) ++self->rdbufpos;
 	    if (self->rdbufpos == self->rdbufused)
 	    {
 		self->rdbufused = 0;
 		self->rdbufpos = 0;
 		break;
 	    }
-	    char *str = (char *)(self->rdbuf + self->rdbufpos);
+	    char *str = (char *)(rdbuf + self->rdbufpos);
 	    const char *end = self->rdlocator(str);
 	    if (end)
 	    {
@@ -497,7 +509,7 @@ static void raisereceivedevents(PSC_Connection *self)
 	    }
 	    else len = self->rdbufused - self->rdbufpos;
 	    self->args.size = len;
-	    self->args.buf = self->rdbuf + self->rdbufpos;
+	    self->args.buf = rdbuf + self->rdbufpos;
 	    self->args.text = 0;
 	}
 	PSC_Event_raise(self->dataReceived, 0, &self->args);
@@ -511,11 +523,11 @@ static void raisereceivedevents(PSC_Connection *self)
     if (self->rdbufused && (self->rdlocator
 		|| (self->rdbufused - self->rdbufpos) < self->rdexpect))
     {
-	memmove(self->rdbuf, self->rdbuf + self->rdbufpos,
+	memmove(rdbuf, rdbuf + self->rdbufpos,
 		self->rdbufused - self->rdbufpos);
 	self->rdbufused -= self->rdbufpos;
 	self->rdbufpos = 0;
-	self->rdbuf[self->rdbufused] = 0;
+	rdbuf[self->rdbufused] = 0;
     }
 }
 
@@ -573,12 +585,16 @@ static void doread(PSC_Connection *self)
 #endif
     {
 	errno = 0;
-	ssize_t rc = read(self->fd, self->rdbuf + self->rdbufused,
+	uint8_t *rdbuf;
+	if (self->type == CT_PIPERD) rdbuf = self->wrbuf;
+	else rdbuf = self->rdbuf;
+
+	ssize_t rc = read(self->fd, rdbuf + self->rdbufused,
 		self->rdbufsz - self->rdbufused);
 	if (rc > 0)
 	{
 	    self->rdbufused += rc;
-	    self->rdbuf[self->rdbufused] = 0;
+	    rdbuf[self->rdbufused] = 0;
 	    raisereceivedevents(self);
 	    wantreadwrite(self);
 	}
@@ -644,7 +660,27 @@ static void deleteConnection(void *receiver, void *sender, void *args)
 
 SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 {
-    PSC_Connection *self = PSC_malloc(sizeof *self + opts->rdbufsz + 1);
+    PSC_Connection *self;
+
+    ConnectionType type = CT_SOCKET;
+    if (opts->createmode == CCM_PIPERD) type = CT_PIPERD;
+    else if (opts->createmode == CCM_PIPEWR) type = CT_PIPEWR;
+    size_t connsz = sizeof *self;
+    switch (type)
+    {
+	case CT_SOCKET:
+	    connsz += opts->rdbufsz + 1;
+	    break;
+
+	case CT_PIPERD:
+	    connsz = connsz - WRBUFSZ + opts->rdbufsz + 1;
+	    break;
+
+	default:
+	    break;
+    }
+
+    self = PSC_malloc(connsz);
     self->rdlocator = 0;
     self->connected = PSC_Event_create(self);
     self->closed = PSC_Event_create(self);
@@ -709,6 +745,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->tls_noverify = opts->tls_noverify;
 #endif
     self->blacklisthits = opts->blacklisthits;
+    self->type = type;
     self->args.handling = 0;
     self->deleteScheduled = 0;
     self->wrbuflen = 0;
@@ -716,9 +753,18 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->nrecs = 0;
     self->nnotify = 0;
     self->rdtextsave = 0;
-    self->rdbuf[self->rdbufsz] = 0; // for receiving in text mode
-    PSC_Event_register(PSC_Service_readyRead(), self, readConnection, fd);
-    PSC_Event_register(PSC_Service_readyWrite(), self, writeConnection, fd);
+    if (type != CT_PIPEWR)
+    {
+	uint8_t *rdbuf = type == CT_PIPERD ? self->wrbuf : self->rdbuf;
+	rdbuf[self->rdbufsz] = 0; // for receiving in text mode
+	PSC_Event_register(PSC_Service_readyRead(), self,
+		readConnection, fd);
+    }
+    if (type != CT_PIPERD)
+    {
+	PSC_Event_register(PSC_Service_readyWrite(), self,
+		writeConnection, fd);
+    }
     if (opts->createmode == CCM_CONNECTING)
     {
 	self->connecting = CONNTICKS;
@@ -774,6 +820,7 @@ SOEXPORT const PSC_IpAddr *PSC_Connection_remoteIpAddr(
 
 SOEXPORT const char *PSC_Connection_remoteAddr(const PSC_Connection *self)
 {
+    if (self->type == CT_PIPERD || self->type == CT_PIPEWR) return "pipe";
     if (self->ipAddr) return PSC_IpAddr_string(self->ipAddr);
     if (!self->addr) return "<unknown>";
     return self->addr;
@@ -842,6 +889,7 @@ SOLOCAL void PSC_Connection_setRemoteAddrStr(PSC_Connection *self,
 SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
 {
+    if (self->type == CT_PIPERD) return -1;
     if (self->nrecs == NWRITERECS)
     {
 	PSC_Log_fmt(PSC_L_DEBUG, "connection: send queue overflow to %s",

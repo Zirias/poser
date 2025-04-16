@@ -21,7 +21,9 @@
 typedef enum ConnectionCreateMode
 {
     CCM_NORMAL,
-    CCM_CONNECTING
+    CCM_CONNECTING,
+    CCM_PIPERD,
+    CCM_PIPEWR
 } ConnectionCreateMode;
 
 typedef enum TlsMode
