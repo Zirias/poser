@@ -1,5 +1,6 @@
 var annotated_dup =
 [
+    [ "PSC_AsyncTask", "class_p_s_c___async_task.html", "class_p_s_c___async_task" ],
     [ "PSC_Base64", "class_p_s_c___base64.html", null ],
     [ "PSC_CertInfo", "class_p_s_c___cert_info.html", "class_p_s_c___cert_info" ],
     [ "PSC_Connection", "class_p_s_c___connection.html", "class_p_s_c___connection" ],

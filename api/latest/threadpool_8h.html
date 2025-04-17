@@ -107,10 +107,35 @@ Typedefs</h2></td></tr>
 <tr class="memitem:a7afc2d5920328dd2c3f82b5c7cb9c31f"><td class="memItemLeft" align="right" valign="top">typedef void(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="threadpool_8h.html#a7afc2d5920328dd2c3f82b5c7cb9c31f">PSC_ThreadProc</a>) (void *arg)</td></tr>
 <tr class="memdesc:a7afc2d5920328dd2c3f82b5c7cb9c31f"><td class="mdescLeft">&#160;</td><td class="mdescRight">A function to run on a worker thread.  <br /></td></tr>
 <tr class="separator:a7afc2d5920328dd2c3f82b5c7cb9c31f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a397b3fb1f91bab68cdc2e73f4418ed3b"><td class="memItemLeft" align="right" valign="top">typedef void(*&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="threadpool_8h.html#a397b3fb1f91bab68cdc2e73f4418ed3b">PSC_AsyncTaskJob</a>) (<a class="el" href="class_p_s_c___async_task.html">PSC_AsyncTask</a> *task)</td></tr>
+<tr class="memdesc:a397b3fb1f91bab68cdc2e73f4418ed3b"><td class="mdescLeft">&#160;</td><td class="mdescRight">A function to run for completing an asynchronous task.  <br /></td></tr>
+<tr class="separator:a397b3fb1f91bab68cdc2e73f4418ed3b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>declarations for the <a class="el" href="class_p_s_c___thread_pool.html" title="A thread pool.">PSC_ThreadPool</a> and related classes </p>
 </div><h2 class="groupheader">Typedef Documentation</h2>
+<a id="a397b3fb1f91bab68cdc2e73f4418ed3b" name="a397b3fb1f91bab68cdc2e73f4418ed3b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a397b3fb1f91bab68cdc2e73f4418ed3b">&#9670;&#160;</a></span>PSC_AsyncTaskJob</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef void(* PSC_AsyncTaskJob) (<a class="el" href="class_p_s_c___async_task.html">PSC_AsyncTask</a> *task)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>A function to run for completing an asynchronous task. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">task</td><td>the task to complete </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
 <a id="a7afc2d5920328dd2c3f82b5c7cb9c31f" name="a7afc2d5920328dd2c3f82b5c7cb9c31f"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a7afc2d5920328dd2c3f82b5c7cb9c31f">&#9670;&#160;</a></span>PSC_ThreadProc</h2>
 
