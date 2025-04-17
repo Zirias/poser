@@ -15,6 +15,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef HAVE_UCONTEXT
+#  include <poser/core/list.h>
+#  include <poser/core/queue.h>
+#  include <ucontext.h>
+#endif
+
 #if defined(__linux__) || defined(__FreeBSD__)
 #include <threads.h>
 #define THREADLOCAL thread_local
@@ -51,9 +57,14 @@ struct PSC_ThreadJob
     PSC_ThreadProc proc;
     void *arg;
     PSC_Event *finished;
+    PSC_AsyncTask *task;
     const char *panicmsg;
     int hasCompleted;
     int timeoutTicks;
+#ifdef HAVE_UCONTEXT
+    ucontext_t caller;
+    char stack[64*1024];
+#endif
 };
 
 typedef struct PSC_ThreadOpts
@@ -71,13 +82,32 @@ typedef struct PSC_ThreadOpts
 typedef struct Thread
 {
     PSC_ThreadJob *job;
+#ifdef HAVE_UCONTEXT
+    PSC_Queue *finishedTasks;
+    PSC_List *waitingTasks;
+#endif
     pthread_t handle;
     pthread_mutex_t lock;
     sem_t start;
     sem_t cancel;
     int pipefd[2];
     int stoprq;
+#ifdef HAVE_UCONTEXT
+    ucontext_t context;
+#endif
 } Thread;
+
+struct PSC_AsyncTask
+{
+    PSC_AsyncTaskJob job;
+    PSC_ThreadJob *threadJob;
+    Thread *thread;
+    void *arg;
+    void *result;
+#ifdef HAVE_UCONTEXT
+    ucontext_t resume;
+#endif
+};
 
 static PSC_ThreadOpts opts;
 static Thread *threads;
@@ -111,6 +141,13 @@ static void workerInterrupt(int signum)
     (void) signum;
 }
 
+#ifdef HAVE_UCONTEXT
+static void runThreadJob(void)
+{
+    currentThread->job->proc(currentThread->job->arg);
+}
+#endif
+
 static void *worker(void *arg)
 {
     Thread *t = arg;
@@ -132,7 +169,26 @@ static void *worker(void *arg)
 	sem_getvalue(&t->cancel, &iscanceled);
 	if (iscanceled) sem_trywait(&t->cancel);
 	if (t->stoprq) break;
-	if (!setjmp(panicjmp)) t->job->proc(t->job->arg);
+	if (!setjmp(panicjmp))
+	{
+#ifdef HAVE_UCONTEXT
+	    if (t->job->task)
+	    {
+		swapcontext(&t->job->caller, &t->job->task->resume);
+	    }
+	    else
+	    {
+		getcontext(&t->context);
+		t->context.uc_stack.ss_sp = t->job->stack;
+		t->context.uc_stack.ss_size = sizeof t->job->stack;
+		t->context.uc_link = &t->job->caller;
+		makecontext(&t->context, runThreadJob, 0);
+		swapcontext(&t->job->caller, &t->context);
+	    }
+#else
+	    t->job->proc(t->job->arg);
+#endif
+	}
 	else t->job->panicmsg = panicmsg;
 	if (write(t->pipefd[1], "0", 1) < 1)
 	{
@@ -153,6 +209,7 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
     self->proc = proc;
     self->arg = arg;
     self->finished = PSC_Event_create(self);
+    self->task = 0;
     self->panicmsg = 0;
     self->timeoutTicks = timeoutTicks;
     self->hasCompleted = 1;
@@ -183,6 +240,62 @@ SOEXPORT int PSC_ThreadJob_canceled(void)
     return rc;
 }
 
+SOEXPORT PSC_AsyncTask *PSC_AsyncTask_create(PSC_AsyncTaskJob job)
+{
+    PSC_AsyncTask *self = PSC_malloc(sizeof *self);
+    self->job = job;
+    self->threadJob = 0;
+    self->thread = 0;
+    self->arg = 0;
+    self->result = 0;
+    return self;
+}
+
+SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
+{
+    self->thread = currentThread;
+    self->threadJob = currentThread->job;
+    self->threadJob->task = self;
+    self->arg = arg;
+
+#ifdef HAVE_UCONTEXT
+    swapcontext(&self->resume, &self->threadJob->caller);
+#else
+    if (write(currentThread->pipefd[1], "0", 1) < 1) goto out;
+    pthread_mutex_unlock(&currentThread->lock);
+    sem_wait(&currentThread->start);
+    pthread_mutex_lock(&currentThread->lock);
+out:;
+#endif
+    void *result = self->result;
+    self->threadJob->task = 0;
+    free(self);
+    return result;
+}
+
+SOEXPORT void *PSC_AsyncTask_arg(PSC_AsyncTask *self)
+{
+    return self->arg;
+}
+
+SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
+{
+    self->result = result;
+#ifdef HAVE_UCONTEXT
+    if (self->thread->job)
+    {
+	PSC_Queue_enqueue(self->thread->finishedTasks, self->threadJob, 0);
+	return;
+    }
+    PSC_List_remove(self->thread->waitingTasks, self->threadJob);
+    startThreadJob(self->thread, self->threadJob);
+#else
+    pthread_mutex_lock(&self->thread->lock);
+    sem_post(&self->thread->start);
+    pthread_mutex_unlock(&self->thread->lock);
+#endif
+}
+
 static void stopThreads(int nthr)
 {
     for (int i = 0; i < nthr; ++i)
@@ -204,6 +317,10 @@ static void stopThreads(int nthr)
 	sem_destroy(&threads[i].cancel);
 	sem_destroy(&threads[i].start);
 	pthread_mutex_destroy(&threads[i].lock);
+#ifdef HAVE_UCONTEXT
+	PSC_List_destroy(threads[i].waitingTasks);
+	PSC_Queue_destroy(threads[i].finishedTasks);
+#endif
     }
 }
 
@@ -239,11 +356,21 @@ static PSC_ThreadJob *dequeueJob(void)
 
 static Thread *availableThread(void)
 {
+    Thread *fallback = 0;
     for (int i = 0; i < nthreads; ++i)
     {
-	if (!threads[i].job) return threads+i;
+	if (threads[i].job) continue;
+#ifdef HAVE_UCONTEXT
+	if (PSC_List_size(threads[i].waitingTasks) > 0)
+	{
+	    if (!fallback) fallback = threads+i;
+	}
+	else return threads+i;
+#else
+	return threads+i;
+#endif
     }
-    return 0;
+    return fallback;
 }
 
 static void startThreadJob(Thread *t, PSC_ThreadJob *j)
@@ -287,12 +414,34 @@ static void threadJobDone(void *receiver, void *sender, void *args)
 	pthread_mutex_unlock(&t->lock);
 	PSC_Service_panic(msg);
     }
-    PSC_Event_raise(t->job->finished, 0, t->job->arg);
-    PSC_ThreadJob_destroy(t->job);
+    PSC_AsyncTask *task = t->job->task;
+    if (task)
+    {
+#ifdef HAVE_UCONTEXT
+	PSC_List_append(t->waitingTasks, t->job, 0);
+#else
+	pthread_mutex_unlock(&t->lock);
+	PSC_Service_registerRead(t->pipefd[0]);
+	task->job(task);
+	return;
+#endif
+    }
+    else
+    {
+	PSC_Event_raise(t->job->finished, 0, t->job->arg);
+	PSC_ThreadJob_destroy(t->job);
+    }
     t->job = 0;
     pthread_mutex_unlock(&t->lock);
+#ifdef HAVE_UCONTEXT
+    PSC_ThreadJob *next = PSC_Queue_dequeue(t->finishedTasks);
+    if (next) PSC_List_remove(t->waitingTasks, next);
+    else next = dequeueJob();
+#else
     PSC_ThreadJob *next = dequeueJob();
+#endif
     if (next) startThreadJob(t, next);
+    if (task) task->job(task);
 }
 
 static void checkThreadJobs(void *receiver, void *sender, void *args)
@@ -461,6 +610,10 @@ SOEXPORT int PSC_ThreadPool_init(void)
 		    threadJobDone, threads[i].pipefd[0]);
 	    goto rollback_pipe;
 	}
+#ifdef HAVE_UCONTEXT
+	threads[i].waitingTasks = PSC_List_create();
+	threads[i].finishedTasks = PSC_Queue_create();
+#endif
 	continue;
 
 rollback_pipe:

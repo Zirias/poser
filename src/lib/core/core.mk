@@ -1,4 +1,4 @@
-posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM XXHX86
+posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM UCONTEXT XXHX86
 ACCEPT4_FUNC=			accept4
 ACCEPT4_CFLAGS=			-D_GNU_SOURCE
 ACCEPT4_HEADERS=		sys/types.h sys/socket.h
@@ -12,6 +12,8 @@ GETRANDOM_FUNC=			getrandom
 GETRANDOM_HEADERS=		sys/random.h
 GETRANDOM_RETURN=		ssize_t
 GETRANDOM_ARGS=			void *, size_t, unsigned
+UCONTEXT_TYPE=			ucontext_t
+UCONTEXT_HEADERS=		ucontext.h
 XXHX86_FUNC=			XXH_featureTest
 XXHX86_CFLAGS=			-I./$(posercore_SRCDIR)/contrib/xxHash
 XXHX86_HEADERS=			xxh_x86dispatch.c
@@ -156,7 +158,7 @@ ifeq ($(WITH_KQUEUE),1)
 endif
 
 ifneq ($(posercore_HAVE_ACCEPT4),1)
-define posercore_warn
+define posercore_warn_accept4
 **WARNING**
 
 GNU-style accept4() API not detected, falling back to non-atomic
@@ -165,5 +167,18 @@ configuration of socket file descriptors.
 This introduces a small risk to leak sockets to child processes!
 
 endef
-$(warning $(posercore_warn))
+$(warning $(posercore_warn_accept4))
+endif
+
+ifneq ($(posercore_HAVE_UCONTEXT),1)
+define posercore_warn_ucontext
+**WARNING**
+
+User context switching (<ucontext.h>) not detected. Awaiting a PSC_AsyncTask
+will therefore block the thread doing this until the task is completed.
+
+This might affect performance of applications using this feature.
+
+endef
+$(warning $(posercore_warn_ucontext))
 endif
