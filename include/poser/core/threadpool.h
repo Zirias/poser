@@ -117,6 +117,7 @@ PSC_AsyncTask_create(PSC_AsyncTaskJob job);
 /** Wait for completion of an async task.
  * @memberof PSC_AsyncTask
  * @param self the PSC_AsyncTask
+ * @param arg an optional argument to pass to the async task
  * @returns the result given to PSC_AsyncTask_complete()
  */
 DECLEXPORT void *
