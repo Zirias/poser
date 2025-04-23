@@ -175,6 +175,11 @@ static void prepareChild(const PSC_StreamAction *actions, int (*pipefd)[2],
 	}
     }
     if (nullfd >= 0) close(nullfd);
+
+    sigset_t allsigs;
+    sigfillset(&allsigs);
+    sigprocmask(SIG_UNBLOCK, &allsigs, 0);
+
     return;
 
 fail:
