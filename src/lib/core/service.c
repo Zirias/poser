@@ -646,10 +646,20 @@ static const char *eventBackendInfo(void)
 static int processEvents(sigset_t *sigmask)
 {
     int prc = 0;
-    if (!shutdownRequest) prc = ppoll(fds, nfds, 0, sigmask);
+    int pollerr = 0;
+    sigset_t origmask;
+    if (!shutdownRequest)
+    {
+	pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+	errno = 0;
+	prc = poll(fds, nfds, -1);
+	pollerr = errno;
+	pthread_sigmask(SIG_SETMASK, &origmask, 0);
+    }
     if (!handleSigFlags() && prc < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "ppoll() failed");
+	if (pollerr == EINTR) return 0;
+	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
 	return -1;
     }
     for (size_t i = 0; prc > 0 && i < nfds; ++i)
