@@ -541,7 +541,7 @@ static int handleSigFlags(void)
 	PSC_EAChildExited ea;
 	int status;
 	pid_t pid;
-	while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) >= 0)
+	while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0)
 	{
 	    ea.pid = pid;
 	    if (WIFEXITED(status))
