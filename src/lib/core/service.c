@@ -9,6 +9,7 @@
 #include <poser/core/daemon.h>
 #include <poser/core/threadpool.h>
 
+#include <errno.h>
 #include <grp.h>
 #include <setjmp.h>
 #include <stdlib.h>
