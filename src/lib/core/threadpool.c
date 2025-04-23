@@ -4,6 +4,7 @@
 #include <poser/core/log.h>
 #include <poser/core/service.h>
 #include <poser/core/threadpool.h>
+#include <poser/core/timer.h>
 #include <poser/core/util.h>
 
 #include <errno.h>
@@ -57,6 +58,7 @@ struct PSC_ThreadJob
     PSC_ThreadProc proc;
     void *arg;
     PSC_Event *finished;
+    PSC_Timer *timeout;
     PSC_AsyncTask *task;
     const char *panicmsg;
     int hasCompleted;
@@ -125,7 +127,6 @@ static THREADLOCAL const char *panicmsg;
 static THREADLOCAL Thread *currentThread;
 
 static Thread *availableThread(void);
-static void checkThreadJobs(void *receiver, void *sender, void *args);
 static PSC_ThreadJob *dequeueJob(void);
 static int enqueueJob(PSC_ThreadJob *job) ATTR_NONNULL((1));
 static void panicHandler(const char *msg) ATTR_NONNULL((1));
@@ -209,6 +210,7 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
     self->proc = proc;
     self->arg = arg;
     self->finished = PSC_Event_create(self);
+    self->timeout = 0;
     self->task = 0;
     self->panicmsg = 0;
     self->timeoutTicks = timeoutTicks;
@@ -229,12 +231,14 @@ SOEXPORT int PSC_ThreadJob_hasCompleted(const PSC_ThreadJob *self)
 SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 {
     if (!self) return;
+    PSC_Timer_destroy(self->timeout);
     PSC_Event_destroy(self->finished);
     free(self);
 }
 
 SOEXPORT int PSC_ThreadJob_canceled(void)
 {
+    if (!currentThread->job->hasCompleted) return 1;
     int rc = 0;
     sem_getvalue(&currentThread->cancel, &rc);
     return rc;
@@ -290,6 +294,12 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
     PSC_List_remove(self->thread->waitingTasks, self->threadJob);
     startThreadJob(self->thread, self->threadJob);
 #else
+    if (self->threadJob->timeout)
+    {
+	PSC_Timer_setMs(self->threadJob->timeout,
+		500 * self->threadJob->timeoutTicks);
+	PSC_Timer_start(self->threadJob->timeout);
+    }
     pthread_mutex_lock(&self->thread->lock);
     sem_post(&self->thread->start);
     pthread_mutex_unlock(&self->thread->lock);
@@ -373,6 +383,14 @@ static Thread *availableThread(void)
     return fallback;
 }
 
+static void jobTimeout(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_ThreadPool_cancel(receiver);
+}
+
 static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 {
     if (pthread_kill(t->handle, 0) == ESRCH)
@@ -385,6 +403,17 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 	    PSC_Service_quit();
 	}
 	return;
+    }
+    if (j->timeoutTicks)
+    {
+	if (!j->timeout)
+	{
+	    j->timeout = PSC_Timer_create();
+	    PSC_Event_register(PSC_Timer_expired(j->timeout), j,
+		    jobTimeout, 0);
+	}
+	PSC_Timer_setMs(j->timeout, 500 * j->timeoutTicks);
+	PSC_Timer_start(j->timeout, 0);
     }
     pthread_mutex_lock(&t->lock);
     t->job = j;
@@ -399,6 +428,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     (void)args;
 
     Thread *t = receiver;
+    if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
     PSC_Service_unregisterRead(t->pipefd[0]);
     char buf[2];
     if (read(t->pipefd[0], buf, sizeof buf) <= 0)
@@ -442,23 +472,6 @@ static void threadJobDone(void *receiver, void *sender, void *args)
 #endif
     if (next) startThreadJob(t, next);
     if (task) task->job(task);
-}
-
-static void checkThreadJobs(void *receiver, void *sender, void *args)
-{
-    (void)receiver;
-    (void)sender;
-    (void)args;
-
-    for (int i = 0; i < nthreads; ++i)
-    {
-	if (threads[i].job && threads[i].job->timeoutTicks
-		&& !--threads[i].job->timeoutTicks)
-	{
-	    pthread_kill(threads[i].handle, SIGUSR1);
-	    threads[i].job->hasCompleted = 0;
-	}
-    }
 }
 
 static void panicHandler(const char *msg)
@@ -630,7 +643,6 @@ rollback:
 	goto done;
     }
     rc = 0;
-    PSC_Event_register(PSC_Service_tick(), 0, checkThreadJobs, 0);
     queueAvail = queuesize;
     nextIdx = 0;
     lastIdx = 0;
@@ -686,13 +698,15 @@ SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 
 SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 {
+    job->hasCompleted = 0;
+    if (job->task) return;
+
     if (threads)
     {
 	for (int i = 0; i < nthreads; ++i)
 	{
 	    if (threads[i].job == job)
 	    {
-		threads[i].job->hasCompleted = 0;
 		sem_post(&threads[i].cancel);
 		pthread_kill(threads[i].handle, SIGUSR1);
 		return;
@@ -706,7 +720,6 @@ SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 	{
 	    if (jobQueue[i] == job)
 	    {
-		job->hasCompleted = 0;
 		PSC_Event_raise(job->finished, 0, job->arg);
 		PSC_ThreadJob_destroy(job);
 		jobQueue[i] = 0;
