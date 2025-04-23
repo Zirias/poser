@@ -8,6 +8,10 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        tls: [on, off]
+        no_epoll: [off, on, on WITH_POLL=on]
     runs-on: ubuntu-latest
     env:
       CI_CFLAGS: -O2 -std=c11 -Wall -Wextra -Wshadow -Werror -pedantic
@@ -16,4 +20,6 @@ jobs:
     - name: submodules
       run: git submodule update --init
     - name: make
-      run: make -j4 CFLAGS="${CI_CFLAGS}"
+      run: >-
+        make -j CFLAGS="${CI_CFLAGS}" WITH_TLS=${{matrix.tls}}
+        WITHOUT_EPOLL=${{matrix.no_epoll}}
