@@ -108,6 +108,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:aca14bde98eb0be34cc268632148739aa"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___thread_job.html">PSC_ThreadJob</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___thread_job.html#aca14bde98eb0be34cc268632148739aa">PSC_ThreadJob_create</a> (<a class="el" href="threadpool_8h.html#a7afc2d5920328dd2c3f82b5c7cb9c31f">PSC_ThreadProc</a> proc, void *arg, int timeoutTicks)</td></tr>
 <tr class="memdesc:aca14bde98eb0be34cc268632148739aa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a new thread job.  <br /></td></tr>
 <tr class="separator:aca14bde98eb0be34cc268632148739aa"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af6159920254d0f1be80cd0de4c2f61fc"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___thread_job.html#af6159920254d0f1be80cd0de4c2f61fc">PSC_ThreadJob_setStackSize</a> (<a class="el" href="class_p_s_c___thread_job.html">PSC_ThreadJob</a> *self, size_t stackSize)</td></tr>
+<tr class="memdesc:af6159920254d0f1be80cd0de4c2f61fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure the stack size for a thread job.  <br /></td></tr>
+<tr class="separator:af6159920254d0f1be80cd0de4c2f61fc"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4bf698da47d1057ffdd88cce5af7a855"><td class="memItemLeft" align="right" valign="top"><a class="el" href="class_p_s_c___event.html">PSC_Event</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___thread_job.html#a4bf698da47d1057ffdd88cce5af7a855">PSC_ThreadJob_finished</a> (<a class="el" href="class_p_s_c___thread_job.html">PSC_ThreadJob</a> *self)</td></tr>
 <tr class="memdesc:a4bf698da47d1057ffdd88cce5af7a855"><td class="mdescLeft">&#160;</td><td class="mdescRight">The job finished.  <br /></td></tr>
 <tr class="separator:a4bf698da47d1057ffdd88cce5af7a855"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -190,12 +193,12 @@ Static Public Member Functions</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Create a new thread job. </p>
-<p>Creates a new job to be executed on a worker thread.</p>
+<p>Creates a new job to be executed on a worker thread. Unless the library was built on a system without POSIX user context switching support, the job executes on its own private stack with a default size of 64 kiB. If that is not enough for the job, make sure to configure a suitable size with <a class="el" href="class_p_s_c___thread_job.html#af6159920254d0f1be80cd0de4c2f61fc" title="Configure the stack size for a thread job.">PSC_ThreadJob_setStackSize()</a> before scheduling the job to avoid stack overflow crashes.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
     <tr><td class="paramname">proc</td><td>the function to run on the worker thread </td></tr>
     <tr><td class="paramname">arg</td><td>the data to work on </td></tr>
-    <tr><td class="paramname">timeoutTicks</td><td>if non-zero, automatically cancel the job after this many PSC_Service_tick() events </td></tr>
+    <tr><td class="paramname">timeoutTicks</td><td>if non-zero, automatically cancel the job after this many "ticks" (multiples of 500ms) </td></tr>
   </table>
   </dd>
 </dl>
@@ -284,6 +287,45 @@ Static Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>1 if the job completed, 0 otherwise </dd></dl>
+
+</div>
+</div>
+<a id="af6159920254d0f1be80cd0de4c2f61fc" name="af6159920254d0f1be80cd0de4c2f61fc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af6159920254d0f1be80cd0de4c2f61fc">&#9670;&#160;</a></span>PSC_ThreadJob_setStackSize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void PSC_ThreadJob_setStackSize </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="class_p_s_c___thread_job.html">PSC_ThreadJob</a> *&#160;</td>
+          <td class="paramname"><em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_t&#160;</td>
+          <td class="paramname"><em>stackSize</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure the stack size for a thread job. </p>
+<p>Configures the size of the private stack for executing this thread job. When set to 0, awaiting a <a class="el" href="class_p_s_c___async_task.html" title="An asynchronous task a thread job can wait for.">PSC_AsyncTask</a> on this job will block the worker thread it is running on. When the library was built on a system without POSIX user context switching support, the stack size is always 0 and this call is silently ignored.</p>
+<p>The default size is 64 kiB (64 * 1024), unless user context switching is not available.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">self</td><td>the <a class="el" href="class_p_s_c___thread_job.html" title="A job to be executed on a worker thread.">PSC_ThreadJob</a> </td></tr>
+    <tr><td class="paramname">stackSize</td><td>the desired stack size in bytes </td></tr>
+  </table>
+  </dd>
+</dl>
 
 </div>
 </div>

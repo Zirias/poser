@@ -92,6 +92,7 @@ $(document).ready(function(){initNavTree('class_p_s_c___async_task.html',''); in
 <div class="header">
   <div class="summary">
 <a href="#pub-methods">Public Member Functions</a> &#124;
+<a href="#pub-static-methods">Static Public Member Functions</a> &#124;
 <a href="class_p_s_c___async_task-members.html">List of all members</a>  </div>
   <div class="headertitle"><div class="title">PSC_AsyncTask Class Reference</div></div>
 </div><!--header-->
@@ -116,6 +117,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a7f024fd1d144f4174da25d862e2b14f0"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___async_task.html#a7f024fd1d144f4174da25d862e2b14f0">PSC_AsyncTask_complete</a> (<a class="el" href="class_p_s_c___async_task.html">PSC_AsyncTask</a> *self, void *result)</td></tr>
 <tr class="memdesc:a7f024fd1d144f4174da25d862e2b14f0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Complete an async task.  <br /></td></tr>
 <tr class="separator:a7f024fd1d144f4174da25d862e2b14f0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:a0b68805d893a5738d98adf854c7d4895"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="class_p_s_c___async_task.html#a0b68805d893a5738d98adf854c7d4895">PSC_AsyncTask_awaitIsBlocking</a> (void)</td></tr>
+<tr class="memdesc:a0b68805d893a5738d98adf854c7d4895"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check whether <a class="el" href="class_p_s_c___async_task.html#af6cdb1a2af7cacd9536f9db620b23a42" title="Wait for completion of an async task.">PSC_AsyncTask_await()</a> will block.  <br /></td></tr>
+<tr class="separator:a0b68805d893a5738d98adf854c7d4895"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>An asynchronous task a thread job can wait for. </p>
@@ -185,6 +192,36 @@ Public Member Functions</h2></td></tr>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>the result given to <a class="el" href="class_p_s_c___async_task.html#a7f024fd1d144f4174da25d862e2b14f0" title="Complete an async task.">PSC_AsyncTask_complete()</a> </dd></dl>
+
+</div>
+</div>
+<a id="a0b68805d893a5738d98adf854c7d4895" name="a0b68805d893a5738d98adf854c7d4895"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0b68805d893a5738d98adf854c7d4895">&#9670;&#160;</a></span>PSC_AsyncTask_awaitIsBlocking()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int PSC_AsyncTask_awaitIsBlocking </td>
+          <td>(</td>
+          <td class="paramtype">void&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Check whether <a class="el" href="class_p_s_c___async_task.html#af6cdb1a2af7cacd9536f9db620b23a42" title="Wait for completion of an async task.">PSC_AsyncTask_await()</a> will block. </p>
+<p>This method tells at runtime whether awaiting a <a class="el" href="class_p_s_c___async_task.html" title="An asynchronous task a thread job can wait for.">PSC_AsyncTask</a> will always block the worker thread (which is the case on systems without support for POSIX user context switching), or only when the job's stack size is set to zero. It may be used to configure a suitable number of worker threads per CPU.</p>
+<dl class="section return"><dt>Returns</dt><dd>1 if <a class="el" href="class_p_s_c___async_task.html#af6cdb1a2af7cacd9536f9db620b23a42" title="Wait for completion of an async task.">PSC_AsyncTask_await()</a> always blocks, 0 if it only blocks when a stack size of 0 is configured. </dd></dl>
 
 </div>
 </div>
