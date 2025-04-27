@@ -49,17 +49,39 @@ typedef void (*PSC_ThreadProc)(void *arg);
 typedef void (*PSC_AsyncTaskJob)(PSC_AsyncTask *task);
 
 /** Create a new thread job.
- * Creates a new job to be executed on a worker thread.
+ * Creates a new job to be executed on a worker thread. Unless the library was
+ * built on a system without POSIX user context switching support, the job
+ * executes on its own private stack with a default size of 64 kiB. If that
+ * is not enough for the job, make sure to configure a suitable size with
+ * PSC_ThreadJob_setStackSize() before scheduling the job to avoid stack
+ * overflow crashes.
  * @memberof PSC_ThreadJob
  * @param proc the function to run on the worker thread
  * @param arg the data to work on
  * @param timeoutTicks if non-zero, automatically cancel the job after this
- *                     many PSC_Service_tick() events
+ *                     many "ticks" (multiples of 500ms)
  * @returns a newly created thread job
  */
 DECLEXPORT PSC_ThreadJob *
 PSC_ThreadJob_create(PSC_ThreadProc proc, void *arg, int timeoutTicks)
     ATTR_NONNULL((1)) ATTR_RETNONNULL;
+
+/** Configure the stack size for a thread job.
+ * Configures the size of the private stack for executing this thread job.
+ * When set to 0, awaiting a PSC_AsyncTask on this job will block the worker
+ * thread it is running on. When the library was built on a system without
+ * POSIX user context switching support, the stack size is always 0 and this
+ * call is silently ignored.
+ *
+ * The default size is 64 kiB (64 * 1024), unless user context switching is
+ * not available.
+ * @memberof PSC_ThreadJob
+ * @param self the PSC_ThreadJob
+ * @param stackSize the desired stack size in bytes
+ */
+DECLEXPORT void
+PSC_ThreadJob_setStackSize(PSC_ThreadJob *self, size_t stackSize)
+    ATTR_NONNULL((1));
 
 /** The job finished.
  * This event fires when the thread job finished, either because it completed
@@ -103,6 +125,20 @@ PSC_ThreadJob_destroy(PSC_ThreadJob *self);
  */
 DECLEXPORT int
 PSC_ThreadJob_canceled(void);
+
+/** Check whether PSC_AsyncTask_await() will block.
+ * This method tells at runtime whether awaiting a PSC_AsyncTask will always
+ * block the worker thread (which is the case on systems without support for
+ * POSIX user context switching), or only when the job's stack size is set to
+ * zero. It may be used to configure a suitable number of worker threads per
+ * CPU.
+ * @memberof PSC_AsyncTask
+ * @static
+ * @returns 1 if PSC_AsyncTask_await() always blocks, 0 if it only blocks when
+ *          a stack size of 0 is configured.
+ */
+DECLEXPORT int
+PSC_AsyncTask_awaitIsBlocking(void);
 
 /** PSC_AsyncTask default constructor.
  * Creates a new PSC_AsyncTask that will call the given function on the main
