@@ -757,9 +757,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     {
 	uint8_t *rdbuf = type == CT_PIPERD ? self->wrbuf : self->rdbuf;
 	rdbuf[self->rdbufsz] = 0; // for receiving in text mode
-	PSC_Event_register(PSC_Service_readyRead(), self,
-		readConnection, fd);
     }
+    PSC_Event_register(PSC_Service_readyRead(), self, readConnection, fd);
     if (type != CT_PIPERD)
     {
 	PSC_Event_register(PSC_Service_readyWrite(), self,
