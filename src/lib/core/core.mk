@@ -1,4 +1,5 @@
-posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM UCONTEXT XXHX86
+posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM MANON MANONYMOUS \
+				MSTACK UCONTEXT XXHX86
 ACCEPT4_FUNC=			accept4
 ACCEPT4_CFLAGS=			-D_GNU_SOURCE
 ACCEPT4_HEADERS=		sys/types.h sys/socket.h
@@ -12,6 +13,15 @@ GETRANDOM_FUNC=			getrandom
 GETRANDOM_HEADERS=		sys/random.h
 GETRANDOM_RETURN=		ssize_t
 GETRANDOM_ARGS=			void *, size_t, unsigned
+MANON_FLAG=			MAP_ANON
+MANON_CFLAGS=			-D_DEFAULT_SOURCE
+MANON_HEADERS=			sys/mman.h
+MANONYMOUS_FLAG=		MAP_ANONYMOUS
+MANONYMOUS_CFLAGS=		-D_DEFAULT_SOURCE
+MANONYMOUS_HEADERS=		sys/mman.h
+MSTACK_FLAG=			MAP_STACK
+MSTACK_CFLAGS=			-D_DEFAULT_SOURCE
+MSTACK_HEADERS=			sys/mman.h
 UCONTEXT_TYPE=			ucontext_t
 UCONTEXT_HEADERS=		ucontext.h
 XXHX86_FUNC=			XXH_featureTest
@@ -39,7 +49,7 @@ ifneq ($(WITHOUT_KQUEUE),1)
 posercore_PRECHECK+=		KQUEUE KQUEUEX KQUEUE1
 endif
 
-posercore_MODULES:=		base64 \
+posercore_MODULES=		base64 \
 				certinfo \
 				client \
 				connection \
@@ -58,6 +68,8 @@ posercore_MODULES:=		base64 \
 				runopts \
 				server \
 				service \
+				$(if $(filter 1,$(posercore_HAVE_UCONTEXT)), \
+					stackmgr) \
 				stringbuilder \
 				threadpool \
 				timer \
@@ -65,7 +77,7 @@ posercore_MODULES:=		base64 \
 				xxhash \
 				xxhx86
 
-posercore_HEADERS_INSTALL:=	core \
+posercore_HEADERS_INSTALL=	core \
 				core/base64 \
 				core/certinfo \
 				core/client \
@@ -93,11 +105,11 @@ posercore_HEADERS_INSTALL:=	core \
 				decl
 
 posercore_PRECFLAGS?=		-I.$(PSEP)include
-posercore_DEFINES:=		#
-posercore_LDFLAGS:=		-pthread
-posercore_HEADERDIR:=		include$(PSEP)poser
-posercore_HEADERTGTDIR:=	$(includedir)$(PSEP)poser
-posercore_VERSION:=		1.2.2
+posercore_DEFINES=		#
+posercore_LDFLAGS=		-pthread
+posercore_HEADERDIR=		include$(PSEP)poser
+posercore_HEADERTGTDIR=		$(includedir)$(PSEP)poser
+posercore_VERSION=		1.2.2
 
 ifeq ($(WITH_POLL),1)
 posercore_DEFINES+=		-DWITH_POLL

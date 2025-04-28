@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #ifdef HAVE_UCONTEXT
+#  include "stackmgr.h"
 #  include <poser/core/list.h>
 #  include <poser/core/queue.h>
 #  include <ucontext.h>
@@ -69,8 +70,8 @@ struct PSC_ThreadJob
     int timeoutTicks;
 #ifdef HAVE_UCONTEXT
     ucontext_t caller;
-    size_t stacksz;
     void *stack;
+    int nostack;
 #endif
 };
 
@@ -178,17 +179,16 @@ static void *worker(void *arg)
 	if (!setjmp(panicjmp))
 	{
 #ifdef HAVE_UCONTEXT
-	    if (!t->job->stacksz) t->job->proc(t->job->arg);
+	    if (t->job->nostack) t->job->proc(t->job->arg);
 	    else if (t->job->task)
 	    {
 		swapcontext(&t->job->caller, &t->job->task->resume);
 	    }
 	    else
 	    {
-		t->job->stack = PSC_malloc(t->job->stacksz);
 		getcontext(&t->context);
 		t->context.uc_stack.ss_sp = t->job->stack;
-		t->context.uc_stack.ss_size = t->job->stacksz;
+		t->context.uc_stack.ss_size = StackMgr_size();
 		t->context.uc_link = &t->job->caller;
 		makecontext(&t->context, runThreadJob, 0);
 		swapcontext(&t->job->caller, &t->context);
@@ -214,27 +214,21 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
 	PSC_ThreadProc proc, void *arg, int timeoutTicks)
 {
     PSC_ThreadJob *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
     self->proc = proc;
     self->arg = arg;
     self->finished = PSC_Event_create(self);
-    self->timeout = 0;
-    self->task = 0;
-    self->panicmsg = 0;
     self->timeoutTicks = timeoutTicks;
     self->hasCompleted = 1;
-#ifdef HAVE_UCONTEXT
-    self->stacksz = 64 * DEFJOBSTACKKB;
-#endif
     return self;
 }
 
-SOEXPORT void PSC_ThreadJob_setStackSize(PSC_ThreadJob *self, size_t stackSize)
+SOEXPORT void PSC_ThreadJob_disableStack(PSC_ThreadJob *self)
 {
 #ifdef HAVE_UCONTEXT
-    self->stacksz = stackSize;
+    self->nostack = 1;
 #else
     (void)self;
-    (void)stackSize;
 #endif
 }
 
@@ -252,7 +246,7 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 {
     if (!self) return;
 #ifdef HAVE_UCONTEXT
-    free(self->stack);
+    StackMgr_returnStack(self->stack);
 #endif
     PSC_Timer_destroy(self->timeout);
     PSC_Event_destroy(self->finished);
@@ -295,7 +289,7 @@ SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
     self->arg = arg;
 
 #ifdef HAVE_UCONTEXT
-    if (self->threadJob->stacksz)
+    if (!self->threadJob->nostack)
     {
 	swapcontext(&self->resume, &self->threadJob->caller);
     }
@@ -323,7 +317,7 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 {
     self->result = result;
 #ifdef HAVE_UCONTEXT
-    if (!self->thread->job || self->thread->job->stacksz)
+    if (!self->thread->job || !self->thread->job->nostack)
     {
 	if (self->thread->job)
 	{
@@ -457,6 +451,9 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 	PSC_Timer_setMs(j->timeout, 500 * j->timeoutTicks);
 	PSC_Timer_start(j->timeout, 0);
     }
+#ifdef HAVE_UCONTEXT
+    if (!j->nostack) j->stack = StackMgr_getStack();
+#endif
     pthread_mutex_lock(&t->lock);
     t->job = j;
     PSC_Service_registerRead(t->pipefd[0]);
@@ -471,7 +468,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
 
     Thread *t = receiver;
 #ifdef HAVE_UCONTEXT
-    size_t stacksz = t->job->stacksz;
+    int nostack = t->job->nostack;
 #endif
     if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
     PSC_Service_unregisterRead(t->pipefd[0]);
@@ -493,7 +490,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     if (task)
     {
 #ifdef HAVE_UCONTEXT
-	if (stacksz)
+	if (!nostack)
 	{
 	    PSC_List_append(t->waitingTasks, t->job, 0);
 	}
@@ -515,7 +512,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     pthread_mutex_unlock(&t->lock);
     PSC_ThreadJob *next = 0;
 #ifdef HAVE_UCONTEXT
-    if (stacksz)
+    if (!nostack)
     {
 	next = PSC_Queue_dequeue(t->finishedTasks);
 	if (next) PSC_List_remove(t->waitingTasks, next);
@@ -799,4 +796,7 @@ SOEXPORT void PSC_ThreadPool_done(void)
     queueAvail = 0;
     PSC_Service_unregisterPanic(panicHandler);
     mainthread = 0;
+#ifdef HAVE_UCONTEXT
+    StackMgr_clean();
+#endif
 }

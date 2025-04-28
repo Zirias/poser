@@ -51,10 +51,8 @@ typedef void (*PSC_AsyncTaskJob)(PSC_AsyncTask *task);
 /** Create a new thread job.
  * Creates a new job to be executed on a worker thread. Unless the library was
  * built on a system without POSIX user context switching support, the job
- * executes on its own private stack with a default size of 64 kiB. If that
- * is not enough for the job, make sure to configure a suitable size with
- * PSC_ThreadJob_setStackSize() before scheduling the job to avoid stack
- * overflow crashes.
+ * executes on its own private stack with a default size of 2 MiB, unless
+ * the private stack is disabled with PSC_ThreadJob_disableStack().
  * @memberof PSC_ThreadJob
  * @param proc the function to run on the worker thread
  * @param arg the data to work on
@@ -66,22 +64,18 @@ DECLEXPORT PSC_ThreadJob *
 PSC_ThreadJob_create(PSC_ThreadProc proc, void *arg, int timeoutTicks)
     ATTR_NONNULL((1)) ATTR_RETNONNULL;
 
-/** Configure the stack size for a thread job.
- * Configures the size of the private stack for executing this thread job.
- * When set to 0, awaiting a PSC_AsyncTask on this job will block the worker
- * thread it is running on. When the library was built on a system without
- * POSIX user context switching support, the stack size is always 0 and this
- * call is silently ignored.
- *
- * The default size is 64 kiB (64 * 1024), unless user context switching is
- * not available.
+/** Disable private stack for the job,
+ * Disable creating/using a private stack for this job. As a consequence, if
+ * the job awaits some PSC_AsyncTask, it will block a worker thread even if
+ * the library was built on a system with POSIX user context switching
+ * support. Disabling the private stack can avoid a tiny bit of overhead for
+ * jobs that will never await a PSC_AsyncTask.
  * @memberof PSC_ThreadJob
  * @param self the PSC_ThreadJob
- * @param stackSize the desired stack size in bytes
  */
 DECLEXPORT void
-PSC_ThreadJob_setStackSize(PSC_ThreadJob *self, size_t stackSize)
-    ATTR_NONNULL((1));
+PSC_ThreadJob_disableStack(PSC_ThreadJob *self)
+    CMETHOD;
 
 /** The job finished.
  * This event fires when the thread job finished, either because it completed
