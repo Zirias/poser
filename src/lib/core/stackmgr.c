@@ -3,15 +3,15 @@
 #  define _DEFAULT_SOURCE
 #  ifdef HAVE_MSTACK
 #    ifdef HAVE_MANON
-#      define STACK_MFLAGS (MAP_ANON|MAP_STACK)
+#      define STACK_MFLAGS (MAP_ANON|MAP_PRIVATE|MAP_STACK)
 #    else
-#      define STACK_MFLAGS (MAP_ANONYMOUS|MAP_STACK)
+#      define STACK_MFLAGS (MAP_ANONYMOUS|MAP_PRIVATE|MAP_STACK)
 #    endif
 #  else
 #    ifdef HAVE_MANON
-#      define STACK_MFLAGS MAP_ANON
+#      define STACK_MFLAGS (MAP_ANON|MAP_PRIVATE)
 #    else
-#      define STACK_MFLAGS MAP_ANONYMOUS
+#      define STACK_MFLAGS (MAP_ANONYMOUS|MAP_PRIVATE)
 #    endif
 #  endif
 #endif
