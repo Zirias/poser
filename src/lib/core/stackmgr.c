@@ -69,6 +69,9 @@ SOLOCAL void StackMgr_returnStack(void *stack)
 	stacks = PSC_realloc(stacks, cstacks * sizeof *stacks);
     }
     stacks[nstacks++] = stack;
+#if defined(STACK_MFLAGS) && defined(HAVE_MADVISE) && defined(HAVE_MADVFREE)
+    madvise(stack, sz, MADV_FREE);
+#endif
 }
 
 SOLOCAL void StackMgr_clean(void)
