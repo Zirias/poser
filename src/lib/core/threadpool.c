@@ -452,7 +452,7 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 	PSC_Timer_start(j->timeout, 0);
     }
 #ifdef HAVE_UCONTEXT
-    if (!j->nostack) j->stack = StackMgr_getStack();
+    if (!j->nostack && !j->stack) j->stack = StackMgr_getStack();
 #endif
     pthread_mutex_lock(&t->lock);
     t->job = j;
