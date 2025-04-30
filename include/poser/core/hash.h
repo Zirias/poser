@@ -37,7 +37,7 @@ PSC_Hash_create(int func, int flags);
  * @returns the hash value
  */
 DECLEXPORT uint64_t
-PSC_Hash_bytes(PSC_Hash *self, const uint8_t *data, size_t size);
+PSC_Hash_bytes(PSC_Hash *self, const void *data, size_t size);
 
 /** Calculate a hash from a string.
  * @memberof PSC_Hash

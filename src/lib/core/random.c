@@ -53,7 +53,7 @@ static uint64_t prng(void)
 }
 #endif
 
-SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count,
+SOEXPORT size_t PSC_Random_bytes(void *buf, size_t count,
 	PSC_RandomFlags flags)
 {
 #ifdef HAVE_ARC4R
@@ -66,6 +66,7 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count,
     else if (flags & PSC_RF_WLOGPSEUDO) level = PSC_L_WARNING;
 
     size_t pos = 0;
+    uint8_t *b = buf;
 #  ifdef HAVE_GETRANDOM
     unsigned grflags = 0;
     if (flags & PSC_RF_NONBLOCK) grflags = GRND_NONBLOCK;
@@ -89,7 +90,7 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count,
 	    ++dolog;
 	}
 	errno = 0;
-	ssize_t rc = getrandom(buf + pos, count - pos, grflags);
+	ssize_t rc = getrandom(b + pos, count - pos, grflags);
 	if (rc < 0)
 	{
 	    if (errno == EINTR) continue;
@@ -125,7 +126,7 @@ SOEXPORT size_t PSC_Random_bytes(uint8_t *buf, size_t count,
 	    ++doswitch;
 	}
 	errno = 0;
-	ssize_t rc = read(rndfd, buf + pos, count - pos);
+	ssize_t rc = read(rndfd, b + pos, count - pos);
 	if (rc < 0)
 	{
 	    if (errno == EINTR) continue;
@@ -159,13 +160,13 @@ useprng:
 	if (bytes)
 	{
 	    uint64_t rn = prng();
-	    memcpy(buf + pos, &rn, bytes);
+	    memcpy(b + pos, &rn, bytes);
 	    pos += bytes;
 	}
 	for (size_t i = 0; i < chunks; ++i)
 	{
 	    uint64_t rn = prng();
-	    memcpy(buf + pos, &rn, sizeof rn);
+	    memcpy(b + pos, &rn, sizeof rn);
 	    pos += sizeof rn;
 	}
     }
@@ -177,7 +178,7 @@ SOEXPORT size_t PSC_Random_string(char *str, size_t size,
 	PSC_RandomFlags flags)
 {
     size_t count = PSC_Base64_decodedSize(size - 1);
-    uint8_t *buf = PSC_malloc(count);
+    void *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, flags);
     if (got < count) size = PSC_Base64_encodedLen(got) + 1;
     PSC_Base64_encodeTo(str, buf, got);
@@ -187,7 +188,7 @@ SOEXPORT size_t PSC_Random_string(char *str, size_t size,
 
 SOEXPORT char *PSC_Random_createStr(size_t count, PSC_RandomFlags flags)
 {
-    uint8_t *buf = PSC_malloc(count);
+    void *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, flags);
     char *str = 0;
     if (got == count) str = PSC_Base64_encode(buf, count);

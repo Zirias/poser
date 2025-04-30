@@ -51,7 +51,7 @@ SOEXPORT PSC_Hash *PSC_Hash_create(int func, int flags)
 }
 
 SOEXPORT uint64_t PSC_Hash_bytes(PSC_Hash *self,
-	const uint8_t *data, size_t size)
+	const void *data, size_t size)
 {
     return self->secret
 	? XXH3_64bits_withSecret(data, size, self->secret, SECRETSIZE)

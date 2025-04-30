@@ -8,7 +8,6 @@
 #include <poser/decl.h>
 
 #include <stddef.h>
-#include <stdint.h>
 
 /** Get some random data.
  * Provides static methods to obtain random bytes and random strings.
@@ -49,7 +48,7 @@ typedef enum PSC_RandomFlags
  *          on error
  */
 DECLEXPORT size_t
-PSC_Random_bytes(uint8_t *buf, size_t count, PSC_RandomFlags flags)
+PSC_Random_bytes(void *buf, size_t count, PSC_RandomFlags flags)
     ATTR_NONNULL((1)) ATTR_ACCESS((write_only, 1, 2));
 
 /** Fill a buffer with a random string.

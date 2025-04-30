@@ -2,6 +2,7 @@
 
 #include <poser/core/util.h>
 
+#include <stdint.h>
 #include <string.h>
 
 static uint8_t dec1(char val) ATTR_CONST;
@@ -39,71 +40,73 @@ SOEXPORT size_t PSC_Base64_decodedSize(size_t len)
     return 3 * (len/4) + res;
 }
 
-SOEXPORT void PSC_Base64_encodeTo(char *enc, const uint8_t *data, size_t size)
+SOEXPORT void PSC_Base64_encodeTo(char *enc, const void *data, size_t size)
 {
     size_t pos = 0;
+    const uint8_t *d = data;
     while (size-pos >= 3)
     {
-	*enc++ = enc1(data[pos]>>2);
-	*enc++ = enc1(data[pos]<<4|data[pos+1]>>4);
-	*enc++ = enc1(data[pos+1]<<2|data[pos+2]>>6);
-	*enc++ = enc1(data[pos+2]);
+	*enc++ = enc1(d[pos]>>2);
+	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4);
+	*enc++ = enc1(d[pos+1]<<2|d[pos+2]>>6);
+	*enc++ = enc1(d[pos+2]);
 	pos += 3;
     }
     if (size - pos == 2)
     {
-	*enc++ = enc1(data[pos]>>2);
-	*enc++ = enc1(data[pos]<<4|data[pos+1]>>4);
-	*enc++ = enc1(data[pos+1]<<2);
+	*enc++ = enc1(d[pos]>>2);
+	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4);
+	*enc++ = enc1(d[pos+1]<<2);
     }
     else if (pos < size)
     {
-	*enc++ = enc1(data[pos]>>2);
-	*enc++ = enc1(data[pos]<<4);
+	*enc++ = enc1(d[pos]>>2);
+	*enc++ = enc1(d[pos]<<4);
     }
     *enc = 0;
 }
 
-SOEXPORT char *PSC_Base64_encode(const uint8_t *data, size_t size)
+SOEXPORT char *PSC_Base64_encode(const void *data, size_t size)
 {
     char *encoded = PSC_malloc(PSC_Base64_encodedLen(size) + 1);
     PSC_Base64_encodeTo(encoded, data, size);
     return encoded;
 }
 
-SOEXPORT void PSC_Base64_decodeTo(uint8_t *data, const char *enc, size_t len)
+SOEXPORT void PSC_Base64_decodeTo(void *data, const char *enc, size_t len)
 {
     size_t pos = 0;
+    uint8_t *d = data;
     uint8_t b1, b2, b3;
     while (len - pos >= 4)
     {
 	b1 = dec1(enc[pos++]);
 	b2 = dec1(enc[pos++]);
 	b3 = dec1(enc[pos++]);
-	*data++ = b1<<2|b2>>4;
-	*data++ = b2<<4|b3>>2;
-	*data++ = b3<<6|dec1(enc[pos++]);
+	*d++ = b1<<2|b2>>4;
+	*d++ = b2<<4|b3>>2;
+	*d++ = b3<<6|dec1(enc[pos++]);
     }
     if (len - pos == 3)
     {
 	b1 = dec1(enc[pos++]);
 	b2 = dec1(enc[pos++]);
 	b3 = dec1(enc[pos]);
-	*data++ = b1<<2|b2>>4;
-	*data = b2<<4|b3>>2;
+	*d++ = b1<<2|b2>>4;
+	*d = b2<<4|b3>>2;
     }
     else if (len - pos  == 2)
     {
 	b1 = dec1(enc[pos++]);
-	*data = b1<<2|dec1(enc[pos])>>4;
+	*d = b1<<2|dec1(enc[pos])>>4;
     }
 }
 
-SOEXPORT uint8_t *PSC_Base64_decode(const char *enc, size_t *size)
+SOEXPORT void *PSC_Base64_decode(const char *enc, size_t *size)
 {
     size_t esz = strlen(enc);
     size_t dsz = PSC_Base64_decodedSize(esz);
-    uint8_t *decoded = PSC_malloc(dsz);
+    void *decoded = PSC_malloc(dsz);
     PSC_Base64_decodeTo(decoded, enc, esz);
     if (size) *size = dsz;
     return decoded;
