@@ -230,6 +230,27 @@ DECLEXPORT void
 PSC_Service_unregisterPanic(PSC_PanicHandler handler)
     ATTR_NONNULL((1));
 
+/** Register a signal handler.
+ * The given handler is called in the regular event loop on the main thread
+ * whenever the given signal was received.
+ * Only a single handler per signal is possible, so a previously installed
+ * handler is replaced. To stop handling the signal, pass NULL for the
+ * handler.
+ * There are platform-specific differences which signals exist at all and
+ * which can be handled, so be careful if you want to use a signal not
+ * specified by POSIX.
+ * Also note installing a handler for SIGALRM is, although possible, useless.
+ * It is used internally by PSC_Timer. Therefore also avoid calling any
+ * functions yourself that might trigger a SIGALRM, this would break the
+ * (de-)multiplexing for PSC_Timer.
+ * @memberof PSC_Service
+ * @static
+ * @param signo the signal to handle
+ * @param handler the signal handler callback
+ */
+DECLEXPORT void
+PSC_Service_registerSignal(int signo, PSC_SignalHandler handler);
+
 /** Set the timer tick interval.
  * This sets the interval at which PSC_Service_tick() events are fired. The
  * default is 1000ms (1 second).

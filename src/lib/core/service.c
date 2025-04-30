@@ -491,6 +491,41 @@ SOEXPORT void PSC_Service_unregisterPanic(PSC_PanicHandler handler)
     }
 }
 
+SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
+{
+    if (signo < 0 || signo >= NSIG) return;
+
+    if (running && signo != SIGTERM && signo != SIGINT
+	    && signo != SIGALRM && signo != SIGCHLD)
+    {
+	struct sigaction sa;
+	if (sigcallback[signo] && !handler)
+	{
+	    memset(&sa, 0, sizeof sa);
+	    sa.sa_handler = SIG_DFL;
+	    sigemptyset(&sa.sa_mask);
+	    if (sigaction(signo, &sa, 0) == 0)
+	    {
+		sigdelset(&sigblockmask, signo);
+		sigprocmask(SIG_SETMASK, &sigblockmask, 0);
+	    }
+	}
+	if (!sigcallback[signo] && handler)
+	{
+	    if (sigaddset(&sigblockmask, signo) == 0 &&
+		    sigprocmask(SIG_SETMASK, &sigblockmask, 0) == 0)
+	    {
+		memset(&sa, 0, sizeof sa);
+		sa.sa_handler = handlesig;
+		sigemptyset(&sa.sa_mask);
+		sigaction(signo, &sa, 0);
+	    }
+	}
+    }
+
+    sigcallback[signo] = handler;
+}
+
 static void raiseTick(void *receiver, void *sender, void *args)
 {
     (void)receiver;
