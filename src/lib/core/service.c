@@ -107,9 +107,7 @@ static PSC_Event childExited;
 
 static int running;
 
-static volatile sig_atomic_t shutdownRequest;
-static volatile sig_atomic_t childExit;
-static volatile sig_atomic_t timerExpire;
+static volatile sig_atomic_t sigflags[NSIG];
 
 static int shutdownRef;
 
@@ -122,12 +120,8 @@ static int numPanicHandlers;
 
 static void handlesig(int signum)
 {
-    switch (signum)
-    {
-	case SIGALRM:	timerExpire = 1; break;
-	case SIGCHLD:	childExit = 1; break;
-	default:	shutdownRequest = 1; break;
-    }
+    if (signum < 0 || signum >= NSIG) return;
+    sigflags[signum] = 1;
 }
 
 #ifdef WITH_SELECT
@@ -522,23 +516,17 @@ static int panicreturn(void)
 
 static int handleSigFlags(void)
 {
-    int handled = 0;
-    if (shutdownRequest)
+    if (sigflags[SIGINT] || sigflags[SIGTERM])
     {
-	shutdownRequest = 0;
 	shutdownRef = 0;
 	PSC_Event_raise(&shutdown, 0, 0);
-	handled = 1;
     }
-    if (timerExpire)
+    if (sigflags[SIGALRM])
     {
-	timerExpire = 0;
 	PSC_Timer_underrun();
-	handled = 1;
     }
-    if (childExit)
+    if (sigflags[SIGCHLD])
     {
-	childExit = 0;
 	PSC_EAChildExited ea;
 	int status;
 	pid_t pid;
@@ -558,6 +546,11 @@ static int handleSigFlags(void)
 	    else continue;
 	    PSC_Event_raise(&childExited, (int)pid, &ea);
 	}
+    }
+    int handled = 0;
+    for (int i = 0; i < NSIG; ++i) if (sigflags[i])
+    {
+	sigflags[i] = 0;
 	handled = 1;
     }
     return handled;
@@ -571,19 +564,14 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(sigset_t *sigmask)
 {
-    int qrc = 0;
-    int kqerr = 0;
     sigset_t origmask;
+    pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+    errno = 0;
     struct kevent ev[KQ_MAX_EVENTS];
-    if (!shutdownRequest)
-    {
-	pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
-	errno = 0;
-	qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
-	kqerr = errno;
-	pthread_sigmask(SIG_SETMASK, &origmask, 0);
-	if (qrc >= 0) nchanges = 0;
-    }
+    int qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
+    int kqerr = errno;
+    pthread_sigmask(SIG_SETMASK, &origmask, 0);
+    if (qrc >= 0) nchanges = 0;
     if (!handleSigFlags() && qrc < 0)
     {
 	if (kqerr == EINTR) return 0;
@@ -614,10 +602,8 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(sigset_t *sigmask)
 {
-    int prc = 0;
     struct epoll_event ev[EP_MAX_EVENTS];
-    if (!shutdownRequest) prc = epoll_pwait2(epfd,
-	    ev, EP_MAX_EVENTS, 0, sigmask);
+    int prc = epoll_pwait2(epfd, ev, EP_MAX_EVENTS, 0, sigmask);
     if (!handleSigFlags() && prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
@@ -646,17 +632,12 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(sigset_t *sigmask)
 {
-    int prc = 0;
-    int pollerr = 0;
     sigset_t origmask;
-    if (!shutdownRequest)
-    {
-	pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
-	errno = 0;
-	prc = poll(fds, nfds, -1);
-	pollerr = errno;
-	pthread_sigmask(SIG_SETMASK, &origmask, 0);
-    }
+    pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+    errno = 0;
+    int prc = poll(fds, nfds, -1);
+    int pollerr = errno;
+    pthread_sigmask(SIG_SETMASK, &origmask, 0);
     if (!handleSigFlags() && prc < 0)
     {
 	if (pollerr == EINTR) return 0;
@@ -706,8 +687,7 @@ static int processEvents(sigset_t *sigmask)
 	memcpy(&wfds, &writefds, sizeof wfds);
 	w = &wfds;
     }
-    int src = 0;
-    if (!shutdownRequest) src = pselect(nfds, r, w, 0, 0, sigmask);
+    int src = pselect(nfds, r, w, 0, 0, sigmask);
     if (!handleSigFlags() && src < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
@@ -999,7 +979,7 @@ SOEXPORT int PSC_Service_run(void)
 
 SOEXPORT void PSC_Service_quit(void)
 {
-    shutdownRequest = 1;
+    shutdownRef = 0;
 }
 
 static void shutdownTimeout(void *receiver, void *sender, void *args)
