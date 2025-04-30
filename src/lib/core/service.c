@@ -108,6 +108,9 @@ static PSC_Event childExited;
 static int running;
 
 static volatile sig_atomic_t sigflags[NSIG];
+static PSC_SignalHandler sigcallback[NSIG];
+static sigset_t sigorigmask;
+static sigset_t sigblockmask;
 
 static int shutdownRef;
 
@@ -548,10 +551,11 @@ static int handleSigFlags(void)
 	}
     }
     int handled = 0;
-    for (int i = 0; i < NSIG; ++i) if (sigflags[i])
+    for (int s = 0; s < NSIG; ++s) if (sigflags[s])
     {
-	sigflags[i] = 0;
+	sigflags[s] = 0;
 	handled = 1;
+	if (sigcallback[s]) sigcallback[s](s);
     }
     return handled;
 }
@@ -562,10 +566,10 @@ static const char *eventBackendInfo(void)
     return "kqueue";
 }
 
-static int processEvents(sigset_t *sigmask)
+static int processEvents(void)
 {
     sigset_t origmask;
-    pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
     errno = 0;
     struct kevent ev[KQ_MAX_EVENTS];
     int qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
@@ -600,10 +604,10 @@ static const char *eventBackendInfo(void)
     return "epoll";
 }
 
-static int processEvents(sigset_t *sigmask)
+static int processEvents(void)
 {
     struct epoll_event ev[EP_MAX_EVENTS];
-    int prc = epoll_pwait2(epfd, ev, EP_MAX_EVENTS, 0, sigmask);
+    int prc = epoll_pwait2(epfd, ev, EP_MAX_EVENTS, 0, &sigorigmask);
     if (!handleSigFlags() && prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
@@ -630,10 +634,10 @@ static const char *eventBackendInfo(void)
     return "poll";
 }
 
-static int processEvents(sigset_t *sigmask)
+static int processEvents(void)
 {
     sigset_t origmask;
-    pthread_sigmask(SIG_SETMASK, sigmask, &origmask);
+    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
     errno = 0;
     int prc = poll(fds, nfds, -1);
     int pollerr = errno;
@@ -671,7 +675,7 @@ static const char *eventBackendInfo(void)
     return info;
 }
 
-static int processEvents(sigset_t *sigmask)
+static int processEvents(void)
 {
     fd_set rfds;
     fd_set wfds;
@@ -687,7 +691,7 @@ static int processEvents(sigset_t *sigmask)
 	memcpy(&wfds, &writefds, sizeof wfds);
 	w = &wfds;
     }
-    int src = pselect(nfds, r, w, 0, 0, sigmask);
+    int src = pselect(nfds, r, w, 0, 0, &sigorigmask);
     if (!handleSigFlags() && src < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
@@ -780,26 +784,25 @@ static int serviceLoop(int isRun)
 	}
     }
 
-    struct sigaction handler;
-    memset(&handler, 0, sizeof handler);
-    handler.sa_handler = SIG_IGN;
-    sigemptyset(&handler.sa_mask);
-    sigaction(SIGHUP, &handler, 0);
-    sigaction(SIGPIPE, &handler, 0);
-    sigaction(SIGUSR1, &handler, 0);
-
-    handler.sa_handler = handlesig;
-    sigaddset(&handler.sa_mask, SIGTERM);
-    sigaddset(&handler.sa_mask, SIGINT);
-    sigaddset(&handler.sa_mask, SIGALRM);
-    sigaddset(&handler.sa_mask, SIGCHLD);
-    sigset_t mask;
-
-    if (sigprocmask(SIG_BLOCK, &handler.sa_mask, &mask) < 0)
+    sigemptyset(&sigblockmask);
+    sigaddset(&sigblockmask, SIGTERM);
+    sigaddset(&sigblockmask, SIGINT);
+    sigaddset(&sigblockmask, SIGALRM);
+    sigaddset(&sigblockmask, SIGCHLD);
+    for (int s = 0; s < NSIG; ++s)
+    {
+	if (sigcallback[s]) sigaddset(&sigblockmask, s);
+    }
+    if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
 	return rc;
     }
+
+    struct sigaction handler;
+    memset(&handler, 0, sizeof handler);
+    handler.sa_handler = handlesig;
+    sigemptyset(&handler.sa_mask);
 
     if (sigaction(SIGTERM, &handler, 0) < 0)
     {
@@ -828,6 +831,25 @@ static int serviceLoop(int isRun)
     PSC_Event_raise(&startup, 0, &sea);
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
+
+    for (int s = 0; s < NSIG; ++s)
+    {
+	switch (s)
+	{
+	    case SIGTERM:
+	    case SIGINT:
+	    case SIGALRM:
+	    case SIGCHLD:
+		break;
+
+	    default:
+		if (sigcallback[s] && sigaction(s, &handler, 0) < 0)
+		{
+		    PSC_Log_fmt(PSC_L_ERROR, "cannot set signal handler "
+			    "for signal %d", s);
+		}
+	}
+    }
 
     if (isRun && opts->daemonize)
     {
@@ -859,7 +881,7 @@ static int serviceLoop(int isRun)
 
     while (shutdownRef != 0)
     {
-	if (processEvents(&mask) < 0)
+	if (processEvents() < 0)
 	{
 	    rc = EXIT_FAILURE;
 	    break;
@@ -874,7 +896,16 @@ shutdown:
     PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
 
 done:
-    if (sigprocmask(SIG_SETMASK, &mask, 0) < 0)
+    handler.sa_handler = SIG_DFL;
+    sigaction(SIGTERM, &handler, 0);
+    sigaction(SIGINT, &handler, 0);
+    sigaction(SIGALRM, &handler, 0);
+    sigaction(SIGCHLD, &handler, 0);
+    for (int s = 0; s < NSIG; ++s)
+    {
+	sigaction(s, &handler, 0);
+    }
+    if (sigprocmask(SIG_SETMASK, &sigorigmask, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
 	rc = EXIT_FAILURE;

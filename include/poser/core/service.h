@@ -41,6 +41,11 @@ C_CLASS_DECL(PSC_EAChildExited);
 
 C_CLASS_DECL(PSC_Event);
 
+/** A handler for a signal.
+ * @param signo the signal number
+ */
+typedef void (*PSC_SignalHandler)(int signo);
+
 /** A handler for a service panic.
  * @param msg the panic message
  */
