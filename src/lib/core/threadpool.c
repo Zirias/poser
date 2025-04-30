@@ -317,7 +317,7 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 {
     self->result = result;
 #ifdef HAVE_UCONTEXT
-    if (!self->thread->job || !self->thread->job->nostack)
+    if (!self->threadJob->nostack)
     {
 	if (self->thread->job)
 	{
