@@ -293,6 +293,20 @@ DECLEXPORT void
 PSC_Server_enable(PSC_Server *self)
     CMETHOD;
 
+/** Graceful server shutdown.
+ * This will stop listening, but defer destruction until all client
+ * connections are closed or the given timeout is reached. The server is
+ * finally destroyed. This could also happen immediately if there aren't any
+ * active client connections, so the object should be considered invalid
+ * after calling this method.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ * @param timeout timeout in milliseconds before forcing destructions. If set
+ *                to 0, destruction is not forced until the PSC_Service exits.
+ */
+DECLEXPORT void
+PSC_Server_shutdown(PSC_Server *self, unsigned timeout);
+
 /** PSC_Server destructor.
  * This will close all active client connections and stop listening.
  * @memberof PSC_Server

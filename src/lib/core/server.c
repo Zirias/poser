@@ -8,6 +8,7 @@
 #include <poser/core/log.h>
 #include <poser/core/service.h>
 #include <poser/core/server.h>
+#include <poser/core/timer.h>
 #include <poser/core/util.h>
 
 #include <errno.h>
@@ -118,6 +119,7 @@ struct PSC_Server
 {
     PSC_Event *clientConnected;
     PSC_Event *clientDisconnected;
+    PSC_Timer *shutdownTimer;
     PSC_Connection **conn;
     char *path;
 #ifdef WITH_TLS
@@ -180,6 +182,7 @@ static void removeConnection(void *receiver, void *sender, void *args)
 		    (self->connsize - pos) * sizeof *self->conn);
 	    --self->connsize;
 	    PSC_Event_raise(self->clientDisconnected, 0, conn);
+	    if (!self->nsocks && !self->connsize) PSC_Server_destroy(self);
 	    return;
 	}
     }
@@ -894,6 +897,44 @@ SOEXPORT void PSC_Server_enable(PSC_Server *self)
     self->disabled = 0;
 }
 
+static void forceDestroy(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_Server_destroy(receiver);
+}
+
+SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
+{
+    if (!self) return;
+
+    if (!self->connsize)
+    {
+	PSC_Server_destroy(self);
+	return;
+    }
+
+    for (uint8_t i = 0; i < self->nsocks; ++i)
+    {
+	PSC_Service_unregisterRead(self->socks[i].fd);
+	PSC_Event_unregister(PSC_Service_readyRead(), self, acceptConnection,
+		self->socks[i].fd);
+	close(self->socks[i].fd);
+    }
+    self->nsocks = 0;
+
+    PSC_Event_register(PSC_Service_shutdown(), self, forceDestroy, 0);
+    if (timeout)
+    {
+	self->shutdownTimer = PSC_Timer_create();
+	PSC_Timer_setMs(self->shutdownTimer, timeout);
+	PSC_Event_register(PSC_Timer_expired(self->shutdownTimer), self,
+		forceDestroy, 0);
+	PSC_Timer_start(self->shutdownTimer, 0);
+    }
+}
+
 SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 {
     if (!self) return;
@@ -904,7 +945,12 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	PSC_Connection_destroy(self->conn[pos]);
     }
     free(self->conn);
-    for (uint8_t i = 0; i < self->nsocks; ++i)
+    PSC_Timer_destroy(self->shutdownTimer);
+    if (!self->nsocks)
+    {
+	PSC_Event_unregister(PSC_Service_shutdown(), self, forceDestroy, 0);
+    }
+    else for (uint8_t i = 0; i < self->nsocks; ++i)
     {
 	PSC_Service_unregisterRead(self->socks[i].fd);
 	PSC_Event_unregister(PSC_Service_readyRead(), self, acceptConnection,
