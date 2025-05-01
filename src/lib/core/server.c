@@ -4,6 +4,7 @@
 #include "connection.h"
 
 #include <poser/core/event.h>
+#include <poser/core/hash.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
 #include <poser/core/server.h>
@@ -90,6 +91,14 @@ enum tlslevel
     TL_NORMAL,
     TL_CLIENTCA
 };
+
+struct tlsprops
+{
+    X509 *cert;
+    EVP_PKEY *key;
+    SSL_CTX *tls_ctx;
+    enum tlslevel tls;
+};
 #endif
 
 enum saddrt
@@ -118,10 +127,13 @@ struct PSC_Server
     void *validatorObj;
     PSC_CertValidator validator;
 #endif
+    uint64_t bhash;
     size_t conncapa;
     size_t connsize;
     size_t nsocks;
     size_t rdbufsz;
+    PSC_Proto proto;
+    int port;
     int disabled;
 #ifdef WITH_TLS
     enum tlslevel tls;
@@ -269,18 +281,37 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     PSC_Event_raise(self->clientConnected, 0, newconn);
 }
 
-static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
-	size_t nsocks, SockInfo *socks, char *path)
+static int bindcmp(const void *a, const void *b)
 {
+    char *const *ba = a;
+    char *const *bb = b;
+    return strcmp(*ba, *bb);
+}
+
+static uint64_t bindhash(size_t nbinds, char **binds)
+{
+    if (!nbinds) return 0;
+    char **blist = PSC_malloc((nbinds+1) * sizeof *blist);
+    memcpy(blist, binds, nbinds * sizeof *blist);
+    blist[nbinds] = 0;
+    qsort(blist, nbinds, sizeof *blist, bindcmp);
+    char *bjoined = PSC_joinstr(":", blist);
+    free(blist);
+    PSC_Hash *hasher = PSC_Hash_create(0, 0);
+    uint64_t hash = PSC_Hash_string(hasher, bjoined);
+    PSC_Hash_destroy(hasher);
+    free(bjoined);
+    return hash;
+}
+
 #ifdef WITH_TLS
+static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
+{
     FILE *certfile = 0;
     FILE *keyfile = 0;
     X509 *cert = 0;
     EVP_PKEY *key = 0;
     SSL_CTX *tls_ctx = 0;
-#endif
-    if (nsocks < 1) goto error;
-#ifdef WITH_TLS
     if (opts->tls)
     {
 	if (!(tls_ctx = SSL_CTX_new(TLS_server_method())))
@@ -316,6 +347,13 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 		}
 	    }
 	}
+	if (!opts->certfile || !opts->keyfile)
+	{
+	    PSC_Log_msg(PSC_L_ERROR,
+		    "server: TLS requires both a server certificate file "
+		    "and a corresponding key file");
+	    goto error;
+	}
 	if (!(certfile = fopen(opts->certfile, "r")))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
@@ -349,24 +387,54 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 	PSC_Log_fmt(PSC_L_INFO,
 		"server: using certificate `%s'", opts->certfile);
     }
+
+    props->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
+    props->cert = cert;
+    props->key = key;
+    props->tls_ctx = tls_ctx;
+    return 0;
+
+error:
+    SSL_CTX_free(tls_ctx);
+    EVP_PKEY_free(key);
+    X509_free(cert);
+    if (keyfile) fclose(keyfile);
+    if (certfile) fclose(certfile);
+    return -1;
+}
+#endif
+
+static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
+	size_t nsocks, SockInfo *socks, char *path)
+{
+    if (nsocks < 1) goto error;
+#ifdef WITH_TLS
+    struct tlsprops props;
+    if (initTls(&props, opts) < 0) goto error;
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->clientConnected = PSC_Event_create(self);
     self->clientDisconnected = PSC_Event_create(self);
     self->conn = PSC_malloc(CONNCHUNK * sizeof *self->conn);
     self->path = path;
+    self->bhash = bindhash(opts->bh_count, opts->bindhosts);
     self->conncapa = CONNCHUNK;
     self->connsize = 0;
     self->rdbufsz = opts->rdbufsz;
+    self->proto = opts->proto;
+    self->port = opts->port;
     self->disabled = 0;
 #ifdef WITH_TLS
-    self->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
-    self->cert = cert;
-    self->key = key;
-    self->tls_ctx = tls_ctx;
+    self->tls = props.tls;
+    self->cert = props.cert;
+    self->key = props.key;
+    self->tls_ctx = props.tls_ctx;
     self->validatorObj = opts->validatorObj;
     self->validator = opts->validator;
-    if (self->validator) SSL_CTX_set_ex_data(tls_ctx, ctx_idx, self);
+    if (self->tls_ctx && self->validator)
+    {
+	SSL_CTX_set_ex_data(self->tls_ctx, ctx_idx, self);
+    }
 #endif
     self->nsocks = nsocks;
     memcpy(self->socks, socks, nsocks * sizeof *socks);
@@ -380,13 +448,6 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     return self;
 
 error:
-#ifdef WITH_TLS
-    SSL_CTX_free(tls_ctx);
-    EVP_PKEY_free(key);
-    X509_free(cert);
-    if (keyfile) fclose(keyfile);
-    if (certfile) fclose(certfile);
-#endif
     free(path);
     return 0;
 }
@@ -649,7 +710,39 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
     }
     
     PSC_Server *self = PSC_Server_create(opts, nsocks, socks, 0);
+    if (!self) for (size_t i = 0; i < nsocks; ++i)
+    {
+	close(socks[i].fd);
+    }
     return self;
+}
+
+SOEXPORT int PSC_Server_configureTcp(PSC_Server *self,
+	const PSC_TcpServerOpts *opts)
+{
+    if (self->path) return -1;
+    if (self->proto != opts->proto) return -1;
+    if (self->port != opts->port) return -1;
+    if (self->rdbufsz != opts->rdbufsz) return -1;
+    if (self->bhash != bindhash(opts->bh_count, opts->bindhosts)) return -1;
+#ifdef WITH_TLS
+    struct tlsprops props;
+    if (initTls(&props, opts) < 0) return -1;
+    EVP_PKEY_free(self->key);
+    X509_free(self->cert);
+    SSL_CTX_free(self->tls_ctx);
+    self->tls = props.tls;
+    self->cert = props.cert;
+    self->key = props.key;
+    self->tls_ctx = props.tls_ctx;
+    self->validatorObj = opts->validatorObj;
+    self->validator = opts->validator;
+    if (self->tls_ctx && self->validator)
+    {
+	SSL_CTX_set_ex_data(self->tls_ctx, ctx_idx, self);
+    }
+#endif
+    return 0;
 }
 
 SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)

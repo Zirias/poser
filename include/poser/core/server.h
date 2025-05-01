@@ -218,6 +218,21 @@ DECLEXPORT PSC_Server *
 PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
     ATTR_NONNULL((1));
 
+/** Reconfigure a running TCP server.
+ * Try to apply a new configuration to an already running server. The port,
+ * protocol preference, read buffer size and list of bind addresses cannot
+ * be changed at runtime. If the configuration is the same as before, this
+ * silently succeeds.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ * @param opts the new TCP server options
+ * @returns 0 on success, -1 if the new configuration can't be applied or the
+ *            server is not a TCP server.
+ */
+DECLEXPORT int
+PSC_Server_configureTcp(PSC_Server *self, const PSC_TcpServerOpts *opts)
+    CMETHOD ATTR_NONNULL((1));
+
 /** Create a local UNIX server.
  * @memberof PSC_Server
  * @param opts UNIX server options
