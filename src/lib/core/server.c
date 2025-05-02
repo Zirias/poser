@@ -418,6 +418,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->clientConnected = PSC_Event_create(self);
     self->clientDisconnected = PSC_Event_create(self);
+    self->shutdownTimer = 0;
     self->conn = PSC_malloc(CONNCHUNK * sizeof *self->conn);
     self->path = path;
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
