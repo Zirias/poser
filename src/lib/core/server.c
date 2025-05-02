@@ -315,6 +315,7 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
     X509 *cert = 0;
     EVP_PKEY *key = 0;
     SSL_CTX *tls_ctx = 0;
+    int fd = -1;
     if (opts->tls)
     {
 	if (!(tls_ctx = SSL_CTX_new(TLS_server_method())))
@@ -357,15 +358,19 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
 		    "and a corresponding key file");
 	    goto error;
 	}
-	if (!(certfile = fopen(opts->certfile, "r")))
+	if ((fd = open(opts->certfile, O_RDONLY|O_CLOEXEC)) < 0 ||
+		!(certfile = fdopen(fd, "r")))
 	{
+	    if (fd >= 0) close(fd);
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot open certificate file `%s' for reading",
 		    opts->certfile);
 	    goto error;
 	}
-	if (!(keyfile = fopen(opts->keyfile, "r")))
+	if ((fd = open(opts->keyfile, O_RDONLY|O_CLOEXEC)) < 0 ||
+		!(keyfile = fdopen(fd, "r")))
 	{
+	    if (fd >= 0) close(fd);
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "server: cannot open private key file `%s' for reading",
 		    opts->keyfile);
