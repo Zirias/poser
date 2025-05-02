@@ -195,6 +195,7 @@ SOEXPORT void PSC_HashTable_destroy(PSC_HashTable *self)
 	    entry = next;
 	}
     }
+    PSC_Hash_destroy(self->hash);
     free(self);
 }
 
