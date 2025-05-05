@@ -586,6 +586,7 @@ static void doread(PSC_Connection *self)
     {
 	errno = 0;
 	uint8_t *rdbuf;
+	if (self->type == CT_PIPEWR) goto doclose;
 	if (self->type == CT_PIPERD) rdbuf = self->wrbuf;
 	else rdbuf = self->rdbuf;
 
@@ -611,6 +612,7 @@ static void doread(PSC_Connection *self)
 		PSC_Log_fmt(PSC_L_WARNING, "connection: error reading from %s",
 			PSC_Connection_remoteAddr(self));
 	    }
+doclose:
 	    PSC_Connection_close(self, 0);
 	}
     }
