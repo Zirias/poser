@@ -758,6 +758,46 @@ static int serviceLoop(int isRun)
 
     PSC_RunOpts *opts = runOpts();
 
+    sigemptyset(&sigblockmask);
+    sigaddset(&sigblockmask, SIGTERM);
+    sigaddset(&sigblockmask, SIGINT);
+    sigaddset(&sigblockmask, SIGALRM);
+    sigaddset(&sigblockmask, SIGCHLD);
+    if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
+	return rc;
+    }
+
+    struct sigaction handler;
+    memset(&handler, 0, sizeof handler);
+    handler.sa_handler = handlesig;
+    sigemptyset(&handler.sa_mask);
+
+    if (sigaction(SIGTERM, &handler, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
+	goto done;
+    }
+
+    if (sigaction(SIGINT, &handler, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGINT");
+	goto done;
+    }
+
+    if (sigaction(SIGALRM, &handler, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
+	goto done;
+    }
+
+    if (sigaction(SIGCHLD, &handler, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
+	goto done;
+    }
+
 #ifdef HAVE_KQUEUE
 #  if defined(HAVE_KQUEUEX)
     kqfd = kqueuex(KQUEUE_CLOEXEC);
@@ -819,53 +859,19 @@ static int serviceLoop(int isRun)
 	}
     }
 
-    sigemptyset(&sigblockmask);
-    sigaddset(&sigblockmask, SIGTERM);
-    sigaddset(&sigblockmask, SIGINT);
-    sigaddset(&sigblockmask, SIGALRM);
-    sigaddset(&sigblockmask, SIGCHLD);
+    PSC_Event_raise(&startup, 0, &sea);
+    rc = sea.rc;
+    if (rc != EXIT_SUCCESS) goto done;
+
     for (int s = 0; s < NSIG; ++s)
     {
 	if (sigcallback[s]) sigaddset(&sigblockmask, s);
     }
-    if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
+    if (sigprocmask(SIG_SETMASK, &sigblockmask, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
 	return rc;
     }
-
-    struct sigaction handler;
-    memset(&handler, 0, sizeof handler);
-    handler.sa_handler = handlesig;
-    sigemptyset(&handler.sa_mask);
-
-    if (sigaction(SIGTERM, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
-	goto done;
-    }
-
-    if (sigaction(SIGINT, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGINT");
-	goto done;
-    }
-
-    if (sigaction(SIGALRM, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
-	goto done;
-    }
-
-    if (sigaction(SIGCHLD, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
-	goto done;
-    }
-
-    PSC_Event_raise(&startup, 0, &sea);
-    rc = sea.rc;
-    if (rc != EXIT_SUCCESS) goto done;
 
     for (int s = 0; s < NSIG; ++s)
     {
