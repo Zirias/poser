@@ -1,5 +1,5 @@
 posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM MADVISE MADVFREE \
-				MANON MANONYMOUS MSTACK NSIG UCONTEXT XXHX86
+				MANON MANONYMOUS MSTACK UCONTEXT XXHX86
 ACCEPT4_FUNC=			accept4
 ACCEPT4_CFLAGS=			-D_GNU_SOURCE
 ACCEPT4_HEADERS=		sys/types.h sys/socket.h
@@ -29,9 +29,6 @@ MANONYMOUS_HEADERS=		sys/mman.h
 MSTACK_FLAG=			MAP_STACK
 MSTACK_CFLAGS=			-D_DEFAULT_SOURCE
 MSTACK_HEADERS=			sys/mman.h
-NSIG_FLAG=			NSIG
-NSIG_CFLAGS=			-D_DEFAULT_SOURCE
-NSIG_HEADERS=			signal.h
 UCONTEXT_TYPE=			ucontext_t
 UCONTEXT_HEADERS=		ucontext.h
 XXHX86_FUNC=			XXH_featureTest
@@ -115,8 +112,7 @@ posercore_HEADERS_INSTALL=	core \
 				decl
 
 posercore_PRECFLAGS?=		-I.$(PSEP)include
-posercore_DEFINES=		$(if $(filter 0,$(posercore_HAVE_NSIG)), \
-					-DNSIG=64)
+posercore_DEFINES=		#
 posercore_LDFLAGS=		-pthread
 posercore_HEADERDIR=		include$(PSEP)poser
 posercore_HEADERTGTDIR=		$(includedir)$(PSEP)poser

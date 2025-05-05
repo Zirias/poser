@@ -20,8 +20,16 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#ifndef NSIG
+#  define NSIG 64
+#endif
+
 #if !defined(HAVE_KQUEUE) && !defined(HAVE_EPOLL) && !defined(WITH_POLL)
 #  define WITH_SELECT
+#endif
+
+#if !defined(HAVE_KQUEUE)
+#  define WITH_SIGHDL
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -107,11 +115,6 @@ static PSC_Event childExited;
 
 static int running;
 
-static volatile sig_atomic_t sigflags[NSIG];
-static PSC_SignalHandler sigcallback[NSIG];
-static sigset_t sigorigmask;
-static sigset_t sigblockmask;
-
 static int shutdownRef;
 
 static PSC_Timer *tickTimer;
@@ -121,11 +124,17 @@ static jmp_buf panicjmp;
 static PSC_PanicHandler panicHandlers[MAXPANICHANDLERS];
 static int numPanicHandlers;
 
+static sigset_t sigorigmask;
+static sigset_t sigblockmask;
+#ifdef WITH_SIGHDL
+static volatile sig_atomic_t sigflags[NSIG];
+static PSC_SignalHandler sigcallback[NSIG];
 static void handlesig(int signum)
 {
     if (signum < 0 || signum >= NSIG) return;
     sigflags[signum] = 1;
 }
+#endif
 
 #ifdef WITH_SELECT
 static void tryReduceNfds(int id)
@@ -215,6 +224,45 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
 #endif
 
 #ifdef HAVE_KQUEUE
+static struct kevent *addChange(void)
+{
+    if (nchanges == KQ_MAX_CHANGES)
+    {
+	kevent(kqfd, changes, nchanges, 0, 0, 0);
+	nchanges = 0;
+    }
+    return changes + nchanges++;
+}
+
+static int initKqueue(void)
+{
+    if (kqfd >= 0) return 0;
+#  if defined(HAVE_KQUEUEX)
+    kqfd = kqueuex(KQUEUE_CLOEXEC);
+#  elif defined(HAVE_KQUEUE1)
+    kqfd = kqueue1(O_CLOEXEC);
+#  else
+    kqfd = kqueue();
+    if (kqfd >= 0) fcntl(kqfd, F_SETFD, FD_CLOEXEC);
+#  endif
+    if (kqfd < 0) return -1;
+    struct sigaction sa = { .sa_handler = SIG_IGN };
+    if (sigaction(SIGTERM, &sa, 0) < 0) goto fail;
+    if (sigaction(SIGINT, &sa, 0) < 0) goto fail;
+    if (sigaction(SIGALRM, &sa, 0) < 0) goto fail;
+
+    EV_SET(addChange(), SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    EV_SET(addChange(), SIGINT, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    EV_SET(addChange(), SIGALRM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    EV_SET(addChange(), SIGCHLD, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    return 0;
+
+fail:
+    close(kqfd);
+    kqfd = -1;
+    return -1;
+}
+
 static int verifyKqueue(int fd, int log)
 {
     if (kqfd < 0)
@@ -226,42 +274,28 @@ static int verifyKqueue(int fd, int log)
     return 0;
 }
 
-static struct kevent *addChange(void)
-{
-    if (nchanges == KQ_MAX_CHANGES)
-    {
-	kevent(kqfd, changes, nchanges, 0, 0, 0);
-	nchanges = 0;
-    }
-    return changes + nchanges++;
-}
-
 SOEXPORT void PSC_Service_registerRead(int id)
 {
     if (verifyKqueue(id, 1) < 0) return;
-    struct kevent *ev = addChange();
-    EV_SET(ev, id, EVFILT_READ, EV_ADD, 0, 0, 0);
+    EV_SET(addChange(), id, EVFILT_READ, EV_ADD, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_unregisterRead(int id)
 {
     if (verifyKqueue(id, 0) < 0) return;
-    struct kevent *ev = addChange();
-    EV_SET(ev, id, EVFILT_READ, EV_DELETE, 0, 0, 0);
+    EV_SET(addChange(), id, EVFILT_READ, EV_DELETE, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_registerWrite(int id)
 {
     if (verifyKqueue(id, 1) < 0) return;
-    struct kevent *ev = addChange();
-    EV_SET(ev, id, EVFILT_WRITE, EV_ADD, 0, 0, 0);
+    EV_SET(addChange(), id, EVFILT_WRITE, EV_ADD, 0, 0, 0);
 }
 
 SOEXPORT void PSC_Service_unregisterWrite(int id)
 {
     if (verifyKqueue(id, 0) < 0) return;
-    struct kevent *ev = addChange();
-    EV_SET(ev, id, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
+    EV_SET(addChange(), id, EVFILT_WRITE, EV_DELETE, 0, 0, 0);
 }
 #endif
 
@@ -491,6 +525,41 @@ SOEXPORT void PSC_Service_unregisterPanic(PSC_PanicHandler handler)
     }
 }
 
+#ifdef HAVE_KQUEUE
+SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
+{
+    if (initKqueue() < 0) return;
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    if (handler)
+    {
+	if (signo != SIGTERM && signo != SIGINT
+		&& signo != SIGALRM && signo != SIGCHLD)
+	{
+	    sa.sa_handler = SIG_IGN;
+	    if (sigaction(signo, &sa, 0) < 0) return;
+	}
+	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_ADD, 0, 0,
+		(void *)handler);
+    }
+    else if (signo == SIGTERM || signo == SIGINT
+	    || signo == SIGALRM || signo == SIGCHLD)
+    {
+	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    }
+    else
+    {
+	sa.sa_handler = SIG_DFL;
+	sigaction(signo, &sa, 0);
+	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_DELETE, 0, 0, 0);
+    }
+    kevent(kqfd, changes, nchanges, 0, 0, 0);
+    nchanges = 0;
+}
+#endif
+
+#ifdef WITH_SIGHDL
 SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 {
     if (signo < 0 || signo >= NSIG) return;
@@ -525,6 +594,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 
     sigcallback[signo] = handler;
 }
+#endif
 
 static void raiseTick(void *receiver, void *sender, void *args)
 {
@@ -552,6 +622,30 @@ static int panicreturn(void)
     return setjmp(panicjmp) < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+static void reapChildren(void)
+{
+    PSC_EAChildExited ea;
+    int status;
+    pid_t pid;
+    while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0)
+    {
+	ea.pid = pid;
+	if (WIFEXITED(status))
+	{
+	    ea.val = WEXITSTATUS(status);
+	    ea.signaled = 0;
+	}
+	else if (WIFSIGNALED(status))
+	{
+	    ea.val = WTERMSIG(status);
+	    ea.signaled = 1;
+	}
+	else continue;
+	PSC_Event_raise(&childExited, (int)pid, &ea);
+    }
+}
+
+#ifdef WITH_SIGHDL
 static int handleSigFlags(void)
 {
     if (sigflags[SIGINT] || sigflags[SIGTERM])
@@ -565,25 +659,7 @@ static int handleSigFlags(void)
     }
     if (sigflags[SIGCHLD])
     {
-	PSC_EAChildExited ea;
-	int status;
-	pid_t pid;
-	while ((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0)
-	{
-	    ea.pid = pid;
-	    if (WIFEXITED(status))
-	    {
-		ea.val = WEXITSTATUS(status);
-		ea.signaled = 0;
-	    }
-	    else if (WIFSIGNALED(status))
-	    {
-		ea.val = WTERMSIG(status);
-		ea.signaled = 1;
-	    }
-	    else continue;
-	    PSC_Event_raise(&childExited, (int)pid, &ea);
-	}
+	reapChildren();
     }
     int handled = 0;
     for (int s = 0; s < NSIG; ++s) if (sigflags[s])
@@ -594,6 +670,7 @@ static int handleSigFlags(void)
     }
     return handled;
 }
+#endif
 
 #ifdef HAVE_KQUEUE
 static const char *eventBackendInfo(void)
@@ -603,30 +680,54 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(void)
 {
-    sigset_t origmask;
-    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
-    errno = 0;
     struct kevent ev[KQ_MAX_EVENTS];
     int qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
-    int kqerr = errno;
-    pthread_sigmask(SIG_SETMASK, &origmask, 0);
-    if (qrc >= 0) nchanges = 0;
-    if (!handleSigFlags() && qrc < 0)
+    if (qrc < 0)
     {
-	if (kqerr == EINTR) return 0;
+	if (errno == EINTR) return 0;
 	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
 	return -1;
     }
+    nchanges = 0;
     for (int i = 0; i <	qrc; ++i)
     {
 	if (ev[i].flags & EV_ERROR) continue;
-	if (ev[i].filter == EVFILT_WRITE)
+	switch (ev[i].filter)
 	{
-	    PSC_Event_raise(&readyWrite, ev[i].ident, 0);
-	}
-	else if (ev[i].filter == EVFILT_READ)
-	{
-	    PSC_Event_raise(&readyRead, ev[i].ident, 0);
+	    case EVFILT_SIGNAL:
+		switch (ev[i].ident)
+		{
+		    case SIGINT:
+		    case SIGTERM:
+			shutdownRef = 0;
+			PSC_Event_raise(&shutdown, 0, 0);
+			break;
+
+		    case SIGALRM:
+			PSC_Timer_underrun();
+			break;
+
+		    case SIGCHLD:
+			reapChildren();
+			break;
+
+		    default:
+			break;
+		}
+		PSC_SignalHandler handler = (PSC_SignalHandler)ev[i].udata;
+		if (handler) handler(ev[i].ident);
+		break;
+
+	    case EVFILT_WRITE:
+		PSC_Event_raise(&readyWrite, ev[i].ident, 0);
+		break;
+
+	    case EVFILT_READ:
+		PSC_Event_raise(&readyRead, ev[i].ident, 0);
+		break;
+
+	    default:
+		break;
 	}
     }
     return 0;
@@ -759,9 +860,11 @@ static int serviceLoop(int isRun)
     PSC_RunOpts *opts = runOpts();
 
     sigemptyset(&sigblockmask);
+#ifdef WITH_SIGHDL
     sigaddset(&sigblockmask, SIGTERM);
     sigaddset(&sigblockmask, SIGINT);
     sigaddset(&sigblockmask, SIGALRM);
+#endif
     sigaddset(&sigblockmask, SIGCHLD);
     if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
     {
@@ -771,6 +874,7 @@ static int serviceLoop(int isRun)
 
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
+#ifdef WITH_SIGHDL
     handler.sa_handler = handlesig;
     sigemptyset(&handler.sa_mask);
 
@@ -797,20 +901,18 @@ static int serviceLoop(int isRun)
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
 	goto done;
     }
+#endif
 
 #ifdef HAVE_KQUEUE
-#  if defined(HAVE_KQUEUEX)
-    kqfd = kqueuex(KQUEUE_CLOEXEC);
-#  elif defined(HAVE_KQUEUE1)
-    kqfd = kqueue1(O_CLOEXEC);
-#  else
-    kqfd = kqueue();
-    if (kqfd >= 0) fcntl(kqfd, F_SETFD, FD_CLOEXEC);
-#  endif
-    if (kqfd < 0)
+    if (initKqueue() < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: cannot open kqueue");
 	goto done;
+    }
+    if (nchanges)
+    {
+	kevent(kqfd, changes, nchanges, 0, 0, 0);
+	nchanges = 0;
     }
 #endif
 
@@ -863,6 +965,7 @@ static int serviceLoop(int isRun)
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
 
+#ifdef WITH_SIGHDL
     for (int s = 0; s < NSIG; ++s)
     {
 	if (sigcallback[s]) sigaddset(&sigblockmask, s);
@@ -891,6 +994,7 @@ static int serviceLoop(int isRun)
 		}
 	}
     }
+#endif
 
     if (isRun && opts->daemonize)
     {
@@ -938,10 +1042,6 @@ shutdown:
 
 done:
     handler.sa_handler = SIG_DFL;
-    sigaction(SIGTERM, &handler, 0);
-    sigaction(SIGINT, &handler, 0);
-    sigaction(SIGALRM, &handler, 0);
-    sigaction(SIGCHLD, &handler, 0);
     for (int s = 0; s < NSIG; ++s)
     {
 	sigaction(s, &handler, 0);
