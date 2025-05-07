@@ -119,6 +119,7 @@ static void deleteLater(PSC_Connection *self);
 static void doread(PSC_Connection *self) CMETHOD;
 static void readConnection(void *receiver, void *sender, void *args);
 static void writeConnection(void *receiver, void *sender, void *args);
+static void tryWrite(void *receiver, void *sender, void *args);
 static const char *locateeol(const char *str) ATTR_NONNULL((1));
 static void raisereceivedevents(PSC_Connection *self) CMETHOD;
 
@@ -380,7 +381,6 @@ static void dowrite(PSC_Connection *self)
 	    PSC_Log_fmt(PSC_L_DEBUG,
 		    "connection: not ready for writing to %s",
 		    PSC_Connection_remoteAddr(self));
-	    return;
 	}
 	else
 	{
@@ -449,6 +449,15 @@ static void writeConnection(void *receiver, void *sender, void *args)
 	}
 	dowrite(self);
     }
+}
+
+static void tryWrite(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_Connection *self = receiver;
+    if (!self->wrreg && (self->nrecs || self->wrbuflen)) dowrite(self);
 }
 
 static const char *locateeol(const char *str)
@@ -773,6 +782,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     {
 	PSC_Event_register(PSC_Service_readyWrite(), self,
 		writeConnection, fd);
+	PSC_Event_register(PSC_Service_eventsDone(), self,
+		tryWrite, 0);
     }
     if (opts->createmode == CCM_CONNECTING)
     {
@@ -914,7 +925,6 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
     rec->wrbufpos = 0;
     rec->wrbuf = buf;
     rec->id = id;
-    wantreadwrite(self);
     return 0;
 }
 
@@ -1053,6 +1063,8 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     if (self->tls_is_client) PSC_Connection_unreftlsctx();
 #endif
     PSC_Event_unregister(PSC_Service_tick(), self, checkPendingConnection, 0);
+    PSC_Event_unregister(PSC_Service_eventsDone(), self,
+	    tryWrite, 0);
     PSC_Event_unregister(PSC_Service_readyRead(), self,
 	    readConnection, self->fd);
     PSC_Event_unregister(PSC_Service_readyWrite(), self,
