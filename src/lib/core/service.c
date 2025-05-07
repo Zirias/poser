@@ -613,7 +613,8 @@ SOEXPORT int PSC_Service_setTickInterval(unsigned msec)
 	PSC_Event_register(PSC_Timer_expired(tickTimer), 0, raiseTick, 0);
     }
     PSC_Timer_setMs(tickTimer, msec);
-    if (running) PSC_Timer_start(tickTimer, 1);
+    if (running && msec) PSC_Timer_start(tickTimer, 1);
+    else PSC_Timer_stop(tickTimer);
     return 0;
 }
 
@@ -1015,8 +1016,7 @@ static int serviceLoop(int isRun)
     shutdownRef = -1;
     if (!tickTimer)
     {
-	tickTimer = PSC_Timer_create();
-	PSC_Timer_setMs(tickTimer, 0);
+	PSC_Service_setTickInterval(0);
     }
     else PSC_Timer_start(tickTimer, 1);
     PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: %s",
