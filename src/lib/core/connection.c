@@ -82,6 +82,8 @@ struct PSC_Connection
     int connecting;
     int paused;
     int port;
+    int rdreg;
+    int wrreg;
 #ifdef WITH_TLS
     int tls_is_client;
     int tls_connect_st;
@@ -150,11 +152,13 @@ static void wantreadwrite(PSC_Connection *self)
 #endif
 	))
     {
-	PSC_Service_registerWrite(self->fd);
+	if (!self->wrreg) PSC_Service_registerWrite(self->fd);
+	self->wrreg = 1;
     }
     else
     {
-	PSC_Service_unregisterWrite(self->fd);
+	if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
+	self->wrreg = 0;
     }
 
     if (!self->deleteScheduled && (
@@ -166,11 +170,13 @@ static void wantreadwrite(PSC_Connection *self)
 #endif
 		(!self->paused && !self->args.handling)))
     {
-	PSC_Service_registerRead(self->fd);
+	if (!self->rdreg) PSC_Service_registerRead(self->fd);
+	self->rdreg = 1;
     }
     else
     {
-	PSC_Service_unregisterRead(self->fd);
+	if (self->rdreg) PSC_Service_unregisterRead(self->fd);
+	self->rdreg = 0;
     }
 }
 
@@ -697,6 +703,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->connecting = 0;
     self->paused = 0;
     self->port = 0;
+    self->rdreg = 0;
+    self->wrreg = 0;
     self->ipAddr = 0;
     self->addr = 0;
     self->name = 0;
@@ -772,6 +780,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	PSC_Event_register(PSC_Service_tick(), self,
 		checkPendingConnection, 0);
 	PSC_Service_registerWrite(fd);
+	self->wrreg = 1;
     }
 #ifdef WITH_TLS
     else if (self->tls && !self->tls_is_client)
@@ -784,6 +793,7 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     else
     {
 	PSC_Service_registerRead(fd);
+	self->rdreg = 1;
     }
     return self;
 }
