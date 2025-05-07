@@ -8,6 +8,7 @@
 
 #include <poser/core/log.h>
 #include <poser/core/threadpool.h>
+#include <poser/core/timer.h>
 #include <poser/core/util.h>
 
 #include <errno.h>
@@ -23,8 +24,7 @@
 #endif
 
 #define NWRITERECS 16
-#define CONNTICKS 6
-#define RESOLVTICKS 6
+#define CONNTIMEOUT 5000
 
 struct PSC_EADataReceived
 {
@@ -48,7 +48,7 @@ typedef struct WriteNotifyRecord
     uint16_t wrbufpos;
 } WriteNotifyRecord;
 
-typedef enum ConectionType
+typedef enum ConnectionType
 {
     CT_SOCKET,
     CT_PIPERD,
@@ -63,7 +63,9 @@ struct PSC_Connection
     PSC_Event *dataReceived;
     PSC_Event *dataSent;
     PSC_Event *nameResolved;
+    PSC_Timer *connectTimer;
 #ifdef WITH_TLS
+    PSC_Timer *tlsConnectTimer;
     SSL *tls;
 #endif
     PSC_IpAddr *ipAddr;
@@ -79,7 +81,6 @@ struct PSC_Connection
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
     int fd;
-    int connecting;
     int paused;
     int port;
     int rdreg;
@@ -87,7 +88,6 @@ struct PSC_Connection
 #ifdef WITH_TLS
     int tls_is_client;
     int tls_connect_st;
-    int tls_connect_ticks;
     int tls_read_st;
     int tls_write_st;
     int tls_shutdown_st;
@@ -106,10 +106,10 @@ struct PSC_Connection
     uint8_t rdbuf[];
 };
 
-static void checkPendingConnection(void *receiver, void *sender, void *args);
+static void connectionTimeout(void *receiver, void *sender, void *args);
 static void wantreadwrite(PSC_Connection *self) CMETHOD;
 #ifdef WITH_TLS
-static void checkPendingTls(void *receiver, void *sender, void *args);
+static void tlsHandshakeTimeout(void *receiver, void *sender, void *args);
 static void dohandshake(PSC_Connection *self) CMETHOD;
 static void handshakenow(void *receiver, void *sender, void *args);
 #endif
@@ -123,31 +123,28 @@ static void tryWrite(void *receiver, void *sender, void *args);
 static const char *locateeol(const char *str) ATTR_NONNULL((1));
 static void raisereceivedevents(PSC_Connection *self) CMETHOD;
 
-static void checkPendingConnection(void *receiver, void *sender, void *args)
+static void connectionTimeout(void *receiver, void *sender, void *args)
 {
     (void)sender;
     (void)args;
 
     PSC_Connection *self = receiver;
-    if (self->connecting && !--self->connecting)
-    {
-	PSC_Log_fmt(PSC_L_INFO, "connection: timeout connecting to %s",
-		PSC_Connection_remoteAddr(self));
-	PSC_Service_unregisterWrite(self->fd);
-	PSC_Connection_close(self, 1);
-    }
+    PSC_Log_fmt(PSC_L_INFO, "connection: timeout connecting to %s",
+	    PSC_Connection_remoteAddr(self));
+    PSC_Service_unregisterWrite(self->fd);
+    PSC_Connection_close(self, 1);
 }
 
 static void wantreadwrite(PSC_Connection *self)
 {
     if (!self->deleteScheduled && (
-		self->connecting ||
+		self->connectTimer ||
 #ifdef WITH_TLS
 		self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_read_st == SSL_ERROR_WANT_WRITE ||
 		self->tls_write_st == SSL_ERROR_WANT_WRITE ||
 		((self->wrbuflen || self->nrecs)
-		&& !self->tls_connect_ticks && !self->tls_shutdown_st)
+		&& !self->tlsConnectTimer && !self->tls_shutdown_st)
 #else
 		self->wrbuflen || self->nrecs
 #endif
@@ -182,18 +179,15 @@ static void wantreadwrite(PSC_Connection *self)
 }
 
 #ifdef WITH_TLS
-static void checkPendingTls(void *receiver, void *sender, void *args)
+static void tlsHandshakeTimeout(void *receiver, void *sender, void *args)
 {
     (void)sender;
     (void)args;
 
     PSC_Connection *self = receiver;
-    if (self->tls_connect_ticks && !--self->tls_connect_ticks)
-    {
-	PSC_Log_fmt(PSC_L_INFO, "connection: TLS handshake timeout with %s",
-		PSC_Connection_remoteAddr(self));
-	PSC_Connection_close(self, 1);
-    }
+    PSC_Log_fmt(PSC_L_INFO, "connection: TLS handshake timeout with %s",
+	    PSC_Connection_remoteAddr(self));
+    PSC_Connection_close(self, 1);
 }
 
 static void dohandshake(PSC_Connection *self)
@@ -205,8 +199,8 @@ static void dohandshake(PSC_Connection *self)
     if (rc > 0)
     {
 	self->tls_connect_st = 0;
-	PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
-	self->tls_connect_ticks = 0;
+	PSC_Timer_destroy(self->tlsConnectTimer);
+	self->tlsConnectTimer = 0;
 	if (self->tls_is_client)
 	{
 	    long vres;
@@ -245,7 +239,8 @@ static void dohandshake(PSC_Connection *self)
 		    "connection: TLS handshake failed with %s: %s",
 		    PSC_Connection_remoteAddr(self),
 		    ERR_error_string(ERR_get_error(), 0));
-	    PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
+	    PSC_Timer_destroy(self->tlsConnectTimer);
+	    self->tlsConnectTimer = 0;
 	    PSC_Connection_close(self, 1);
 	    return;
 	}
@@ -398,10 +393,8 @@ static void writeConnection(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Connection *self = receiver;
-    if (self->connecting)
+    if (self->connectTimer)
     {
-	PSC_Event_unregister(PSC_Service_tick(), self,
-		checkPendingConnection, 0);
 	int err = 0;
 	socklen_t errlen = sizeof err;
 	if (getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) < 0
@@ -412,16 +405,24 @@ static void writeConnection(void *receiver, void *sender, void *args)
 	    PSC_Connection_close(self, 1);
 	    return;
 	}
-	self->connecting = 0;
 #ifdef WITH_TLS
 	if (self->tls)
 	{
-	    self->tls_connect_ticks = CONNTICKS;
-	    PSC_Event_register(PSC_Service_tick(), self, checkPendingTls, 0);
+	    PSC_Event_unregister(PSC_Timer_expired(self->connectTimer), self,
+		    connectionTimeout, 0);
+	    self->tlsConnectTimer = self->connectTimer;
+	    PSC_Timer_setMs(self->tlsConnectTimer, CONNTIMEOUT);
+	    PSC_Event_register(PSC_Timer_expired(self->tlsConnectTimer), self,
+		    tlsHandshakeTimeout, 0);
 	    dohandshake(self);
 	    return;
 	}
+	else
 #endif
+	{
+	    PSC_Timer_destroy(self->connectTimer);
+	}
+	self->connectTimer = 0;
 	wantreadwrite(self);
 	PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
 		PSC_Connection_remoteAddr(self));
@@ -704,12 +705,12 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
     self->nameResolved = PSC_Event_createDummyFire(self, 0);
+    self->connectTimer = 0;
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
     self->rdbufpos = 0;
     self->rdexpect = 0;
     self->fd = fd;
-    self->connecting = 0;
     self->paused = 0;
     self->port = 0;
     self->rdreg = 0;
@@ -755,8 +756,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     {
 	self->tls = 0;
     }
+    self->tlsConnectTimer = 0;
     self->tls_connect_st = 0;
-    self->tls_connect_ticks = 0;
     self->tls_read_st = 0;
     self->tls_write_st = 0;
     self->tls_shutdown_st = 0;
@@ -787,18 +788,23 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     }
     if (opts->createmode == CCM_CONNECTING)
     {
-	self->connecting = CONNTICKS;
-	PSC_Event_register(PSC_Service_tick(), self,
-		checkPendingConnection, 0);
+	self->connectTimer = PSC_Timer_create();
+	PSC_Timer_setMs(self->connectTimer, CONNTIMEOUT);
+	PSC_Event_register(PSC_Timer_expired(self->connectTimer), self,
+		connectionTimeout, 0);
 	PSC_Service_registerWrite(fd);
+	PSC_Timer_start(self->connectTimer, 0);
 	self->wrreg = 1;
     }
 #ifdef WITH_TLS
     else if (self->tls && !self->tls_is_client)
     {
-	self->tls_connect_ticks = CONNTICKS;
-	PSC_Event_register(PSC_Service_tick(), self, checkPendingTls, 0);
+	self->tlsConnectTimer = PSC_Timer_create();
+	PSC_Timer_setMs(self->tlsConnectTimer, CONNTIMEOUT);
+	PSC_Event_register(PSC_Timer_expired(self->tlsConnectTimer), self,
+		tlsHandshakeTimeout, 0);
 	PSC_Event_register(PSC_Service_eventsDone(), self, handshakenow, 0);
+	PSC_Timer_start(self->tlsConnectTimer, 0);
     }
 #endif
     else
@@ -969,7 +975,7 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 	PSC_Connection_blacklistAddress(self->blacklisthits, self->ipAddr);
     }
 #ifdef WITH_TLS
-    if (self->tls && !self->connecting && !self->tls_connect_st)
+    if (self->tls && !self->connectTimer && !self->tls_connect_st)
     {
 	self->tls_shutdown_st = 0;
 	int rc = SSL_shutdown(self->tls);
@@ -987,7 +993,7 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 	}
     }
 #endif
-    PSC_Event_raise(self->closed, 0, self->connecting ? 0 : self);
+    PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
     deleteLater(self);
 }
 
@@ -1055,16 +1061,15 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 #ifdef WITH_TLS
 	if (self->tls) SSL_shutdown(self->tls);
 #endif
-	PSC_Event_raise(self->closed, 0, self->connecting ? 0 : self);
+	PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
 	cleanForDelete(self);
     }
 
 #ifdef WITH_TLS
     SSL_free(self->tls);
-    PSC_Event_unregister(PSC_Service_tick(), self, checkPendingTls, 0);
+    PSC_Timer_destroy(self->tlsConnectTimer);
     if (self->tls_is_client) PSC_Connection_unreftlsctx();
 #endif
-    PSC_Event_unregister(PSC_Service_tick(), self, checkPendingConnection, 0);
     PSC_Event_unregister(PSC_Service_eventsDone(), self,
 	    tryWrite, 0);
     PSC_Event_unregister(PSC_Service_readyRead(), self,
@@ -1075,6 +1080,7 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
     free(self->name);
+    PSC_Timer_destroy(self->connectTimer);
     PSC_Event_destroy(self->nameResolved);
     PSC_Event_destroy(self->dataSent);
     PSC_Event_destroy(self->dataReceived);
