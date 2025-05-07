@@ -1006,8 +1006,10 @@ SOEXPORT void *PSC_Connection_data(const PSC_Connection *self)
 
 static void cleanForDelete(PSC_Connection *self)
 {
-    PSC_Service_unregisterRead(self->fd);
-    PSC_Service_unregisterWrite(self->fd);
+    if (self->rdreg) PSC_Service_unregisterRead(self->fd);
+    if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
+    self->rdreg = 0;
+    self->wrreg = 0;
     close(self->fd);
 }
 
