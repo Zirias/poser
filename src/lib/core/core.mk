@@ -59,6 +59,7 @@ endif
 posercore_MODULES=		base64 \
 				certinfo \
 				client \
+				config \
 				connection \
 				daemon \
 				dictionary \
@@ -88,6 +89,7 @@ posercore_HEADERS_INSTALL=	core \
 				core/base64 \
 				core/certinfo \
 				core/client \
+				core/config \
 				core/connection \
 				core/daemon \
 				core/dictionary \
