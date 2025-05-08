@@ -47,6 +47,9 @@ KQUEUEX_HEADERS=		sys/types.h sys/event.h sys/time.h
 KQUEUEX_ARGS=			u_int
 KQUEUE1_FUNC=			kqueue1
 KQUEUE1_HEADERS=		sys/types.h sys/event.h sys/time.h
+SIGNALFD_FUNC=			signalfd
+SIGNALFD_HEADERS=		sys/signalfd.h
+SIGNALFD_ARGS=			int, const sigset_t *, int
 
 ifneq ($(WITHOUT_EPOLL),1)
 posercore_PRECHECK+=		EPOLL
@@ -54,6 +57,10 @@ endif
 
 ifneq ($(WITHOUT_KQUEUE),1)
 posercore_PRECHECK+=		KQUEUE KQUEUEX KQUEUE1
+endif
+
+ifneq ($(WITHOUT_SIGNALFD),1)
+posercore_PRECHECK+=		SIGNALFD
 endif
 
 posercore_MODULES=		base64 \
@@ -173,6 +180,15 @@ ifeq ($(WITH_KQUEUE),1)
   endif
   ifneq ($(posercore_HAVE_KQUEUE),1)
     $(error Requested kqueue (WITH_KQUEUE), but not found)
+  endif
+endif
+
+ifeq ($(WITH_SIGNALFD),1)
+  ifeq ($(WITHOUT_SIGNALFD),1)
+    $(error Cannot set both WITH_SIGNALFD and WITHOUT_SIGNALFD)
+  endif
+  ifneq ($(posercore_HAVE_SIGNALFD),1)
+    $(error Requested signalfd (WITH_SIGNALFD), but not found)
   endif
 endif
 

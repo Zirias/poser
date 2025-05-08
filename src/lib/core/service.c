@@ -28,8 +28,18 @@
 #  define WITH_SELECT
 #endif
 
-#if !defined(HAVE_KQUEUE)
+#ifdef HAVE_KQUEUE
+#  undef HAVE_SIGNALFD
+#endif
+
+#if !defined(HAVE_KQUEUE) && !defined(HAVE_SIGNALFD)
 #  define WITH_SIGHDL
+#endif
+
+#ifdef HAVE_SIGNALFD
+#  include <sys/signalfd.h>
+
+static int sfd = -1;
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -126,9 +136,11 @@ static int numPanicHandlers;
 
 static sigset_t sigorigmask;
 static sigset_t sigblockmask;
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
+static PSC_SignalHandler sigcallback[NSIG];
+#endif
 #ifdef WITH_SIGHDL
 static volatile sig_atomic_t sigflags[NSIG];
-static PSC_SignalHandler sigcallback[NSIG];
 static void handlesig(int signum)
 {
     if (signum < 0 || signum >= NSIG) return;
@@ -559,7 +571,23 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 }
 #endif
 
-#ifdef WITH_SIGHDL
+#ifdef HAVE_SIGNALFD
+static int initSigfd(void)
+{
+#if defined(SFD_NONBLOCK) && defined(SFD_CLOEXEC)
+    sfd = signalfd(sfd, &sigblockmask, SFD_NONBLOCK|SFD_CLOEXEC);
+#else
+    if (sfd >= 0)
+    {
+	fcntl(sfd, F_SETFD, FD_CLOEXEC);
+	fcntl(sfd, F_SETFL, fcntl(sfd, F_GETFL) | O_NONBLOCK);
+    }
+#endif
+    return sfd;
+}
+#endif
+
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
 SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 {
     if (signo < 0 || signo >= NSIG) return;
@@ -567,16 +595,23 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
     if (running && signo != SIGTERM && signo != SIGINT
 	    && signo != SIGALRM && signo != SIGCHLD)
     {
+#ifdef WITH_SIGHDL
 	struct sigaction sa;
+#endif
 	if (sigcallback[signo] && !handler)
 	{
+#ifdef WITH_SIGHDL
 	    memset(&sa, 0, sizeof sa);
 	    sa.sa_handler = SIG_DFL;
 	    sigemptyset(&sa.sa_mask);
 	    if (sigaction(signo, &sa, 0) == 0)
+#endif
 	    {
 		sigdelset(&sigblockmask, signo);
 		sigprocmask(SIG_SETMASK, &sigblockmask, 0);
+#ifdef HAVE_SIGNALFD
+		initSigfd();
+#endif
 	    }
 	}
 	if (!sigcallback[signo] && handler)
@@ -584,10 +619,14 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	    if (sigaddset(&sigblockmask, signo) == 0 &&
 		    sigprocmask(SIG_SETMASK, &sigblockmask, 0) == 0)
 	    {
+#ifdef HAVE_SIGNALFD
+		initSigfd();
+#else
 		memset(&sa, 0, sizeof sa);
 		sa.sa_handler = handlesig;
 		sigemptyset(&sa.sa_mask);
 		sigaction(signo, &sa, 0);
+#endif
 	    }
 	}
     }
@@ -673,6 +712,44 @@ static int handleSigFlags(void)
 }
 #endif
 
+#ifdef HAVE_SIGNALFD
+static int handleSigfd(void)
+{
+    if (sfd < 0) return -1;
+
+    struct signalfd_siginfo fdsi;
+    ssize_t rrc;
+    while ((rrc = read(sfd, &fdsi, sizeof fdsi)) == sizeof fdsi)
+    {
+	switch (fdsi.ssi_signo)
+	{
+	    case SIGINT:
+	    case SIGTERM:
+		shutdownRef = 0;
+		PSC_Event_raise(&shutdown, 0, 0);
+		break;
+
+	    case SIGALRM:
+		PSC_Timer_underrun();
+		break;
+
+	    case SIGCHLD:
+		reapChildren();
+		break;
+
+	    default:
+		break;
+	}
+	if (sigcallback[fdsi.ssi_signo])
+	{
+	    sigcallback[fdsi.ssi_signo](fdsi.ssi_signo);
+	}
+    }
+    if (rrc < 0 && errno != EWOULDBLOCK) return -1;
+    return 0;
+}
+#endif
+
 #ifdef HAVE_KQUEUE
 static const char *eventBackendInfo(void)
 {
@@ -744,14 +821,31 @@ static const char *eventBackendInfo(void)
 static int processEvents(void)
 {
     struct epoll_event ev[EP_MAX_EVENTS];
+#ifdef WITH_SIGHDL
     int prc = epoll_pwait2(epfd, ev, EP_MAX_EVENTS, 0, &sigorigmask);
     if (!handleSigFlags() && prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
 	return -1;
     }
+#else
+    int prc = epoll_wait(epfd, ev, EP_MAX_EVENTS, -1);
+    if (prc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
+	return -1;
+    }
+#endif
     for (int i = 0; i < prc; ++i)
     {
+#ifdef HAVE_SIGNALFD
+	if (ev[i].events & EPOLLIN && ev[i].data.fd == sfd)
+	{
+	    if (handleSigfd() >= 0) continue;
+	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
+	    return -1;
+	}
+#endif
 	if (ev[i].events & EPOLLOUT)
 	{
 	    PSC_Event_raise(&readyWrite, ev[i].data.fd, 0);
@@ -773,6 +867,7 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(void)
 {
+#ifdef WITH_SIGHDL
     sigset_t origmask;
     pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
     errno = 0;
@@ -785,10 +880,26 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
 	return -1;
     }
+#else
+    int prc = poll(fds, nfds, -1);
+    if (prc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
+	return -1;
+    }
+#endif
     for (size_t i = 0; prc > 0 && i < nfds; ++i)
     {
 	if (!fds[i].revents) continue;
 	--prc;
+#ifdef HAVE_SIGNALFD
+	if (fds[i].revents & POLLIN && fds[i].fd == sfd)
+	{
+	    if (handleSigfd() >= 0) continue;
+	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
+	    return -1;
+	}
+#endif
 	if (fds[i].revents & POLLOUT)
 	{
 	    PSC_Event_raise(&readyWrite, fds[i].fd, 0);
@@ -828,12 +939,21 @@ static int processEvents(void)
 	memcpy(&wfds, &writefds, sizeof wfds);
 	w = &wfds;
     }
+#ifdef WITH_SIGHTL
     int src = pselect(nfds, r, w, 0, 0, &sigorigmask);
     if (!handleSigFlags() && src < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
 	return -1;
     }
+#else
+    int src = select(nfds, r, w, 0, 0);
+    if (src < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
+	return -1;
+    }
+#endif
     if (w) for (int i = 0; src > 0 && i < nfds; ++i)
     {
 	if (FD_ISSET(i, w))
@@ -847,6 +967,14 @@ static int processEvents(void)
 	if (FD_ISSET(i, r))
 	{
 	    --src;
+#ifdef HAVE_SIGNALFD
+	    if (i == sfd)
+	    {
+		if (handleSigfd() >= 0) continue;
+		PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
+		return -1;
+	    }
+#endif
 	    PSC_Event_raise(&readyRead, i, 0);
 	}
     }
@@ -861,7 +989,7 @@ static int serviceLoop(int isRun)
     PSC_RunOpts *opts = runOpts();
 
     sigemptyset(&sigblockmask);
-#ifdef WITH_SIGHDL
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
     sigaddset(&sigblockmask, SIGTERM);
     sigaddset(&sigblockmask, SIGINT);
     sigaddset(&sigblockmask, SIGALRM);
@@ -873,8 +1001,10 @@ static int serviceLoop(int isRun)
 	return rc;
     }
 
+#if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
+#endif
 #ifdef WITH_SIGHDL
     handler.sa_handler = handlesig;
     sigemptyset(&handler.sa_mask);
@@ -900,6 +1030,14 @@ static int serviceLoop(int isRun)
     if (sigaction(SIGCHLD, &handler, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
+	goto done;
+    }
+#endif
+
+#ifdef HAVE_SIGNALFD
+    if (initSigfd() < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: cannot open signalfd");
 	goto done;
     }
 #endif
@@ -966,7 +1104,7 @@ static int serviceLoop(int isRun)
     rc = sea.rc;
     if (rc != EXIT_SUCCESS) goto done;
 
-#ifdef WITH_SIGHDL
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
     for (int s = 0; s < NSIG; ++s)
     {
 	if (sigcallback[s]) sigaddset(&sigblockmask, s);
@@ -976,7 +1114,14 @@ static int serviceLoop(int isRun)
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
 	return rc;
     }
+#endif
 
+#ifdef HAVE_SIGNALFD
+    initSigfd();
+    PSC_Service_registerRead(sfd);
+#endif
+
+#ifdef WITH_SIGHDL
     for (int s = 0; s < NSIG; ++s)
     {
 	switch (s)
@@ -1041,11 +1186,13 @@ shutdown:
     PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
 
 done:
+#if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
     handler.sa_handler = SIG_DFL;
     for (int s = 0; s < NSIG; ++s)
     {
 	sigaction(s, &handler, 0);
     }
+#endif
     if (sigprocmask(SIG_SETMASK, &sigorigmask, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
@@ -1054,6 +1201,14 @@ done:
 
     PSC_Timer_destroy(tickTimer);
     tickTimer = 0;
+
+#ifdef HAVE_SIGNALFD
+    if (sfd >= 0)
+    {
+	close(sfd);
+	sfd = -1;
+    }
+#endif
 
 #ifdef WITH_POLL
     free(fds);
