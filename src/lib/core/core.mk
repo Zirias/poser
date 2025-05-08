@@ -132,6 +132,10 @@ posercore_HEADERDIR=		include$(PSEP)poser
 posercore_HEADERTGTDIR=		$(includedir)$(PSEP)poser
 posercore_VERSION=		1.2.2
 
+ifneq ($(findstring -solaris,$(TARGETARCH)),)
+posercore_LIBS+=		socket
+endif
+
 ifeq ($(WITH_POLL),1)
 posercore_DEFINES+=		-DWITH_POLL
 endif
