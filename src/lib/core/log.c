@@ -63,8 +63,8 @@ static void writeFile(PSC_LogLevel level, const char *message, void *data)
 
 static void writeSyslog(PSC_LogLevel level, const char *message, void *data)
 {
-    (void)data;
     syslog(syslogLevels[level], "%s", message);
+    if (data) writeFile(level, message, stderr);
 }
 
 SOEXPORT void PSC_Log_setFileLogger(FILE *file)
@@ -77,10 +77,14 @@ SOEXPORT void PSC_Log_setSyslogLogger(const char *ident,
 	int facility, int withStderr)
 {
     int logopts = LOG_PID;
+#ifdef LOG_PERROR
     if (withStderr) logopts |= LOG_PERROR;
+    writerdata = 0;
+#else
+    writerdata = withStderr ? &writerdata : 0;
+#endif
     openlog(ident, logopts, facility);
     currentwriter = writeSyslog;
-    writerdata = 0;
 }
 
 SOEXPORT void PSC_Log_setCustomLogger(PSC_LogWriter writer, void *data)
