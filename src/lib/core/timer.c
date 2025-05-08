@@ -8,7 +8,18 @@
 #include <stdlib.h>
 
 #ifdef HAVE_KQUEUE
+#  undef HAVE_TIMERFD
 #  include "service.h"
+#elif defined(HAVE_TIMERFD)
+#  include <poser/core/event.h>
+#  include <poser/core/log.h>
+#  include <poser/core/service.h>
+#  include <fcntl.h>
+#  include <stdint.h>
+#  include <sys/timerfd.h>
+#  include <time.h>
+#  include <unistd.h>
+void expired(void *receiver, void *sender, void *args);
 #else
 #  include <sys/time.h>
 
@@ -29,7 +40,10 @@ static const struct itimerval itvzero;
 struct PSC_Timer
 {
     PSC_Event *expired;
-#ifdef HAVE_KQUEUE
+#if defined(HAVE_KQUEUE) || defined(HAVE_TIMERFD)
+#  ifdef HAVE_TIMERFD
+    int tfd;
+#  endif
     int job;
 #else
     PSC_TimerJob *job;
@@ -40,7 +54,23 @@ struct PSC_Timer
 
 SOEXPORT PSC_Timer *PSC_Timer_create(void)
 {
-#ifndef HAVE_KQUEUE
+#ifdef HAVE_TIMERFD
+#  if defined(TFD_NONBLOCK) && defined(TFD_CLOEXEC)
+    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK|TFD_CLOEXEC);
+#  else
+    int tfd = timerfd_create(CLOCK_MONOTONIC, 0);
+    if (tfd >= 0)
+    {
+	fcntl(tfd, F_SETFD, FD_CLOEXEC);
+	fcntl(tfd, F_SETFL, fcntl(tfd, F_GETFL) | O_NONBLOCK);
+    }
+#  endif
+    if (tfd < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "timer: cannot create timerfd");
+    }
+#endif
+#if !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
     if (!initialized)
     {
 	setitimer(ITIMER_REAL, &itvzero, 0);
@@ -49,6 +79,14 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 #endif
     PSC_Timer *self = PSC_malloc(sizeof *self);
     self->expired = PSC_Event_create(self);
+#ifdef HAVE_TIMERFD
+    self->tfd = tfd;
+    if (tfd >= 0)
+    {
+	PSC_Event_register(PSC_Service_readyRead(), self, expired, tfd);
+	PSC_Service_registerRead(tfd);
+    }
+#endif
     self->job = 0;
     self->ms = 1000;
     self->periodic = 0;
@@ -64,7 +102,7 @@ SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
 {
     if (self->job)
     {
-#ifndef HAVE_KQUEUE
+#if !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
 	PSC_Timer_stop(self);
 #endif
 	self->ms = ms;
@@ -96,6 +134,49 @@ SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
     if (self->job)
     {
 	PSC_Service_unarmTimer(self, self->ms, self->periodic);
+	self->job = 0;
+    }
+}
+
+#elif defined(HAVE_TIMERFD)
+
+void expired(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_Timer *self = receiver;
+    uint64_t times;
+    if (self->tfd < 0 || read(self->tfd, &times, sizeof times) != sizeof times)
+    {
+	return;
+    }
+    for (uint64_t i = 0; i < times; ++i)
+    {
+	PSC_Event_raise(self->expired, 0, 0);
+    }
+    if (!self->periodic) self->job = 0;
+}
+
+SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
+{
+    if (self->tfd >= 0 && !self->job && self->ms)
+    {
+	struct itimerspec its = { {0, 0}, {0, 0} };
+	its.it_value.tv_sec = self->ms / 1000U;
+	its.it_value.tv_nsec = 1000000U * (self->ms % 1000U);
+	if (periodic) its.it_interval = its.it_value;
+	timerfd_settime(self->tfd, 0, &its, 0);
+	self->job = 1;
+    }
+}
+
+SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
+{
+    if (self->tfd >= 0 && self->job)
+    {
+	struct itimerspec its = { {0, 0}, {0, 0} };
+	timerfd_settime(self->tfd, 0, &its, 0);
 	self->job = 0;
     }
 }
@@ -250,6 +331,15 @@ SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
 {
     if (!self) return;
     if (self->job) PSC_Timer_stop(self);
+#ifdef HAVE_TIMERFD
+    if (self->tfd >= 0)
+    {
+	PSC_Service_unregisterRead(self->tfd);
+	PSC_Event_unregister(PSC_Service_readyRead(), self,
+		expired, self->tfd);
+	close(self->tfd);
+    }
+#endif
     PSC_Event_destroy(self->expired);
     free(self);
 }

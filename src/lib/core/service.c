@@ -708,10 +708,12 @@ static int handleSigFlags(void)
 	shutdownRef = 0;
 	PSC_Event_raise(&shutdown, 0, 0);
     }
+#ifndef HAVE_TIMERFD
     if (sigflags[SIGALRM])
     {
 	PSC_Timer_underrun();
     }
+#endif
     if (sigflags[SIGCHLD])
     {
 	reapChildren();
@@ -744,9 +746,11 @@ static int handleSigfd(void)
 		PSC_Event_raise(&shutdown, 0, 0);
 		break;
 
+#ifndef HAVE_TIMERFD
 	    case SIGALRM:
 		PSC_Timer_underrun();
 		break;
+#endif
 
 	    case SIGCHLD:
 		reapChildren();
@@ -1038,11 +1042,13 @@ static int serviceLoop(int isRun)
 	goto done;
     }
 
+#ifndef HAVE_TIMERFD
     if (sigaction(SIGALRM, &handler, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
 	goto done;
     }
+#endif
 
     if (sigaction(SIGCHLD, &handler, 0) < 0)
     {
@@ -1145,7 +1151,9 @@ static int serviceLoop(int isRun)
 	{
 	    case SIGTERM:
 	    case SIGINT:
+#ifndef HAVE_TIMERFD
 	    case SIGALRM:
+#endif
 	    case SIGCHLD:
 		break;
 
@@ -1181,8 +1189,24 @@ static int serviceLoop(int isRun)
 	PSC_Service_setTickInterval(0);
     }
     else PSC_Timer_start(tickTimer, 1);
-    PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: %s",
-	    eventBackendInfo());
+    PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
+	    "%s (signals: "
+#ifdef HAVE_KQUEUE
+	    "kqueue"
+#elif defined(HAVE_SIGNALFD)
+	    "signalfd"
+#else
+	    "async handlers"
+#endif
+	    ", timers: "
+#ifdef HAVE_KQUEUE
+	    "kqueue"
+#elif defined(HAVE_TIMERFD)
+	    "timerfd"
+#else
+	    "setitimer"
+#endif
+	    ")", eventBackendInfo());
 
     if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
 

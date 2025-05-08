@@ -5,7 +5,7 @@
 
 #ifdef HAVE_KQUEUE
 void PSC_Timer_doexpire(PSC_Timer *self) CMETHOD;
-#else
+#elif !defined(HAVE_TIMERFD)
 void PSC_Timer_underrun(void);
 #endif
 

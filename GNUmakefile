@@ -12,6 +12,10 @@
 # 			detected (default: off)
 # WITHOUT_SIGNALFD	Disable using signalfd() even if available
 # 			(default: off)
+# WITH_TIMERFD		Force using timerfd for timers even if not detected
+# 			(default: off)
+# WITHOUT_TIMERFD	Disable using timerfd even if available
+# 			(default: off)
 # FD_SETSIZE		Number of file descriptors usable with select(), for
 #			systems allowing to configure that (default: 4096)
 # OPENSSLINC		Path to OpenSSL include files, overriding pkgconfig
@@ -20,8 +24,10 @@
 # 			(default: empty)
 
 BOOLCONFVARS_ON=	WITH_TLS
-BOOLCONFVARS_OFF=	WITH_POLL WITH_EPOLL WITH_KQUEUE WITH_SIGNALFD\
-			WITHOUT_EPOLL WITHOUT_KQUEUE WITHOUT_SIGNALFD
+BOOLCONFVARS_OFF=	WITH_POLL WITH_EPOLL WITH_KQUEUE \
+			WITH_SIGNALFD WITH_TIMERFD \
+			WITHOUT_EPOLL WITHOUT_KQUEUE \
+			WITHOUT_SIGNALFD WITHOUT_TIMERFD
 SINGLECONFVARS=		FD_SETSIZE OPENSSLINC OPENSSLLIB
 
 DEFAULT_FD_SETSIZE=	4096

@@ -50,6 +50,9 @@ KQUEUE1_HEADERS=		sys/types.h sys/event.h sys/time.h
 SIGNALFD_FUNC=			signalfd
 SIGNALFD_HEADERS=		sys/signalfd.h
 SIGNALFD_ARGS=			int, const sigset_t *, int
+TIMERFD_FUNC=			timerfd_create
+TIMERFD_HEADERS=		sys/timerfd.h
+TIMERFD_ARGS=			int, int
 
 ifneq ($(WITHOUT_EPOLL),1)
 posercore_PRECHECK+=		EPOLL
@@ -61,6 +64,10 @@ endif
 
 ifneq ($(WITHOUT_SIGNALFD),1)
 posercore_PRECHECK+=		SIGNALFD
+endif
+
+ifneq ($(WITHOUT_TIMERFD),1)
+posercore_PRECHECK+=		TIMERFD
 endif
 
 posercore_MODULES=		base64 \
@@ -189,6 +196,15 @@ ifeq ($(WITH_SIGNALFD),1)
   endif
   ifneq ($(posercore_HAVE_SIGNALFD),1)
     $(error Requested signalfd (WITH_SIGNALFD), but not found)
+  endif
+endif
+
+ifeq ($(WITH_TIMERFD),1)
+  ifeq ($(WITHOUT_TIMERFD),1)
+    $(error Cannot set both WITH_TIMERFD and WITHOUT_TIMERFD)
+  endif
+  ifneq ($(posercore_HAVE_TIMERFD),1)
+    $(error Requested timerfd (WITH_TIMERFD), but not found)
   endif
 endif
 
