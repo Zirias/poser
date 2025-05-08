@@ -148,7 +148,7 @@ posercore_INCLUDES+=		-I$(OPENSSLINC)
 posercore_LDFLAGS+=		-L$(OPENSSLLIB)
 posercore_LIBS+=		ssl crypto
   else
-posercore_PKGDEPS+=		openssl
+posercore_PKGDEPS+=		openssl >= 1.1
   endif
 posercore_DEFINES+=		-DWITH_TLS
 endif
