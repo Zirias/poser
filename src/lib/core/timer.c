@@ -1,5 +1,4 @@
 #define _POSIX_C_SOURCE 200112L
-#include <poser/core/timer.h>
 
 #include "event.h"
 #include "timer.h"
@@ -7,7 +6,11 @@
 #include <poser/core/util.h>
 
 #include <stdlib.h>
-#include <sys/time.h>
+
+#ifdef HAVE_KQUEUE
+#  include "service.h"
+#else
+#  include <sys/time.h>
 
 C_CLASS_DECL(PSC_TimerJob);
 
@@ -18,25 +21,32 @@ struct PSC_TimerJob
     struct timeval remaining;
 };
 
+static PSC_TimerJob *jobs;
+static int initialized;
+static const struct itimerval itvzero;
+#endif
+
 struct PSC_Timer
 {
     PSC_Event *expired;
+#ifdef HAVE_KQUEUE
+    int job;
+#else
     PSC_TimerJob *job;
+#endif
     unsigned ms;
     int periodic;
 };
 
-static PSC_TimerJob *jobs;
-static int initialized;
-static const struct itimerval itvzero;
-
 SOEXPORT PSC_Timer *PSC_Timer_create(void)
 {
+#ifndef HAVE_KQUEUE
     if (!initialized)
     {
 	setitimer(ITIMER_REAL, &itvzero, 0);
 	initialized = 1;
     }
+#endif
     PSC_Timer *self = PSC_malloc(sizeof *self);
     self->expired = PSC_Event_create(self);
     self->job = 0;
@@ -54,14 +64,44 @@ SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
 {
     if (self->job)
     {
+#ifndef HAVE_KQUEUE
 	PSC_Timer_stop(self);
+#endif
 	self->ms = ms;
 	PSC_Timer_start(self, self->periodic);
     }
     else self->ms = ms;
 }
 
-#define tvlessthan(lhs,rhs) ((lhs).tv_sec < (rhs).tv_sec || \
+#ifdef HAVE_KQUEUE
+
+SOLOCAL void PSC_Timer_doexpire(PSC_Timer *self)
+{
+    PSC_Event_raise(self->expired, 0, 0);
+    if (!self->periodic) self->job = 0;
+}
+
+SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
+{
+    if (!self->job && self->ms)
+    {
+	self->periodic = periodic;
+	PSC_Service_armTimer(self, self->ms, periodic);
+	self->job = 1;
+    }
+}
+
+SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
+{
+    if (self->job)
+    {
+	PSC_Service_unarmTimer(self, self->ms, self->periodic);
+	self->job = 0;
+    }
+}
+
+#else
+#  define tvlessthan(lhs,rhs) ((lhs).tv_sec < (rhs).tv_sec || \
 	((lhs).tv_sec == (rhs).tv_sec && (lhs).tv_usec < (rhs).tv_usec))
 
 static void tvsuborzero(struct timeval *tv, const struct timeval *sub)
@@ -204,6 +244,7 @@ SOLOCAL void PSC_Timer_underrun(void)
     }
     PSC_Event_raise(self->expired, 0, 0);
 }
+#endif
 
 SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
 {

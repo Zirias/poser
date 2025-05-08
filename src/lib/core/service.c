@@ -265,7 +265,6 @@ static int initKqueue(void)
 
     EV_SET(addChange(), SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
     EV_SET(addChange(), SIGINT, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
-    EV_SET(addChange(), SIGALRM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
     EV_SET(addChange(), SIGCHLD, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
     return 0;
 
@@ -546,8 +545,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
     memset(&sa, 0, sizeof sa);
     if (handler)
     {
-	if (signo != SIGTERM && signo != SIGINT
-		&& signo != SIGALRM && signo != SIGCHLD)
+	if (signo != SIGTERM && signo != SIGINT && signo != SIGCHLD)
 	{
 	    sa.sa_handler = SIG_IGN;
 	    if (sigaction(signo, &sa, 0) < 0) return;
@@ -555,8 +553,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_ADD, 0, 0,
 		(void *)handler);
     }
-    else if (signo == SIGTERM || signo == SIGINT
-	    || signo == SIGALRM || signo == SIGCHLD)
+    else if (signo == SIGTERM || signo == SIGINT || signo == SIGCHLD)
     {
 	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
     }
@@ -566,6 +563,24 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	sigaction(signo, &sa, 0);
 	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_DELETE, 0, 0, 0);
     }
+    kevent(kqfd, changes, nchanges, 0, 0, 0);
+    nchanges = 0;
+}
+
+SOLOCAL void PSC_Service_armTimer(void *timer, unsigned ms, int periodic)
+{
+    if (initKqueue() < 0) return;
+    EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
+	    EV_ADD|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
+    kevent(kqfd, changes, nchanges, 0, 0, 0);
+    nchanges = 0;
+}
+
+SOLOCAL void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic)
+{
+    if (initKqueue() < 0) return;
+    EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
+	    EV_DELETE|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
     kevent(kqfd, changes, nchanges, 0, 0, 0);
     nchanges = 0;
 }
@@ -767,6 +782,7 @@ static int processEvents(void)
 	return -1;
     }
     nchanges = 0;
+    PSC_Timer *timer;
     for (int i = 0; i <	qrc; ++i)
     {
 	if (ev[i].flags & EV_ERROR) continue;
@@ -781,10 +797,6 @@ static int processEvents(void)
 			PSC_Event_raise(&shutdown, 0, 0);
 			break;
 
-		    case SIGALRM:
-			PSC_Timer_underrun();
-			break;
-
 		    case SIGCHLD:
 			reapChildren();
 			break;
@@ -794,6 +806,11 @@ static int processEvents(void)
 		}
 		PSC_SignalHandler handler = (PSC_SignalHandler)ev[i].udata;
 		if (handler) handler(ev[i].ident);
+		break;
+
+	    case EVFILT_TIMER:
+		timer = (PSC_Timer *)ev[i].ident;
+		PSC_Timer_doexpire(timer);
 		break;
 
 	    case EVFILT_WRITE:
@@ -992,8 +1009,8 @@ static int serviceLoop(int isRun)
 #if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
     sigaddset(&sigblockmask, SIGTERM);
     sigaddset(&sigblockmask, SIGINT);
-    sigaddset(&sigblockmask, SIGALRM);
 #endif
+    sigaddset(&sigblockmask, SIGALRM);
     sigaddset(&sigblockmask, SIGCHLD);
     if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
     {
