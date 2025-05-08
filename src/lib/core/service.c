@@ -960,7 +960,7 @@ static int processEvents(void)
 	memcpy(&wfds, &writefds, sizeof wfds);
 	w = &wfds;
     }
-#ifdef WITH_SIGHTL
+#ifdef WITH_SIGHDL
     int src = pselect(nfds, r, w, 0, 0, &sigorigmask);
     if (!handleSigFlags() && src < 0)
     {
