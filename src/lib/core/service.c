@@ -24,7 +24,8 @@
 #  define NSIG 64
 #endif
 
-#if !defined(HAVE_KQUEUE) && !defined(HAVE_EPOLL) && !defined(WITH_POLL)
+#if !defined(HAVE_KQUEUE) && !defined(HAVE_EVPORTS) \
+	&& !defined(HAVE_EPOLL) && !defined(WITH_POLL)
 #  define WITH_SELECT
 #endif
 
@@ -40,6 +41,29 @@
 #  include <sys/signalfd.h>
 
 static int sfd = -1;
+#endif
+
+#ifdef HAVE_EVPORTS
+#  undef HAVE_KQUEUE
+#  undef HAVE_EPOLL
+#  undef WITH_POLL
+#  undef WITH_SELECT
+#  define EVP_MAX_EVENTS 32
+#  include <errno.h>
+#  include <fcntl.h>
+#  include <poll.h>
+#  include <port.h>
+#  include <poser/core/util.h>
+
+typedef struct EvportWatch EvportWatch;
+struct EvportWatch
+{
+    EvportWatch *next;
+    int fd;
+    int events;
+};
+static EvportWatch *watches[32];
+static int epfd = -1;
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -232,6 +256,101 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
     if (errtopic) PSC_Log_fmt(PSC_L_FATAL,
 	    "%s: negative file descriptor", errtopic);
     return 0;
+}
+#endif
+
+#ifdef HAVE_EVPORTS
+static EvportWatch *findWatch(int fd, EvportWatch **parent)
+{
+    if (fd < 0) return 0;
+    EvportWatch *w = watches[(unsigned)fd & 31U];
+    while (w)
+    {
+	if (w->fd == fd) break;
+	if (*parent) *parent = w;
+	w = w->next;
+    }
+    return w;
+}
+
+static void reregister(int id)
+{
+    EvportWatch *w = findWatch(id, 0);
+    if (!w) return;
+    port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+}
+
+static void registerWatch(int id, int flag)
+{
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: event port not initialized");
+	return;
+    }
+    if (!PSC_Service_isValidFd(id, "service")) return;
+    EvportWatch *w = findWatch(id, 0);
+    if (w)
+    {
+	if (w->events & flag) return;
+	w->events |= flag;
+    }
+    else
+    {
+	w = PSC_malloc(sizeof *w);
+	w->next = 0;
+	w->fd = id;
+	w->events = flag;
+	EvportWatch *p = watches[(unsigned)id & 31U];
+	while (p && p->next) p = p->next;
+	if (p) p->next = w;
+	else watches[(unsigned)id & 31U] = w;
+    }
+    port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+}
+
+static void unregisterWatch(int id, int flag)
+{
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: event port not initialized");
+	return;
+    }
+    if (!PSC_Service_isValidFd(id, 0)) return;
+    EvportWatch *p = 0;
+    EvportWatch *w = findWatch(id, &p);
+    if (!w || !(w->events & flag)) return;
+    w->events &= (~flag);
+    if (w->events)
+    {
+	port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+    }
+    else
+    {
+	if (p) p->next = w->next;
+	else watches[(unsigned)id & 31U] = w->next;
+	free(w);
+	port_dissociate(epfd, PORT_SOURCE_FD, id);
+    }
+}
+
+SOEXPORT void PSC_Service_registerRead(int id)
+{
+    registerWatch(id, POLLIN);
+}
+
+SOEXPORT void PSC_Service_unregisterRead(int id)
+{
+    unregisterWatch(id, POLLIN);
+}
+
+SOEXPORT void PSC_Service_registerWrite(int id)
+{
+    registerWatch(id, POLLOUT);
+}
+
+SOEXPORT void PSC_Service_unregisterWrite(int id)
+{
+    unregisterWatch(id, POLLOUT);
 }
 #endif
 
@@ -769,6 +888,66 @@ static int handleSigfd(void)
 }
 #endif
 
+#ifdef HAVE_EVPORTS
+static const char *eventBackendInfo(void)
+{
+    return "event ports";
+}
+
+static int processEvents(void)
+{
+    port_event_t ev[EVP_MAX_EVENTS];
+    unsigned nev = 1;
+#ifdef WITH_SIGHDL
+    sigset_t origmask;
+    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
+    errno = 0;
+    int pgrc = port_getn(epfd, ev, EVP_MAX_EVENTS, &nev, 0);
+    int pgerr = errno;
+    pthread_sigmask(SIG_SETMASK, &origmask, 0);
+    if (!handleSigFlags() && pgrc < 0)
+    {
+	if (pgerr == EINTR) return 0;
+	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
+	return -1;
+    }
+#else
+    int pgrc = port_getn(epfd, ev, EVP_MAX_EVENTS, &nev, 0);
+    if (pgrc < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
+	return -1;
+    }
+#endif
+    for (unsigned i = 0; i < nev; ++i)
+    {
+#ifdef HAVE_SIGNALFD
+	if (ev[i].portev_events & POLLIN && (int)ev[i].portev_object == sfd)
+	{
+	    if (handleSigfd() >= 0)
+	    {
+		reregister(sfd);
+		continue;
+	    }
+	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
+	    return -1;
+	}
+#endif
+	if (ev[i].portev_events & POLLOUT)
+	{
+	    PSC_Event_raise(&readyWrite, (int)ev[i].portev_object, 0);
+	    reregister((int)ev[i].portev_object);
+	}
+	if (ev[i].portev_events & POLLIN)
+	{
+	    PSC_Event_raise(&readyRead, (int)ev[i].portev_object, 0);
+	    reregister((int)ev[i].portev_object);
+	}
+    }
+    return 0;
+}
+#endif
+
 #ifdef HAVE_KQUEUE
 static const char *eventBackendInfo(void)
 {
@@ -1057,6 +1236,16 @@ static int serviceLoop(int isRun)
     }
 #endif
 
+#ifdef HAVE_EVPORTS
+    epfd = port_create();
+    if (epfd < 0)
+    {
+	PSC_Log_msg(PSC_L_FATAL, "service: cannot create event port");
+	goto done;
+    }
+    fcntl(epfd, F_SETFD, O_CLOEXEC);
+#endif
+
 #ifdef HAVE_SIGNALFD
     if (initSigfd() < 0)
     {
@@ -1256,6 +1445,26 @@ done:
     fds = 0;
     fdssz = 0;
     nfds = 0;
+#endif
+
+#ifdef HAVE_EVPORTS
+    if (epfd >= 0)
+    {
+	close(epfd);
+	epfd = -1;
+    }
+    for (int i = 0; i < 32; ++i)
+    {
+	EvportWatch *n = 0;
+	EvportWatch *w = watches[i];
+	while (w)
+	{
+	    n = w->next;
+	    free(w);
+	    w = n;
+	}
+	watches[i] = 0;
+    }
 #endif
 
 #ifdef HAVE_KQUEUE
