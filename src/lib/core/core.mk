@@ -35,6 +35,9 @@ XXHX86_FUNC=			XXH_featureTest
 XXHX86_CFLAGS=			-I./$(posercore_SRCDIR)/contrib/xxHash
 XXHX86_HEADERS=			xxh_x86dispatch.c
 XXHX86_ARGS=			void
+EVPORTS_FUNC=			port_create
+EVPORTS_HEADERS=		port.h
+EVPORTS_ARGS=			void
 EPOLL_FUNC=			epoll_pwait2
 EPOLL_HEADERS=			sys/epoll.h
 EPOLL_ARGS=			int, struct epoll_event [], int, \
@@ -53,6 +56,10 @@ SIGNALFD_ARGS=			int, const sigset_t *, int
 TIMERFD_FUNC=			timerfd_create
 TIMERFD_HEADERS=		sys/timerfd.h
 TIMERFD_ARGS=			int, int
+
+ifneq ($(WITHOUT_EVPORTS),1)
+posercore_PRECHECK+=		EVPORTS
+endif
 
 ifneq ($(WITHOUT_EPOLL),1)
 posercore_PRECHECK+=		EPOLL
@@ -167,12 +174,27 @@ posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
   endif
 endif
 
+ifeq ($(WITH_EVPORTS),1)
+  ifeq ($(WITHOUT_EVPORTS),1)
+    $(error Cannot set both WITH_EVPORTS and WITHOUT_EVPORTS)
+  endif
+  ifeq ($(WITH_POLL),1)
+    $(error Cannot set both WITH_EVPORTS and WITH_POLL)
+  endif
+  ifneq ($(posercore_HAVE_EVPORTS),1)
+    $(error Requested event ports (WITH_EVPORTS), but not found)
+  endif
+endif
+
 ifeq ($(WITH_EPOLL),1)
   ifeq ($(WITHOUT_EPOLL),1)
     $(error Cannot set both WITH_EPOLL and WITHOUT_EPOLL)
   endif
+  ifeq ($(WITH_EVPORTS),1)
+    $(error Cannot set both WITH_EVPORTS and WITH_EPOLL)
+  endif
   ifeq ($(WITH_POLL),1)
-    $(error Cannot set both WITH_EPOLL and WITH_POLL)
+    $(error Cannot set both WITH_POLL and WITH_EPOLL)
   endif
   ifneq ($(posercore_HAVE_EPOLL),1)
     $(error Requested epoll (WITH_EPOLL), but not found)
@@ -185,6 +207,9 @@ ifeq ($(WITH_KQUEUE),1)
   endif
   ifeq ($(WITH_EPOLL),1)
     $(error Cannot set both WITH_EPOLL and WITH_KQUEUE)
+  endif
+  ifeq ($(WITH_EVPORTS),1)
+    $(error Cannot set both WITH_EVPORTS and WITH_KQUEUE)
   endif
   ifeq ($(WITH_POLL),1)
     $(error Cannot set both WITH_POLL and WITH_KQUEUE)
