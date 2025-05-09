@@ -1,7 +1,7 @@
 posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM MADVISE MADVFREE \
 				MANON MANONYMOUS MSTACK UCONTEXT XXHX86
 ACCEPT4_FUNC=			accept4
-ACCEPT4_CFLAGS=			-D_GNU_SOURCE
+ACCEPT4_CFLAGS=			-D_GNU_SOURCE -D_XOPEN_SOURCE=500
 ACCEPT4_HEADERS=		sys/types.h sys/socket.h
 ACCEPT4_ARGS=			int, struct sockaddr *, socklen_t *, int
 ARC4R_FUNC=			arc4random_buf
@@ -140,6 +140,7 @@ posercore_HEADERTGTDIR=		$(includedir)$(PSEP)poser
 posercore_VERSION=		1.2.2
 
 ifneq ($(findstring -solaris,$(TARGETARCH)),)
+posercore_PRECFLAGS+=		-D__EXTENSIONS__
 posercore_LIBS+=		socket
 endif
 
