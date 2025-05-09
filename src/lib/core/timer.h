@@ -3,7 +3,7 @@
 
 #include <poser/core/timer.h>
 
-#ifdef HAVE_KQUEUE
+#if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
 void PSC_Timer_doexpire(PSC_Timer *self) CMETHOD;
 #elif !defined(HAVE_TIMERFD)
 void PSC_Timer_underrun(void);

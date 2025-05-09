@@ -352,6 +352,11 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 {
     unregisterWatch(id, POLLOUT);
 }
+
+SOLOCAL int PSC_Service_epfd(void)
+{
+    return epfd;
+}
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -921,6 +926,11 @@ static int processEvents(void)
 #endif
     for (unsigned i = 0; i < nev; ++i)
     {
+	if (ev[i].portev_source == PORT_SOURCE_TIMER)
+	{
+	    PSC_Timer_doexpire(ev[i].portev_user);
+	    continue;
+	}
 #ifdef HAVE_SIGNALFD
 	if (ev[i].portev_events & POLLIN && (int)ev[i].portev_object == sfd)
 	{
@@ -1388,7 +1398,9 @@ static int serviceLoop(int isRun)
 	    "async handlers"
 #endif
 	    ", timers: "
-#ifdef HAVE_KQUEUE
+#ifdef HAVE_EVPORTS
+	    "event ports"
+#elif defined(HAVE_KQUEUE)
 	    "kqueue"
 #elif defined(HAVE_TIMERFD)
 	    "timerfd"
