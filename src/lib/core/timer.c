@@ -145,7 +145,8 @@ SOLOCAL void PSC_Timer_doexpire(PSC_Timer *self)
     PSC_Event_raise(self->expired, 0, 0);
     if (self->periodic)
     {
-	for (int i = 0; i < timer_getoverrun(self->timerid); ++i)
+	int overruns = timer_getoverrun(self->timerid);
+	for (int i = 0; i < overruns; ++i)
 	{
 	    PSC_Event_raise(self->expired, 0, 0);
 	}
