@@ -130,24 +130,22 @@ static void connectionTimeout(void *receiver, void *sender, void *args)
     PSC_Connection *self = receiver;
     PSC_Log_fmt(PSC_L_INFO, "connection: timeout connecting to %s",
 	    PSC_Connection_remoteAddr(self));
-    PSC_Service_unregisterWrite(self->fd);
     PSC_Connection_close(self, 1);
 }
 
 static void wantreadwrite(PSC_Connection *self)
 {
-    if (!self->deleteScheduled && (
-		self->connectTimer ||
+    if (self->connectTimer ||
 #ifdef WITH_TLS
-		self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
-		self->tls_read_st == SSL_ERROR_WANT_WRITE ||
-		self->tls_write_st == SSL_ERROR_WANT_WRITE ||
-		((self->wrbuflen || self->nrecs)
-		&& !self->tlsConnectTimer && !self->tls_shutdown_st)
+	    self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
+	    self->tls_read_st == SSL_ERROR_WANT_WRITE ||
+	    self->tls_write_st == SSL_ERROR_WANT_WRITE ||
+	    ((self->wrbuflen || self->nrecs)
+	    && !self->tlsConnectTimer && !self->tls_shutdown_st)
 #else
-		self->wrbuflen || self->nrecs
+	    self->wrbuflen || self->nrecs
 #endif
-	))
+       )
     {
 	if (!self->wrreg) PSC_Service_registerWrite(self->fd);
 	self->wrreg = 1;
@@ -340,6 +338,8 @@ static void dowrite(PSC_Connection *self)
 	    {
 		PSC_Log_fmt(PSC_L_WARNING, "connection: error writing to %s",
 			PSC_Connection_remoteAddr(self));
+		self->nrecs = 0;
+		self->wrbuflen = 0;
 		PSC_Connection_close(self, 0);
 		return;
 	    }
@@ -380,6 +380,8 @@ static void dowrite(PSC_Connection *self)
 	{
 	    PSC_Log_fmt(PSC_L_WARNING, "connection: error writing to %s",
 		    PSC_Connection_remoteAddr(self));
+	    self->nrecs = 0;
+	    self->wrbuflen = 0;
 	    PSC_Connection_close(self, 0);
 	}
 	wantreadwrite(self);
@@ -589,6 +591,8 @@ static void doread(PSC_Connection *self)
 				"connection: error reading from %s",
 				PSC_Connection_remoteAddr(self));
 		    }
+		    self->nrecs = 0;
+		    self->wrbuflen = 0;
 		    PSC_Connection_close(self, 0);
 		    return;
 		}
@@ -628,6 +632,8 @@ static void doread(PSC_Connection *self)
 			PSC_Connection_remoteAddr(self));
 	    }
 doclose:
+	    self->nrecs = 0;
+	    self->wrbuflen = 0;
 	    PSC_Connection_close(self, 0);
 	}
     }
@@ -671,6 +677,7 @@ static void deleteConnection(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Connection *self = receiver;
+    if (self->wrbuflen || self->nrecs) return;
     self->deleteScheduled = 2;
     PSC_Connection_destroy(self);
 }
@@ -911,6 +918,12 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
 {
     if (self->type == CT_PIPERD) return -1;
+    if (self->deleteScheduled) return -1;
+    if (self->connectTimer) return -1;
+#ifdef WITH_TLS
+    if (self->tlsConnectTimer) return -1;
+    if (self->tls_shutdown_st) return -1;
+#endif
     if (self->nrecs == NWRITERECS)
     {
 	PSC_Log_fmt(PSC_L_DEBUG, "connection: send queue overflow to %s",
@@ -971,6 +984,8 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
     if (self->tls && !self->connectTimer && !self->tls_connect_st)
     {
 	self->tls_shutdown_st = 0;
+	self->nrecs = 0;
+	self->wrbuflen = 0;
 	int rc = SSL_shutdown(self->tls);
 	if (!PSC_Service_shutsdown())
 	{
@@ -1003,21 +1018,13 @@ SOEXPORT void *PSC_Connection_data(const PSC_Connection *self)
     return self->data;
 }
 
-static void cleanForDelete(PSC_Connection *self)
-{
-    if (self->rdreg) PSC_Service_unregisterRead(self->fd);
-    if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
-    self->rdreg = 0;
-    self->wrreg = 0;
-    close(self->fd);
-}
-
 static void deleteLater(PSC_Connection *self)
 {
     if (!self) return;
     if (!self->deleteScheduled)
     {
-	cleanForDelete(self);
+	if (self->rdreg) PSC_Service_unregisterRead(self->fd);
+	self->rdreg = 0;
 	PSC_Event_register(PSC_Service_eventsDone(), self,
 		deleteConnection, 0);
 	self->deleteScheduled = 1;
@@ -1046,6 +1053,9 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     if (self->deleteScheduled)
     {
 	if (self->deleteScheduled == 1) return;
+	if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
+	self->wrreg = 0;
+	close(self->fd);
 	PSC_Event_unregister(PSC_Service_eventsDone(), self,
 		deleteConnection, 0);
     }
@@ -1055,7 +1065,11 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 	if (self->tls) SSL_shutdown(self->tls);
 #endif
 	PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
-	cleanForDelete(self);
+	if (self->rdreg) PSC_Service_unregisterRead(self->fd);
+	if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
+	self->rdreg = 0;
+	self->wrreg = 0;
+	close(self->fd);
     }
 
 #ifdef WITH_TLS
