@@ -62,7 +62,6 @@ struct PSC_Connection
     PSC_Event *closed;
     PSC_Event *dataReceived;
     PSC_Event *dataSent;
-    PSC_Event *nameResolved;
     PSC_Timer *connectTimer;
 #ifdef WITH_TLS
     PSC_Timer *tlsConnectTimer;
@@ -704,7 +703,6 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->closed = PSC_Event_create(self);
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
-    self->nameResolved = PSC_Event_createDummyFire(self, 0);
     self->connectTimer = 0;
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
@@ -833,11 +831,6 @@ SOEXPORT PSC_Event *PSC_Connection_dataReceived(PSC_Connection *self)
 SOEXPORT PSC_Event *PSC_Connection_dataSent(PSC_Connection *self)
 {
     return self->dataSent;
-}
-
-SOEXPORT PSC_Event *PSC_Connection_nameResolved(PSC_Connection *self)
-{
-    return self->nameResolved;
 }
 
 SOEXPORT const PSC_IpAddr *PSC_Connection_remoteIpAddr(
@@ -1081,7 +1074,6 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     free(self->addr);
     free(self->name);
     PSC_Timer_destroy(self->connectTimer);
-    PSC_Event_destroy(self->nameResolved);
     PSC_Event_destroy(self->dataSent);
     PSC_Event_destroy(self->dataReceived);
     PSC_Event_destroy(self->closed);

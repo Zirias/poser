@@ -100,19 +100,6 @@ DECLEXPORT PSC_Event *
 PSC_Connection_dataSent(PSC_Connection *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
-/** Remote name resolved.
- * This event used to fire as soon as the name of the peer was resolved.
- * It now fires immediately when a handler is registered on it, to retain
- * backwards compatibility, although nothing was actually resolved.
- * @memberof PSC_Connection
- * @param self the PSC_Connection
- * @returns the name resolved event
- */
-DECLEXPORT PSC_Event *
-OBSOLETE(Resolving remote hosts is disabled; use PSC_Resolver instead)
-PSC_Connection_nameResolved(PSC_Connection *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
-
 /** The remote IP address.
  * The address of the peer as a PSC_IpAddr instance.
  * @memberof PSC_Connection

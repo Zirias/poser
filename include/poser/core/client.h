@@ -84,15 +84,6 @@ DECLEXPORT void
 PSC_TcpClientOpts_setProto(PSC_TcpClientOpts *self, PSC_Proto proto)
     CMETHOD;
 
-/** Only use numeric hosts, don't attempt to resolve addresses.
- * @memberof PSC_TcpClientOpts
- * @param self the PSC_TcpClientOpts
- */
-DECLEXPORT void
-OBSOLETE(Resolving remote hosts is disabled; use PSC_Resolver instead)
-PSC_TcpClientOpts_numericHosts(PSC_TcpClientOpts *self)
-    CMETHOD;
-
 /** Enable blacklisting of failed remote addresses.
  * When this is set to a non-zero value, a remote address is put on a
  * blacklist after errors or timeouts during connect or TLS hanshake, or when

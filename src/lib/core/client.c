@@ -379,11 +379,6 @@ SOEXPORT void PSC_TcpClientOpts_setProto(PSC_TcpClientOpts *self,
     self->proto = proto;
 }
 
-SOEXPORT void PSC_TcpClientOpts_numericHosts(PSC_TcpClientOpts *self)
-{
-    (void)self;
-}
-
 SOEXPORT void PSC_TcpClientOpts_setBlacklistHits(PSC_TcpClientOpts *self,
 	int blacklistHits)
 {

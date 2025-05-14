@@ -554,11 +554,6 @@ SOEXPORT void PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self,
     self->proto = proto;
 }
 
-SOEXPORT void PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
-{
-    (void) self;
-}
-
 SOEXPORT void PSC_TcpServerOpts_destroy(PSC_TcpServerOpts *self)
 {
     if (!self) return;

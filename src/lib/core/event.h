@@ -23,6 +23,4 @@ struct PSC_Event
     int dirty;
 };
 
-PSC_Event *PSC_Event_createDummyFire(void *sender, void *arg);
-
 #endif

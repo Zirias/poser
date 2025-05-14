@@ -143,15 +143,6 @@ DECLEXPORT void
 PSC_TcpServerOpts_setProto(PSC_TcpServerOpts *self, PSC_Proto proto)
     CMETHOD;
 
-/** Only use numeric hosts, don't attempt to resolve addresses.
- * @memberof PSC_TcpServerOpts
- * @param self the PSC_TcpServerOpts
- */
-DECLEXPORT void
-OBSOLETE(Resolving remote hosts is disabled; use PSC_Resolver instead)
-PSC_TcpServerOpts_numericHosts(PSC_TcpServerOpts *self)
-    CMETHOD;
-
 /** PSC_TcpServerOpts destructor.
  * @memberof PSC_TcpServerOpts
  * @param self the PSC_TcpServerOpts

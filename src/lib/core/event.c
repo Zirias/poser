@@ -25,24 +25,9 @@ SOEXPORT PSC_Event *PSC_Event_create(void *sender)
     return self;
 }
 
-SOLOCAL PSC_Event *PSC_Event_createDummyFire(void *sender, void *arg)
-{
-    PSC_Event *self = PSC_malloc(sizeof *self);
-    self->sender = sender;
-    self->handlers = 0;
-    self->arg = arg;
-    self->dirty = -1;
-    return self;
-}
-
 SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
 	PSC_EventHandler handler, int id)
 {
-    if (self->dirty < 0)
-    {
-	handler(receiver, self->sender, self->arg);
-	return;
-    }
     if (self->dirty)
     {
 	for (size_t pos = 0; pos < self->size; ++pos)
@@ -75,7 +60,6 @@ SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
 SOEXPORT void PSC_Event_unregister(
 	PSC_Event *self, void *receiver, PSC_EventHandler handler, int id)
 {
-    if (self->dirty < 0) return;
     size_t pos;
     for (pos = 0; pos < self->size; ++pos)
     {
@@ -92,7 +76,6 @@ SOEXPORT void PSC_Event_unregister(
 
 SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
-    if (self->dirty < 0) return;
     for (size_t i = 0; i < self->size; ++i)
     {
 	if (self->handlers[i].id == id && self->handlers[i].handler)
