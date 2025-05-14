@@ -353,13 +353,17 @@ SOLOCAL int PSC_Service_epfd(void)
 #endif
 
 #ifdef HAVE_KQUEUE
+static void flushChanges(void)
+{
+    struct kevent receipts[KQ_MAX_CHANGES];
+    for (int i = 0; i < nchanges; ++i) changes[i].flags |= EV_RECEIPT;
+    kevent(kqfd, changes, nchanges, receipts, nchanges, 0);
+    nchanges = 0;
+}
+
 static struct kevent *addChange(void)
 {
-    if (nchanges == KQ_MAX_CHANGES)
-    {
-	kevent(kqfd, changes, nchanges, 0, 0, 0);
-	nchanges = 0;
-    }
+    if (nchanges == KQ_MAX_CHANGES) flushChanges();
     return changes + nchanges++;
 }
 
@@ -680,8 +684,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	sigaction(signo, &sa, 0);
 	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_DELETE, 0, 0, 0);
     }
-    kevent(kqfd, changes, nchanges, 0, 0, 0);
-    nchanges = 0;
+    flushChanges();
 }
 
 SOLOCAL void PSC_Service_armTimer(void *timer, unsigned ms, int periodic)
@@ -689,8 +692,7 @@ SOLOCAL void PSC_Service_armTimer(void *timer, unsigned ms, int periodic)
     if (initKqueue() < 0) return;
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_ADD|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
-    kevent(kqfd, changes, nchanges, 0, 0, 0);
-    nchanges = 0;
+    flushChanges();
 }
 
 SOLOCAL void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic)
@@ -698,8 +700,7 @@ SOLOCAL void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic)
     if (initKqueue() < 0) return;
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_DELETE|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
-    kevent(kqfd, changes, nchanges, 0, 0, 0);
-    nchanges = 0;
+    flushChanges();
 }
 #endif
 
@@ -1241,11 +1242,7 @@ static int serviceLoop(int isRun)
 	PSC_Log_msg(PSC_L_FATAL, "service: cannot open kqueue");
 	goto done;
     }
-    if (nchanges)
-    {
-	kevent(kqfd, changes, nchanges, 0, 0, 0);
-	nchanges = 0;
-    }
+    if (nchanges) flushChanges();
 #endif
 
 #ifdef HAVE_EPOLL
