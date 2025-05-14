@@ -15,14 +15,23 @@
 #define PSC_CHILD_SIGNALED 256
 
 /** A main service loop.
- * This class provides a service loop monitoring a set of file descriptors
- * using the classic POSIX pselect() API. Therefore it is not suitable for
- * thousands of concurrent clients. It is designed for portability with few
- * dependencies and will work fine with up to a few hundred file descriptors.
+ * This class provides a service loop monitoring a set of file descriptors,
+ * for example sockets or pipes, for read and/or write readiness. It prefers
+ * doing this using platform-specific efficient APIs (kqueue on BSD systems,
+ * epoll on Linux systems, event ports on Solaris/Illumos). The default
+ * fallback if none of these APIs are available is POSIX select(), but as
+ * a build-time option, poll() can be preferred.
  *
- * Status changes on file descriptors are published as events. It also offers
- * a configurable periodic "tick" event and handles standard signals (SIGINT
- * and SIGTERM) for termination.
+ * There's also a PSC_Service_run() function that can be used to automatically
+ * provide daemonization, initialization and cleanup of the PSC_ThreadPool,
+ * and logging configuration around the main event loop, all configurable
+ * in PSC_RunOpts and PSC_ThreadOpts.
+ *
+ * Status changes on file descriptors are published as events. It also handles
+ * standard signals for termination (SIGINT/SIGTERM), timers via PSC_Timer if
+ * not using a different backend (SIGALRM) and child process events for
+ * PSC_Process (SIGCHLD), and allows registering custom callbacks for any
+ * signal.
  *
  * Finally, there's a panic function to quickly exit the loop and still give a
  * chance for some (minimal) cleanup.
