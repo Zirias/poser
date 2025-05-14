@@ -140,7 +140,7 @@ posercore_DEFINES=		#
 posercore_LDFLAGS=		-pthread
 posercore_HEADERDIR=		include$(PSEP)poser
 posercore_HEADERTGTDIR=		$(includedir)$(PSEP)poser
-posercore_VERSION=		1.2.2
+posercore_VERSION=		2.0.0
 
 ifneq ($(findstring -solaris,$(TARGETARCH)),)
 posercore_PRECFLAGS+=		-D__EXTENSIONS__
