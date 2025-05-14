@@ -95,6 +95,7 @@ posercore_MODULES=		base64 \
 				process \
 				queue \
 				random \
+				ratelimit \
 				resolver \
 				runopts \
 				server \
@@ -125,6 +126,7 @@ posercore_HEADERS_INSTALL=	core \
 				core/proto \
 				core/queue \
 				core/random \
+				core/ratelimit \
 				core/resolver \
 				core/runopts \
 				core/server \
