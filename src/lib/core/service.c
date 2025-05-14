@@ -143,7 +143,6 @@ static PSC_Event readyWrite;
 static PSC_Event prestartup;
 static PSC_Event startup;
 static PSC_Event shutdown;
-static PSC_Event tick;
 static PSC_Event eventsDone;
 static PSC_Event childExited;
 
@@ -151,7 +150,6 @@ static int running;
 
 static int shutdownRef;
 
-static PSC_Timer *tickTimer;
 static PSC_Timer *shutdownTimer;
 
 static jmp_buf panicjmp;
@@ -217,11 +215,6 @@ SOEXPORT PSC_Event *PSC_Service_startup(void)
 SOEXPORT PSC_Event *PSC_Service_shutdown(void)
 {
     return &shutdown;
-}
-
-SOEXPORT PSC_Event *PSC_Service_tick(void)
-{
-    return &tick;
 }
 
 SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
@@ -773,28 +766,6 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
     sigcallback[signo] = handler;
 }
 #endif
-
-static void raiseTick(void *receiver, void *sender, void *args)
-{
-    (void)receiver;
-    (void)sender;
-    (void)args;
-
-    PSC_Event_raise(&tick, 0, 0);
-}
-
-SOEXPORT int PSC_Service_setTickInterval(unsigned msec)
-{
-    if (!tickTimer)
-    {
-	tickTimer = PSC_Timer_create();
-	PSC_Event_register(PSC_Timer_expired(tickTimer), 0, raiseTick, 0);
-    }
-    PSC_Timer_setMs(tickTimer, msec);
-    if (running && msec) PSC_Timer_start(tickTimer, 1);
-    else PSC_Timer_stop(tickTimer);
-    return 0;
-}
 
 static int panicreturn(void)
 {
@@ -1383,11 +1354,6 @@ static int serviceLoop(int isRun)
 
     running = 1;
     shutdownRef = -1;
-    if (!tickTimer)
-    {
-	PSC_Service_setTickInterval(0);
-    }
-    else PSC_Timer_start(tickTimer, 1);
     PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
 	    "%s (signals: "
 #ifdef HAVE_KQUEUE
@@ -1440,9 +1406,6 @@ done:
 	PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
 	rc = EXIT_FAILURE;
     }
-
-    PSC_Timer_destroy(tickTimer);
-    tickTimer = 0;
 
 #ifdef HAVE_SIGNALFD
     if (sfd >= 0)
@@ -1518,8 +1481,6 @@ static int serviceMain(void *data)
 
     if (PSC_ThreadPool_init() < 0) goto done;
 
-    if (tickTimer) PSC_Service_setTickInterval(1000);
-
     rc = serviceLoop(1);
 
 done:
@@ -1530,7 +1491,6 @@ done:
     free(prestartup.handlers);
     free(startup.handlers);
     free(shutdown.handlers);
-    free(tick.handlers);
     free(eventsDone.handlers);
     free(childExited.handlers);
     memset(&readyRead, 0, sizeof readyRead);
@@ -1538,7 +1498,6 @@ done:
     memset(&prestartup, 0, sizeof prestartup);
     memset(&startup, 0, sizeof startup);
     memset(&shutdown, 0, sizeof shutdown);
-    memset(&tick, 0, sizeof tick);
     memset(&eventsDone, 0, sizeof eventsDone);
     memset(&childExited, 0, sizeof childExited);
 

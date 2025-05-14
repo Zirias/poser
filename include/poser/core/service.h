@@ -125,16 +125,6 @@ DECLEXPORT PSC_Event *
 PSC_Service_shutdown(void)
     ATTR_RETNONNULL ATTR_PURE;
 
-/** The timer ticks.
- * This event fires periodically, by default once per second. Call
- * PSC_Service_setTickInterval() to change that.
- * @memberof PSC_Service
- * @static
- */
-DECLEXPORT PSC_Event *
-PSC_Service_tick(void)
-    ATTR_RETNONNULL ATTR_PURE;
-
 /** All events for one loop iteration are processed.
  * This event fires once per loop iteration. It can be used to delay an action
  * until all events for the current iteration were processed.
@@ -259,17 +249,6 @@ PSC_Service_unregisterPanic(PSC_PanicHandler handler)
  */
 DECLEXPORT void
 PSC_Service_registerSignal(int signo, PSC_SignalHandler handler);
-
-/** Set the timer tick interval.
- * This sets the interval at which PSC_Service_tick() events are fired. The
- * default is 1000ms (1 second).
- * @memberof PSC_Service
- * @static
- * @param msec tick interval in milliseconds
- * @returns 0 on success, -1 on error
- */
-DECLEXPORT int
-PSC_Service_setTickInterval(unsigned msec);
 
 /** Run the service loop.
  * This runs the plain service loop. Callers are responsible to initialize a
