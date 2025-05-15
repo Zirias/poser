@@ -161,7 +161,6 @@ static void wantreadwrite(PSC_Connection *self)
 		self->tls_connect_st == SSL_ERROR_WANT_READ ||
 		self->tls_read_st == SSL_ERROR_WANT_READ ||
 		self->tls_write_st == SSL_ERROR_WANT_READ ||
-		self->tls_shutdown_st == SSL_ERROR_WANT_READ ||
 #endif
 		(!self->paused && !self->args.handling)))
     {
@@ -650,7 +649,7 @@ static void readConnection(void *receiver, void *sender, void *args)
 
 #ifdef WITH_TLS
     if (self->tls_shutdown_st == SSL_ERROR_WANT_READ)
-	PSC_Connection_close(self, 0);
+	deleteConnection(self, 0, 0);
     else if (self->tls_connect_st == SSL_ERROR_WANT_READ) dohandshake(self);
     else if (self->tls_write_st == SSL_ERROR_WANT_READ) dowrite(self);
     else
@@ -678,6 +677,26 @@ static void deleteConnection(void *receiver, void *sender, void *args)
 
     PSC_Connection *self = receiver;
     if (self->wrbuflen || self->nrecs) return;
+#ifdef WITH_TLS
+    if (self->tls && !self->connectTimer && !self->tls_connect_st)
+    {
+	self->tls_shutdown_st = 0;
+	int rc = SSL_shutdown(self->tls);
+	if (!PSC_Service_shutsdown())
+	{
+	    if (rc == 0) rc = SSL_shutdown(self->tls);
+	    long err = 0;
+	    if (rc < 0 && (err = SSL_get_error(self->tls, rc))
+		    == SSL_ERROR_WANT_READ)
+	    {
+		self->tls_shutdown_st = err;
+		if (!self->rdreg) PSC_Service_registerRead(self->fd);
+		self->rdreg = 1;
+		return;
+	    }
+	}
+    }
+#endif
     self->deleteScheduled = 2;
     PSC_Connection_destroy(self);
 }
@@ -980,27 +999,6 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
     {
 	PSC_Connection_blacklistAddress(self->blacklisthits, self->ipAddr);
     }
-#ifdef WITH_TLS
-    if (self->tls && !self->connectTimer && !self->tls_connect_st)
-    {
-	self->tls_shutdown_st = 0;
-	self->nrecs = 0;
-	self->wrbuflen = 0;
-	int rc = SSL_shutdown(self->tls);
-	if (!PSC_Service_shutsdown())
-	{
-	    if (rc == 0) rc = SSL_shutdown(self->tls);
-	    long err = 0;
-	    if (rc < 0 && (err = SSL_get_error(self->tls, rc))
-		    == SSL_ERROR_WANT_READ)
-	    {
-		self->tls_shutdown_st = err;
-		wantreadwrite(self);
-		return;
-	    }
-	}
-    }
-#endif
     PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
     deleteLater(self);
 }
