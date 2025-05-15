@@ -95,8 +95,6 @@ enum tlslevel
 
 struct tlsprops
 {
-    X509 *cert;
-    EVP_PKEY *key;
     SSL_CTX *tls_ctx;
     enum tlslevel tls;
 };
@@ -123,8 +121,6 @@ struct PSC_Server
     PSC_Connection **conn;
     char *path;
 #ifdef WITH_TLS
-    X509 *cert;
-    EVP_PKEY *key;
     SSL_CTX *tls_ctx;
     void *validatorObj;
     PSC_CertValidator validator;
@@ -254,19 +250,12 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	.rdbufsz = self->rdbufsz,
 #ifdef WITH_TLS
 	.tls_ctx = self->tls_ctx,
-	.tls_cert = self->cert,
-	.tls_key = self->key,
+	.tls_cert = 0,
+	.tls_key = 0,
 	.tls_mode = self->tls != TL_NONE ? TM_SERVER : TM_NONE,
 #endif
 	.createmode = CCM_NORMAL
     };
-#ifdef WITH_TLS
-    if (self->tls != TL_NONE)
-    {
-	X509_up_ref(self->cert);
-	EVP_PKEY_up_ref(self->key);
-    }
-#endif
     PSC_Connection *newconn = PSC_Connection_create(connfd, &co);
     self->conn[self->connsize++] = newconn;
     PSC_Event_register(PSC_Connection_closed(newconn), self,
@@ -383,6 +372,23 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
 		    opts->certfile);
 	    goto error;
 	}
+	if (!SSL_CTX_use_certificate(tls_ctx, cert))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot use certificate from `%s'",
+		    opts->certfile);
+	    goto error;
+	}
+	X509_free(cert);
+	while ((cert = PEM_read_X509(certfile, 0, 0, 0)))
+	{
+	    if (!SSL_CTX_add_extra_chain_cert(tls_ctx, cert))
+	    {
+		PSC_Log_fmt(PSC_L_ERROR, "server: cannot use intermediate "
+			"certificate from `%s'", opts->certfile);
+		goto error;
+	    }
+	}
 	if (!(key = PEM_read_PrivateKey(keyfile, 0, 0, 0)))
 	{
 	    PSC_Log_fmt(PSC_L_ERROR,
@@ -390,6 +396,15 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
 		    opts->keyfile);
 	    goto error;
 	}
+	if (!SSL_CTX_use_PrivateKey(tls_ctx, key))
+	{
+	    PSC_Log_fmt(PSC_L_ERROR,
+		    "server: cannot read private key from `%s'",
+		    opts->keyfile);
+	    goto error;
+	}
+	EVP_PKEY_free(key);
+	key = 0;
 	fclose(keyfile);
 	fclose(certfile);
 	PSC_Log_fmt(PSC_L_INFO,
@@ -397,8 +412,6 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
     }
 
     props->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
-    props->cert = cert;
-    props->key = key;
     props->tls_ctx = tls_ctx;
     return 0;
 
@@ -435,8 +448,6 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->disabled = 0;
 #ifdef WITH_TLS
     self->tls = props.tls;
-    self->cert = props.cert;
-    self->key = props.key;
     self->tls_ctx = props.tls_ctx;
     self->validatorObj = opts->validatorObj;
     self->validator = opts->validator;
@@ -732,12 +743,8 @@ SOEXPORT int PSC_Server_configureTcp(PSC_Server *self,
 #ifdef WITH_TLS
     struct tlsprops props;
     if (initTls(&props, opts) < 0) return -1;
-    EVP_PKEY_free(self->key);
-    X509_free(self->cert);
     SSL_CTX_free(self->tls_ctx);
     self->tls = props.tls;
-    self->cert = props.cert;
-    self->key = props.key;
     self->tls_ctx = props.tls_ctx;
     self->validatorObj = opts->validatorObj;
     self->validator = opts->validator;
@@ -966,8 +973,6 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	free(self->path);
     }
 #ifdef WITH_TLS
-    EVP_PKEY_free(self->key);
-    X509_free(self->cert);
     SSL_CTX_free(self->tls_ctx);
 #endif
     free(self);
