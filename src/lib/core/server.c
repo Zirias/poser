@@ -696,7 +696,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 		close(socks[nsocks].fd);
 		continue;
 	    }
-	    if (listen(socks[nsocks].fd, 8) < 0)
+	    if (listen(socks[nsocks].fd, 128) < 0)
 	    {   
 		PSC_Log_msg(PSC_L_ERROR, "server: cannot listen on socket");
 		close(socks[nsocks].fd);
