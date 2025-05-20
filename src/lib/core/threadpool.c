@@ -8,6 +8,7 @@
 #include <poser/core/util.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <setjmp.h>
@@ -201,6 +202,7 @@ static void *worker(void *arg)
 	if (write(t->pipefd[1], "0", 1) < 1)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: can't notify main thread");
+	    pthread_mutex_unlock(&t->lock);
 	    return 0;
 	}
 	pthread_mutex_unlock(&t->lock);
@@ -456,7 +458,11 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 #endif
     pthread_mutex_lock(&t->lock);
     t->job = j;
-    PSC_Service_registerRead(t->pipefd[0]);
+    if (t->stoprq < 0)
+    {
+	PSC_Service_registerRead(t->pipefd[0]);
+	t->stoprq = 0;
+    }
     pthread_mutex_unlock(&t->lock);
     sem_post(&t->start);
 }
@@ -470,13 +476,13 @@ static void threadJobDone(void *receiver, void *sender, void *args)
 #ifdef HAVE_UCONTEXT
     int nostack = t->job->nostack;
 #endif
-    if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
-    PSC_Service_unregisterRead(t->pipefd[0]);
     char buf[2];
     if (read(t->pipefd[0], buf, sizeof buf) <= 0)
     {
-	PSC_Service_panic("threadpool: error reading internal pipe");
+	PSC_Log_msg(PSC_L_WARNING, "threadpool: error reading internal pipe");
+	return;
     }
+    if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
     pthread_mutex_lock(&t->lock);
     if (t->job->panicmsg)
     {
@@ -498,7 +504,6 @@ static void threadJobDone(void *receiver, void *sender, void *args)
 #endif
 	{
 	    pthread_mutex_unlock(&t->lock);
-	    PSC_Service_registerRead(t->pipefd[0]);
 	    task->job(task);
 	    return;
 	}
@@ -667,6 +672,12 @@ SOEXPORT int PSC_ThreadPool_init(void)
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
 	    goto rollback_pipe;
 	}
+	fcntl(threads[i].pipefd[0], F_SETFD, O_CLOEXEC);
+	fcntl(threads[i].pipefd[1], F_SETFD, O_CLOEXEC);
+	fcntl(threads[i].pipefd[0], F_SETFL,
+		fcntl(threads[i].pipefd[0], F_GETFL) | O_NONBLOCK);
+	fcntl(threads[i].pipefd[1], F_SETFL,
+		fcntl(threads[i].pipefd[1], F_GETFL) | O_NONBLOCK);
 	PSC_Event_register(PSC_Service_readyRead(), threads+i, threadJobDone,
 		threads[i].pipefd[0]);
 	if (pthread_create(&threads[i].handle, 0, worker, threads+i) != 0)
@@ -676,6 +687,7 @@ SOEXPORT int PSC_ThreadPool_init(void)
 		    threadJobDone, threads[i].pipefd[0]);
 	    goto rollback_pipe;
 	}
+	threads[i].stoprq = -1;
 #ifdef HAVE_UCONTEXT
 	threads[i].waitingTasks = PSC_List_create();
 	threads[i].finishedTasks = PSC_Queue_create();
