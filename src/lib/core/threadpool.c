@@ -72,7 +72,7 @@ struct PSC_ThreadJob
 #ifdef HAVE_UCONTEXT
     ucontext_t caller;
     void *stack;
-    int nostack;
+    int async;
 #endif
 };
 
@@ -180,7 +180,7 @@ static void *worker(void *arg)
 	if (!setjmp(panicjmp))
 	{
 #ifdef HAVE_UCONTEXT
-	    if (t->job->nostack) t->job->proc(t->job->arg);
+	    if (!t->job->async) t->job->proc(t->job->arg);
 	    else if (t->job->task)
 	    {
 		swapcontext(&t->job->caller, &t->job->task->resume);
@@ -225,10 +225,10 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
     return self;
 }
 
-SOEXPORT void PSC_ThreadJob_disableStack(PSC_ThreadJob *self)
+SOEXPORT void PSC_ThreadJob_setAsync(PSC_ThreadJob *self)
 {
 #ifdef HAVE_UCONTEXT
-    self->nostack = 1;
+    self->async = 1;
 #else
     (void)self;
 #endif
@@ -291,7 +291,7 @@ SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
     self->arg = arg;
 
 #ifdef HAVE_UCONTEXT
-    if (!self->threadJob->nostack)
+    if (self->threadJob->async)
     {
 	swapcontext(&self->resume, &self->threadJob->caller);
     }
@@ -319,7 +319,7 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 {
     self->result = result;
 #ifdef HAVE_UCONTEXT
-    if (!self->threadJob->nostack)
+    if (self->threadJob->async)
     {
 	if (self->thread->job)
 	{
@@ -454,7 +454,7 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 	PSC_Timer_start(j->timeout, 0);
     }
 #ifdef HAVE_UCONTEXT
-    if (!j->nostack && !j->stack) j->stack = StackMgr_getStack();
+    if (j->async && !j->stack) j->stack = StackMgr_getStack();
 #endif
     pthread_mutex_lock(&t->lock);
     t->job = j;
@@ -473,15 +473,15 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     (void)args;
 
     Thread *t = receiver;
-#ifdef HAVE_UCONTEXT
-    int nostack = t->job->nostack;
-#endif
     char buf[2];
     if (read(t->pipefd[0], buf, sizeof buf) <= 0)
     {
 	PSC_Log_msg(PSC_L_WARNING, "threadpool: error reading internal pipe");
 	return;
     }
+#ifdef HAVE_UCONTEXT
+    int async = t->job->async;
+#endif
     if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
     pthread_mutex_lock(&t->lock);
     if (t->job->panicmsg)
@@ -496,7 +496,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     if (task)
     {
 #ifdef HAVE_UCONTEXT
-	if (!nostack)
+	if (async)
 	{
 	    PSC_List_append(t->waitingTasks, t->job, 0);
 	}
@@ -517,7 +517,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     pthread_mutex_unlock(&t->lock);
     PSC_ThreadJob *next = 0;
 #ifdef HAVE_UCONTEXT
-    if (!nostack)
+    if (async)
     {
 	next = PSC_Queue_dequeue(t->finishedTasks);
 	if (next) PSC_List_remove(t->waitingTasks, next);

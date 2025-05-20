@@ -14,9 +14,10 @@ C_CLASS_DECL(PSC_ThreadJob);
 
 /** An asynchronous task a thread job can wait for.
  * When the library is built on a system supporting user context switching
- * with POSIX-1.2001 getcontext() and friends, the thread is released for
- * other thread jobs while waiting, otherwise the worker thread will be
- * blocked.
+ * with POSIX-1.2001 getcontext() and friends and the thread job has async
+ * behavior enabled by calling PSC_ThreadJob_setAsync(), the thread is
+ * released for other thread jobs while waiting, otherwise the worker thread
+ * will be blocked.
  *
  * No destructor is offered, the task destroys itself on completion.
  * @class PSC_AsyncTask threadpool.h <poser/core/threadpool.h>
@@ -50,9 +51,10 @@ typedef void (*PSC_AsyncTaskJob)(PSC_AsyncTask *task);
 
 /** Create a new thread job.
  * Creates a new job to be executed on a worker thread. Unless the library was
- * built on a system without POSIX user context switching support, the job
- * executes on its own private stack with a default size of 2 MiB, unless
- * the private stack is disabled with PSC_ThreadJob_disableStack().
+ * built on a system without POSIX user context switching support, the job may
+ * execute on its own private stack with a default size of 2 MiB, allowing
+ * a PSC_AsyncTask to release the thread for other work while waiting. To
+ * enable this behavior, call PSC_ThreadJob_setAsync(),
  * @memberof PSC_ThreadJob
  * @param proc the function to run on the worker thread
  * @param arg the data to work on
@@ -64,17 +66,19 @@ DECLEXPORT PSC_ThreadJob *
 PSC_ThreadJob_create(PSC_ThreadProc proc, void *arg, int timeoutTicks)
     ATTR_NONNULL((1)) ATTR_RETNONNULL;
 
-/** Disable private stack for the job,
- * Disable creating/using a private stack for this job. As a consequence, if
- * the job awaits some PSC_AsyncTask, it will block a worker thread even if
- * the library was built on a system with POSIX user context switching
- * support. Disabling the private stack can avoid a tiny bit of overhead for
- * jobs that will never await a PSC_AsyncTask.
+/** Enable private stack for the job,
+ * Enable creating/using a private stack for this job. If not enabled,
+ * awaiting some PSC_AsyncTask will block a worker thread even if the library
+ * was built on a system with POSIX user context switching support.
+ *
+ * It's recommended to only enable this for jobs that might eventually await
+ * a PSC_AsyncTask, because it incurs some overhead already on starting and
+ * finishing the job.
  * @memberof PSC_ThreadJob
  * @param self the PSC_ThreadJob
  */
 DECLEXPORT void
-PSC_ThreadJob_disableStack(PSC_ThreadJob *self)
+PSC_ThreadJob_setAsync(PSC_ThreadJob *self)
     CMETHOD;
 
 /** The job finished.
@@ -120,12 +124,11 @@ PSC_ThreadJob_destroy(PSC_ThreadJob *self);
 DECLEXPORT int
 PSC_ThreadJob_canceled(void);
 
-/** Check whether PSC_AsyncTask_await() will block.
+/** Check whether PSC_AsyncTask_await() will always block.
  * This method tells at runtime whether awaiting a PSC_AsyncTask will always
  * block the worker thread (which is the case on systems without support for
- * POSIX user context switching), or only when the job's stack size is set to
- * zero. It may be used to configure a suitable number of worker threads per
- * CPU.
+ * POSIX user context switching), regardless of PSC_ThreadJob_setAsync().
+ * It may be used to configure a suitable number of worker threads per CPU.
  * @memberof PSC_AsyncTask
  * @static
  * @returns 1 if PSC_AsyncTask_await() always blocks, 0 if it only blocks when
