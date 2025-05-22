@@ -175,23 +175,24 @@ useprng:
 }
 
 SOEXPORT size_t PSC_Random_string(char *str, size_t size,
-	PSC_RandomFlags flags)
+	PSC_RandomFlags flags, PSC_Base64Flags b64flags)
 {
     size_t count = PSC_Base64_decodedSize(size - 1);
     void *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, flags);
     if (got < count) size = PSC_Base64_encodedLen(got) + 1;
-    PSC_Base64_encodeTo(str, buf, got);
+    PSC_Base64_encodeTo(str, buf, got, b64flags);
     free(buf);
     return size;
 }
 
-SOEXPORT char *PSC_Random_createStr(size_t count, PSC_RandomFlags flags)
+SOEXPORT char *PSC_Random_createStr(size_t count,
+	PSC_RandomFlags flags, PSC_Base64Flags b64flags)
 {
     void *buf = PSC_malloc(count);
     size_t got = PSC_Random_bytes(buf, count, flags);
     char *str = 0;
-    if (got == count) str = PSC_Base64_encode(buf, count);
+    if (got == count) str = PSC_Base64_encode(buf, count, b64flags);
     free(buf);
     return str;
 }

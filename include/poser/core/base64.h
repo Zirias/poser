@@ -9,6 +9,13 @@
 
 #include <stddef.h>
 
+/** Flags for Base64 encoding */
+typedef enum PSC_Base64Flags
+{
+    PSC_B64_DEFAULT	= 0,	    /**< standard encoding */
+    PSC_B64_URLSAFE	= (1 << 0)  /**< use URL-safe alphabet */
+} PSC_Base64Flags;
+
 /** Encode and decode data using Base64.
  * Provides static methods to encode and decode binary data with Base64.
  * @class PSC_Base64 base64.h <poser/core/base64.h>
@@ -41,9 +48,11 @@ PSC_Base64_decodedSize(size_t len)
  *            room for the encoded string length plus a NUL terminator
  * @param data the binary data to encode
  * @param size the size of the binary data
+ * @param flags flags for encoding
  */
 DECLEXPORT void
-PSC_Base64_encodeTo(char *enc, const void *data, size_t size)
+PSC_Base64_encodeTo(char *enc, const void *data, size_t size,
+	PSC_Base64Flags flags)
     ATTR_NONNULL((1)) ATTR_NONNULL((2));
 
 /** Base64-encode data to a newly created string.
@@ -51,10 +60,11 @@ PSC_Base64_encodeTo(char *enc, const void *data, size_t size)
  * @static
  * @param data the binary data to encode
  * @param size the size of the binary data
+ * @param flags flags for encoding
  * @returns a newly allocated Base64-encoded string
  */
 DECLEXPORT char *
-PSC_Base64_encode(const void *data, size_t size)
+PSC_Base64_encode(const void *data, size_t size, PSC_Base64Flags flags)
     ATTR_MALLOC ATTR_NONNULL((1));
 
 /** Base64-decode a string to a given buffer.

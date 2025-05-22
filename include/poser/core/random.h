@@ -6,6 +6,7 @@
  */
 
 #include <poser/decl.h>
+#include <poser/core/base64.h>
 
 #include <stddef.h>
 
@@ -59,11 +60,13 @@ PSC_Random_bytes(void *buf, size_t count, PSC_RandomFlags flags)
  * @param str the buffer to put the string into
  * @param size the length of the string, including a terminating NUL
  * @param flags flags controlling methods used
+ * @param b64flags flags for Base64 encoding
  * @returns the string size (including a terminating NUL) actually written,
  *          which will be less than @p size on error
  */
 DECLEXPORT size_t
-PSC_Random_string(char *str, size_t size, PSC_RandomFlags flags)
+PSC_Random_string(char *str, size_t size,
+	PSC_RandomFlags flags, PSC_Base64Flags b64flags)
     ATTR_NONNULL((1)) ATTR_ACCESS((write_only, 1, 2));
 
 /** Create a newly allocated random string.
@@ -74,10 +77,12 @@ PSC_Random_string(char *str, size_t size, PSC_RandomFlags flags)
  * @static
  * @param count use this many random bytes to construct the string
  * @param flags flags controlling methods used
+ * @param b64flags flags for Base64 encoding
  * @returns the new random string, or NULL on error
  */
 DECLEXPORT char *
-PSC_Random_createStr(size_t count, PSC_RandomFlags flags)
+PSC_Random_createStr(size_t count,
+	PSC_RandomFlags flags, PSC_Base64Flags b64flags)
     ATTR_MALLOC;
 
 #endif

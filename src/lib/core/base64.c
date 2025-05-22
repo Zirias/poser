@@ -5,25 +5,26 @@
 #include <stdint.h>
 #include <string.h>
 
-static uint8_t dec1(char val) ATTR_CONST;
-static char enc1(uint8_t val) ATTR_CONST;
+static const char alphabet[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/-_";
 
-static char enc1(uint8_t val)
+static uint8_t dec1(char val) ATTR_CONST;
+static char enc1(uint8_t val, PSC_Base64Flags flags) ATTR_CONST;
+
+static char enc1(uint8_t val, PSC_Base64Flags flags)
 {
-    val &= 0x3f;
-    if (val < 0x1a) return 'A'+val;
-    if (val < 0x34) return 'a'+(val-0x1a);
-    if (val < 0x3e) return '0'+(val-0x34);
-    return val == 0x3e ? '+' : '/';
+    uint8_t pos = val & 0x3f;
+    if ((flags & PSC_B64_URLSAFE) && pos >= 0x3e) pos += 2;
+    return alphabet[pos];
 }
 
 static uint8_t dec1(char val)
 {
-    if (val >= 'A' && val <='Z') return val-'A';
-    if (val >= 'a' && val <='z') return val-'a'+0x1a;
-    if (val >= '0' && val <='9') return val-'0'+0x34;
-    if (val == '+') return 0x3e;
-    return 0x3f;
+    char *pos = strchr(alphabet, val);
+    if (!pos) return 0xff;
+    uint8_t dec = pos - alphabet;
+    if (dec > 0x3f) dec -= 2;
+    return dec;
 }
 
 SOEXPORT size_t PSC_Base64_encodedLen(size_t size)
@@ -40,36 +41,38 @@ SOEXPORT size_t PSC_Base64_decodedSize(size_t len)
     return 3 * (len/4) + res;
 }
 
-SOEXPORT void PSC_Base64_encodeTo(char *enc, const void *data, size_t size)
+SOEXPORT void PSC_Base64_encodeTo(char *enc, const void *data, size_t size,
+	PSC_Base64Flags flags)
 {
     size_t pos = 0;
     const uint8_t *d = data;
     while (size-pos >= 3)
     {
-	*enc++ = enc1(d[pos]>>2);
-	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4);
-	*enc++ = enc1(d[pos+1]<<2|d[pos+2]>>6);
-	*enc++ = enc1(d[pos+2]);
+	*enc++ = enc1(d[pos]>>2, flags);
+	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4, flags);
+	*enc++ = enc1(d[pos+1]<<2|d[pos+2]>>6, flags);
+	*enc++ = enc1(d[pos+2], flags);
 	pos += 3;
     }
     if (size - pos == 2)
     {
-	*enc++ = enc1(d[pos]>>2);
-	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4);
-	*enc++ = enc1(d[pos+1]<<2);
+	*enc++ = enc1(d[pos]>>2, flags);
+	*enc++ = enc1(d[pos]<<4|d[pos+1]>>4, flags);
+	*enc++ = enc1(d[pos+1]<<2, flags);
     }
     else if (pos < size)
     {
-	*enc++ = enc1(d[pos]>>2);
-	*enc++ = enc1(d[pos]<<4);
+	*enc++ = enc1(d[pos]>>2, flags);
+	*enc++ = enc1(d[pos]<<4, flags);
     }
     *enc = 0;
 }
 
-SOEXPORT char *PSC_Base64_encode(const void *data, size_t size)
+SOEXPORT char *PSC_Base64_encode(const void *data, size_t size,
+	PSC_Base64Flags flags)
 {
     char *encoded = PSC_malloc(PSC_Base64_encodedLen(size) + 1);
-    PSC_Base64_encodeTo(encoded, data, size);
+    PSC_Base64_encodeTo(encoded, data, size, flags);
     return encoded;
 }
 
