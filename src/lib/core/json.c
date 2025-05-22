@@ -1014,3 +1014,8 @@ SOEXPORT PSC_Json *PSC_JsonSerializer_deserialize(PSC_JsonSerializer *self,
     return obj;
 }
 
+SOEXPORT void PSC_JsonSerializer_destroy(PSC_JsonSerializer *self)
+{
+    free(self);
+}
+
