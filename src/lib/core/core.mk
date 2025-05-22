@@ -90,6 +90,7 @@ posercore_MODULES=		base64 \
 				hash \
 				hashtable \
 				ipaddr \
+				json \
 				list \
 				log \
 				process \
@@ -120,6 +121,7 @@ posercore_HEADERS_INSTALL=	core \
 				core/hash \
 				core/hashtable \
 				core/ipaddr \
+				core/json \
 				core/list \
 				core/log \
 				core/process \
