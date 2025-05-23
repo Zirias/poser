@@ -104,7 +104,9 @@ static void resolveDone(void *receiver, void *sender, void *args)
 	    if (self->handling < 0)
 	    {
 		self->job = 0;
+		self->handling = 0;
 		PSC_Resolver_destroy(self);
+		return;
 	    }
 	    self->handling = 0;
 	}
