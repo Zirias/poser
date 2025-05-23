@@ -168,6 +168,7 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     PSC_Server *self = receiver;
     PSC_Connection *conn = sender;
+    if (!self->connsize) return;
     for (size_t pos = 0; pos < self->connsize; ++pos)
     {
 	if (self->conn[pos] == conn)
@@ -947,8 +948,12 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 {
     if (!self) return;
 
-    for (size_t pos = 0; pos < self->connsize; ++pos)
+    size_t connsz = self->connsize;
+    self->connsize = 0;
+    for (size_t pos = 0; pos < connsz; ++pos)
     {
+	PSC_Log_fmt(PSC_L_DEBUG, "server: client disconnected from %s",
+		PSC_Connection_remoteAddr(self->conn[pos]));
 	PSC_Event_raise(self->clientDisconnected, 0, self->conn[pos]);
 	PSC_Connection_destroy(self->conn[pos]);
     }
