@@ -1,5 +1,6 @@
 posercore_PRECHECK=		ACCEPT4 ARC4R GETRANDOM MADVISE MADVFREE \
-				MANON MANONYMOUS MSTACK UCONTEXT XXHX86
+				MANON MANONYMOUS MSTACK TLS_C11 TLS_GNU \
+				UCONTEXT XXHX86
 ACCEPT4_FUNC=			accept4
 ACCEPT4_CFLAGS=			-D_GNU_SOURCE
 ifneq ($(findstring -solaris,$(TARGETARCH)),)
@@ -32,6 +33,8 @@ MANONYMOUS_HEADERS=		sys/mman.h
 MSTACK_FLAG=			MAP_STACK
 MSTACK_CFLAGS=			-D_DEFAULT_SOURCE
 MSTACK_HEADERS=			sys/mman.h
+TLS_C11_TYPE=			_Thread_local int
+TLS_GNU_TYPE=			__thread int
 UCONTEXT_TYPE=			ucontext_t
 UCONTEXT_HEADERS=		ucontext.h
 XXHX86_FUNC=			XXH_featureTest
@@ -173,6 +176,16 @@ posercore_DEFINES+=		-DWITH_TLS
 endif
 
 $(call librules, posercore)
+
+ifeq ($(posercore_HAVE_TLS_C11),1)
+posercore_DEFINES+=		-DTHREADLOCAL=_Thread_local
+else
+  ifeq ($(posercore_HAVE_TLS_GNU),1)
+posercore_DEFINES+=		-DTHREADLOCAL=__thread
+  else
+    $(error No thread-local-storage suppport detected, cannot build poser)
+  endif
+endif
 
 ifneq ($(WITH_POLL),1)
   ifneq ($(posercore_HAVE_EPOLL),1)

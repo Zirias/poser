@@ -24,13 +24,6 @@
 #  include <ucontext.h>
 #endif
 
-#if defined(__linux__) || defined(__FreeBSD__)
-#include <threads.h>
-#define THREADLOCAL thread_local
-#else
-#define THREADLOCAL __thread
-#endif
-
 #ifndef DEFTHREADS
 #define DEFTHREADS 16
 #endif
