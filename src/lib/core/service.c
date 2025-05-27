@@ -338,7 +338,7 @@ static EvportWatch *findWatch(int fd, EvportWatch **parent)
     while (w)
     {
 	if (w->fd == fd) break;
-	if (*parent) *parent = w;
+	if (parent) *parent = w;
 	w = w->next;
     }
     return w;
@@ -526,7 +526,7 @@ static EpollWatch *findWatch(int fd, EpollWatch **parent)
     while (w)
     {
 	if (w->fd == fd) break;
-	if (*parent) *parent = w;
+	if (parent) *parent = w;
 	w = w->next;
     }
     return w;
