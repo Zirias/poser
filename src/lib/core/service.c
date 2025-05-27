@@ -8,8 +8,10 @@
 
 #include <poser/core/daemon.h>
 #include <poser/core/threadpool.h>
+#include <poser/core/util.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <grp.h>
 #include <setjmp.h>
 #include <stdlib.h>
@@ -39,8 +41,11 @@
 
 #ifdef HAVE_SIGNALFD
 #  include <sys/signalfd.h>
+#  define SIGFD_RDFD sfd
+#  define SIGFD_TYPE struct signalfd_siginfo
+#  define SIGFD_VALUE(x) (x).ssi_signo
 
-static int sfd = -1;
+int sfd = -1;
 #endif
 
 #ifdef HAVE_EVPORTS
@@ -50,7 +55,6 @@ static int sfd = -1;
 #  undef WITH_SELECT
 #  define EVP_MAX_EVENTS 32
 #  include <errno.h>
-#  include <fcntl.h>
 #  include <poll.h>
 #  include <port.h>
 #  include <poser/core/util.h>
@@ -62,8 +66,6 @@ struct EvportWatch
     int fd;
     int events;
 };
-static EvportWatch *watches[32];
-static int epfd = -1;
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -73,14 +75,9 @@ static int epfd = -1;
 #  define KQ_MAX_EVENTS 32
 #  define KQ_MAX_CHANGES 128
 #  include <errno.h>
-#  include <fcntl.h>
 #  include <sys/types.h>
 #  include <sys/event.h>
 #  include <sys/time.h>
-
-static int kqfd = -1;
-static int nchanges;
-static struct kevent changes[KQ_MAX_CHANGES];
 #endif
 
 #ifdef HAVE_EPOLL
@@ -97,34 +94,94 @@ struct EpollWatch
     int fd;
     uint32_t events;
 };
-static EpollWatch *watches[32];
-static int epfd = -1;
 #endif
 
 #ifdef WITH_POLL
 #  undef WITH_SELECT
 #  include <poll.h>
 #  include <poser/core/util.h>
-
-static nfds_t nfds;
-static size_t fdssz;
-static struct pollfd *fds;
 #endif
 
 #ifdef WITH_SELECT
 #  include <sys/select.h>
-
-static fd_set readfds;
-static fd_set writefds;
-static int nread;
-static int nwrite;
-static int nfds;
-
 #endif
 
 #ifndef DEFLOGIDENT
 #define DEFLOGIDENT "posercore"
 #endif
+
+typedef enum ServiceLoopFlags
+{
+    SLF_NONE	    = 0,
+    SLF_SVCRUN	    = (1 << 0),
+    SLF_SVCMAIN	    = (1 << 1)
+} ServiceLoopFlags;
+
+typedef enum SvcCommandType
+{
+    SCT_STOP,
+    SCT_ACCEPT
+} SvcCommandType;
+
+typedef struct SvcCommand
+{
+    SvcCommandType type;
+    int fd;
+} SvcCommand;
+
+typedef struct SecondaryService
+{
+    pthread_t handle;
+    int commandpipe[2];
+} SecondaryService;
+
+typedef struct Service
+{
+    SecondaryService *svcid;
+    PSC_Timer *shutdownTimer;
+#ifdef HAVE_EVPORTS
+    EvportWatch *watches[32];
+#endif
+#ifdef HAVE_EPOLL
+    EpollWatch *watches[32];
+#endif
+#ifdef WITH_POLL
+    nfds_t nfds;
+    size_t fdssz;
+    struct pollfd *fds;
+#endif
+    PSC_Event readyRead;
+    PSC_Event readyWrite;
+    PSC_Event eventsDone;
+#ifdef WITH_SELECT
+    fd_set readfds;
+    fd_set writefds;
+#endif
+#ifdef HAVE_KQUEUE
+    struct kevent changes[KQ_MAX_CHANGES];
+    int kqfd;
+    int nchanges;
+#endif
+    int running;
+    int shutdownRef;
+#if defined(HAVE_EVPORTS) || defined(HAVE_EPOLL)
+    int epfd;
+#endif
+#ifdef WITH_SELECT
+    int nread;
+    int nwrite;
+    int nfds;
+#endif
+} Service;
+
+static THREADLOCAL Service *svc;
+// static SecondaryService *ssvc;
+// static size_t nssvc;
+
+static PSC_Event prestartup;
+static PSC_Event startup;
+static PSC_Event shutdown;
+static PSC_Event childExited;
 
 struct PSC_EAStartup
 {
@@ -138,20 +195,6 @@ struct PSC_EAChildExited
     int signaled;
 };
 
-static PSC_Event readyRead;
-static PSC_Event readyWrite;
-static PSC_Event prestartup;
-static PSC_Event startup;
-static PSC_Event shutdown;
-static PSC_Event eventsDone;
-static PSC_Event childExited;
-
-static int running;
-
-static int shutdownRef;
-
-static PSC_Timer *shutdownTimer;
-
 static jmp_buf panicjmp;
 static PSC_PanicHandler panicHandlers[MAXPANICHANDLERS];
 static int numPanicHandlers;
@@ -159,47 +202,81 @@ static int numPanicHandlers;
 static sigset_t sigorigmask;
 static sigset_t sigblockmask;
 #if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
-static PSC_SignalHandler sigcallback[NSIG];
-#endif
-#ifdef WITH_SIGHDL
-static volatile sig_atomic_t sigflags[NSIG];
-static void handlesig(int signum)
+typedef struct SigHdlRec SigHdlRec;
+struct SigHdlRec
 {
-    if (signum < 0 || signum >= NSIG) return;
-    sigflags[signum] = 1;
+    SigHdlRec *next;
+    PSC_SignalHandler hdl;
+    int signo;
+};
+static SigHdlRec *sigcallbacks[32];
+static SigHdlRec *sighdlrec(int signo)
+{
+    unsigned h = ((unsigned)signo) & 0x1fU;
+    for (SigHdlRec *r = sigcallbacks[h]; r; r = r->next)
+    {
+	if (r->signo == signo) return r;
+    }
+    return 0;
 }
 #endif
+#ifdef WITH_SIGHDL
+#  define SIGFD_RDFD sfd[0]
+#  define SIGFD_TYPE int
+#  define SIGFD_VALUE(x) (x)
+
+int sfd[2];
+static void handlesig(int signum)
+{
+    if (write(sfd[1], &signum, sizeof signum) <= 0) abort();
+}
+#endif
+
+static void svcinit(void)
+{
+    if (svc) return;
+    svc = PSC_malloc(sizeof *svc);
+    memset(svc, 0, sizeof *svc);
+#ifdef HAVE_KQUEUE
+    svc->kqfd = -1;
+#endif
+#if defined(HAVE_EVPORTS) || defined(HAVE_EPOLL)
+    svc->epfd = -1;
+#endif
+}
 
 #ifdef WITH_SELECT
 static void tryReduceNfds(int id)
 {
-    if (!nread && !nwrite)
+    if (!svc->nread && !svc->nwrite)
     {
-	nfds = 0;
+	svc->nfds = 0;
     }
-    else if (id+1 >= nfds)
+    else if (id+1 >= svc->nfds)
     {
 	int fd;
 	for (fd = id; fd >= 0; --fd)
 	{
-	    if (FD_ISSET(fd, &readfds) || FD_ISSET(fd, &writefds))
+	    if (FD_ISSET(fd, &svc->readfds) || FD_ISSET(fd, &svc->writefds))
 	    {
 		break;
 	    }
 	}
-	nfds = fd+1;
+	svc->nfds = fd+1;
     }
 }
 #endif
 
 SOEXPORT PSC_Event *PSC_Service_readyRead(void)
 {
-    return &readyRead;
+    svcinit();
+    return &svc->readyRead;
 }
 
 SOEXPORT PSC_Event *PSC_Service_readyWrite(void)
 {
-    return &readyWrite;
+    svcinit();
+    return &svc->readyWrite;
 }
 
 SOEXPORT PSC_Event *PSC_Service_prestartup(void)
@@ -219,7 +296,8 @@ SOEXPORT PSC_Event *PSC_Service_shutdown(void)
 
 SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 {
-    return &eventsDone;
+    svcinit();
+    return &svc->eventsDone;
 }
 
 SOEXPORT PSC_Event *PSC_Service_childExited(void)
@@ -256,7 +334,7 @@ SOEXPORT int PSC_Service_isValidFd(int id, const char *errtopic)
 static EvportWatch *findWatch(int fd, EvportWatch **parent)
 {
     if (fd < 0) return 0;
-    EvportWatch *w = watches[(unsigned)fd & 31U];
+    EvportWatch *w = svc->watches[(unsigned)fd & 31U];
     while (w)
     {
 	if (w->fd == fd) break;
@@ -270,12 +348,13 @@ static void reregister(int id)
 {
     EvportWatch *w = findWatch(id, 0);
     if (!w) return;
-    port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+    port_associate(svc->epfd, PORT_SOURCE_FD, id, w->events, 0);
 }
 
 static void registerWatch(int id, int flag)
 {
-    if (epfd < 0)
+    svcinit();
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: event port not initialized");
 	return;
@@ -293,17 +372,17 @@ static void registerWatch(int id, int flag)
 	w->next = 0;
 	w->fd = id;
 	w->events = flag;
-	EvportWatch *p = watches[(unsigned)id & 31U];
+	EvportWatch *p = svc->watches[(unsigned)id & 31U];
 	while (p && p->next) p = p->next;
 	if (p) p->next = w;
-	else watches[(unsigned)id & 31U] = w;
+	else svc->watches[(unsigned)id & 31U] = w;
     }
-    port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+    port_associate(svc->epfd, PORT_SOURCE_FD, id, w->events, 0);
 }
 
 static void unregisterWatch(int id, int flag)
 {
-    if (epfd < 0)
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: event port not initialized");
 	return;
@@ -315,14 +394,14 @@ static void unregisterWatch(int id, int flag)
     w->events &= (~flag);
     if (w->events)
     {
-	port_associate(epfd, PORT_SOURCE_FD, id, w->events, 0);
+	port_associate(svc->epfd, PORT_SOURCE_FD, id, w->events, 0);
     }
     else
     {
 	if (p) p->next = w->next;
-	else watches[(unsigned)id & 31U] = w->next;
+	else svc->watches[(unsigned)id & 31U] = w->next;
 	free(w);
-	port_dissociate(epfd, PORT_SOURCE_FD, id);
+	port_dissociate(svc->epfd, PORT_SOURCE_FD, id);
     }
 }
 
@@ -348,7 +427,7 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 
 SOLOCAL int PSC_Service_epfd(void)
 {
-    return epfd;
+    return svc->epfd;
 }
 #endif
 
@@ -356,48 +435,56 @@ SOLOCAL int PSC_Service_epfd(void)
 static void flushChanges(void)
 {
     struct kevent receipts[KQ_MAX_CHANGES];
-    for (int i = 0; i < nchanges; ++i) changes[i].flags |= EV_RECEIPT;
-    kevent(kqfd, changes, nchanges, receipts, nchanges, 0);
-    nchanges = 0;
+    for (int i = 0; i < svc->nchanges; ++i)
+    {
+	svc->changes[i].flags |= EV_RECEIPT;
+    }
+    kevent(svc->kqfd, svc->changes, svc->nchanges, receipts, svc->nchanges, 0);
+    svc->nchanges = 0;
 }
 
 static struct kevent *addChange(void)
 {
-    if (nchanges == KQ_MAX_CHANGES) flushChanges();
-    return changes + nchanges++;
+    if (svc->nchanges == KQ_MAX_CHANGES) flushChanges();
+    return svc->changes + svc->nchanges++;
 }
 
 static int initKqueue(void)
 {
-    if (kqfd >= 0) return 0;
+    svcinit();
+    if (svc->kqfd >= 0) return 0;
 #  if defined(HAVE_KQUEUEX)
-    kqfd = kqueuex(KQUEUE_CLOEXEC);
+    svc->kqfd = kqueuex(KQUEUE_CLOEXEC);
 #  elif defined(HAVE_KQUEUE1)
-    kqfd = kqueue1(O_CLOEXEC);
+    svc->kqfd = kqueue1(O_CLOEXEC);
 #  else
-    kqfd = kqueue();
-    if (kqfd >= 0) fcntl(kqfd, F_SETFD, FD_CLOEXEC);
+    svc->kqfd = kqueue();
+    if (svc->kqfd >= 0) fcntl(svc->kqfd, F_SETFD, FD_CLOEXEC);
 #  endif
-    if (kqfd < 0) return -1;
-    struct sigaction sa = { .sa_handler = SIG_IGN };
-    if (sigaction(SIGTERM, &sa, 0) < 0) goto fail;
-    if (sigaction(SIGINT, &sa, 0) < 0) goto fail;
-    if (sigaction(SIGALRM, &sa, 0) < 0) goto fail;
+    if (svc->kqfd < 0) return -1;
+    if (!svc->svcid)
+    {
+	struct sigaction sa = { .sa_handler = SIG_IGN };
+	if (sigaction(SIGTERM, &sa, 0) < 0) goto fail;
+	if (sigaction(SIGINT, &sa, 0) < 0) goto fail;
+	if (sigaction(SIGALRM, &sa, 0) < 0) goto fail;
 
-    EV_SET(addChange(), SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
-    EV_SET(addChange(), SIGINT, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
-    EV_SET(addChange(), SIGCHLD, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+	EV_SET(addChange(), SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+	EV_SET(addChange(), SIGINT, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+	EV_SET(addChange(), SIGCHLD, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+    }
     return 0;
 
 fail:
-    close(kqfd);
-    kqfd = -1;
+    close(svc->kqfd);
+    svc->kqfd = -1;
     return -1;
 }
 
 static int verifyKqueue(int fd, int log)
 {
-    if (kqfd < 0)
+    svcinit();
+    if (svc->kqfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: kqueue not initialized");
 	return -1;
@@ -435,7 +522,7 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 static EpollWatch *findWatch(int fd, EpollWatch **parent)
 {
     if (fd < 0) return 0;
-    EpollWatch *w = watches[(unsigned)fd & 31U];
+    EpollWatch *w = svc->watches[(unsigned)fd & 31U];
     while (w)
     {
 	if (w->fd == fd) break;
@@ -447,7 +534,8 @@ static EpollWatch *findWatch(int fd, EpollWatch **parent)
 
 static void registerWatch(int id, uint32_t flag)
 {
-    if (epfd < 0)
+    svcinit();
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: epoll not initialized");
 	return;
@@ -460,7 +548,7 @@ static void registerWatch(int id, uint32_t flag)
 	if (w->events & flag) return;
 	w->events |= flag;
 	ev.events = w->events;
-	epoll_ctl(epfd, EPOLL_CTL_MOD, id, &ev);
+	epoll_ctl(svc->epfd, EPOLL_CTL_MOD, id, &ev);
     }
     else
     {
@@ -468,18 +556,18 @@ static void registerWatch(int id, uint32_t flag)
 	w->next = 0;
 	w->fd = id;
 	w->events = flag;
-	EpollWatch *p = watches[(unsigned)id & 31U];
+	EpollWatch *p = svc->watches[(unsigned)id & 31U];
 	while (p && p->next) p = p->next;
 	if (p) p->next = w;
-	else watches[(unsigned)id & 31U] = w;
+	else svc->watches[(unsigned)id & 31U] = w;
 	ev.events = w->events;
-	epoll_ctl(epfd, EPOLL_CTL_ADD, id, &ev);
+	epoll_ctl(svc->epfd, EPOLL_CTL_ADD, id, &ev);
     }
 }
 
 static void unregisterWatch(int id, uint32_t flag)
 {
-    if (epfd < 0)
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: epoll not initialized");
 	return;
@@ -493,14 +581,14 @@ static void unregisterWatch(int id, uint32_t flag)
     if (w->events)
     {
 	ev.events = w->events;
-	epoll_ctl(epfd, EPOLL_CTL_MOD, id, &ev);
+	epoll_ctl(svc->epfd, EPOLL_CTL_MOD, id, &ev);
     }
     else
     {
 	if (p) p->next = w->next;
-	else watches[(unsigned)id & 31U] = w->next;
+	else svc->watches[(unsigned)id & 31U] = w->next;
 	free(w);
-	epoll_ctl(epfd, EPOLL_CTL_DEL, id, 0);
+	epoll_ctl(svc->epfd, EPOLL_CTL_DEL, id, 0);
     }
 }
 
@@ -528,12 +616,12 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 #ifdef WITH_POLL
 static struct pollfd *findFd(int fd, size_t *idx)
 {
-    for (size_t i = 0; i < nfds; ++i)
+    for (size_t i = 0; i < svc->nfds; ++i)
     {
-	if (fds[i].fd == fd)
+	if (svc->fds[i].fd == fd)
 	{
 	    if (idx) *idx = i;
-	    return fds + i;
+	    return svc->fds + i;
 	}
     }
     return 0;
@@ -541,6 +629,7 @@ static struct pollfd *findFd(int fd, size_t *idx)
 
 static void registerPoll(int id, short flag)
 {
+    svcinit();
     if (!PSC_Service_isValidFd(id, "service")) return;
     struct pollfd *fd = findFd(id, 0);
     if (fd)
@@ -550,12 +639,12 @@ static void registerPoll(int id, short flag)
     }
     else
     {
-	if (nfds == fdssz)
+	if (svc->nfds == svc->fdssz)
 	{
-	    fdssz += 16;
-	    fds = PSC_realloc(fds, fdssz * sizeof *fds);
+	    svc->fdssz += 16;
+	    svc->fds = PSC_realloc(svc->fds, svc->fdssz * sizeof *svc->fds);
 	}
-	fd = fds + (nfds++);
+	fd = svc->fds + (svc->nfds++);
 	fd->fd = id;
 	fd->events = flag;
 	fd->revents = 0;
@@ -571,8 +660,9 @@ static void unregisterPoll(int id, short flag)
     fd->events &= (~flag);
     if (!fd->events)
     {
-	--nfds;
-	memmove(fds + i, fds + i + 1, (nfds - i) * sizeof *fds);
+	--svc->nfds;
+	memmove(svc->fds + i, svc->fds + i + 1,
+		(svc->nfds - i) * sizeof *svc->fds);
     }
 }
 
@@ -600,37 +690,41 @@ SOEXPORT void PSC_Service_unregisterWrite(int id)
 #ifdef WITH_SELECT
 SOEXPORT void PSC_Service_registerRead(int id)
 {
+    svcinit();
     if (!PSC_Service_isValidFd(id, "service")) return;
-    if (FD_ISSET(id, &readfds)) return;
-    FD_SET(id, &readfds);
-    ++nread;
-    if (id >= nfds) nfds = id+1;
+    if (FD_ISSET(id, &svc->readfds)) return;
+    FD_SET(id, &svc->readfds);
+    ++svc->nread;
+    if (id >= svc->nfds) svc->nfds = id+1;
 }
 
 SOEXPORT void PSC_Service_unregisterRead(int id)
 {
+    svcinit();
     if (!PSC_Service_isValidFd(id, 0)) return;
-    if (!FD_ISSET(id, &readfds)) return;
-    FD_CLR(id, &readfds);
-    --nread;
+    if (!FD_ISSET(id, &svc->readfds)) return;
+    FD_CLR(id, &svc->readfds);
+    --svc->nread;
     tryReduceNfds(id);
 }
 
 SOEXPORT void PSC_Service_registerWrite(int id)
 {
+    svcinit();
     if (!PSC_Service_isValidFd(id, "service")) return;
-    if (FD_ISSET(id, &writefds)) return;
-    FD_SET(id, &writefds);
-    ++nwrite;
-    if (id >= nfds) nfds = id+1;
+    if (FD_ISSET(id, &svc->writefds)) return;
+    FD_SET(id, &svc->writefds);
+    ++svc->nwrite;
+    if (id >= svc->nfds) svc->nfds = id+1;
 }
 
 SOEXPORT void PSC_Service_unregisterWrite(int id)
 {
+    svcinit();
     if (!PSC_Service_isValidFd(id, 0)) return;
-    if (!FD_ISSET(id, &writefds)) return;
-    FD_CLR(id, &writefds);
-    --nwrite;
+    if (!FD_ISSET(id, &svc->writefds)) return;
+    FD_CLR(id, &svc->writefds);
+    --svc->nwrite;
     tryReduceNfds(id);
 }
 #endif
@@ -710,6 +804,7 @@ static int initSigfd(void)
 #if defined(SFD_NONBLOCK) && defined(SFD_CLOEXEC)
     sfd = signalfd(sfd, &sigblockmask, SFD_NONBLOCK|SFD_CLOEXEC);
 #else
+    sfd = signalfd(sfd, &sigblockmask, 0);
     if (sfd >= 0)
     {
 	fcntl(sfd, F_SETFD, FD_CLOEXEC);
@@ -723,15 +818,15 @@ static int initSigfd(void)
 #if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
 SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 {
-    if (signo < 0 || signo >= NSIG) return;
+    SigHdlRec *r = sighdlrec(signo);
 
-    if (running && signo != SIGTERM && signo != SIGINT
+    if (svc && svc->running && signo != SIGTERM && signo != SIGINT
 	    && signo != SIGALRM && signo != SIGCHLD)
     {
 #ifdef WITH_SIGHDL
 	struct sigaction sa;
 #endif
-	if (sigcallback[signo] && !handler)
+	if (r && !handler)
 	{
 #ifdef WITH_SIGHDL
 	    memset(&sa, 0, sizeof sa);
@@ -747,7 +842,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 #endif
 	    }
 	}
-	if (!sigcallback[signo] && handler)
+	if (!r && handler)
 	{
 	    if (sigaddset(&sigblockmask, signo) == 0 &&
 		    sigprocmask(SIG_SETMASK, &sigblockmask, 0) == 0)
@@ -764,7 +859,18 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	}
     }
 
-    sigcallback[signo] = handler;
+    if (!r)
+    {
+	unsigned h = ((unsigned)signo) & 0x1fU;
+	r = PSC_malloc(sizeof *r);
+	r->next = 0;
+	r->signo = signo;
+	SigHdlRec *p = sigcallbacks[h];
+	while (p && p->next) p = p->next;
+	if (p) p->next = r;
+	else sigcallbacks[h] = r;
+    }
+    r->hdl = handler;
 }
 #endif
 
@@ -796,49 +902,20 @@ static void reapChildren(void)
     }
 }
 
-#ifdef WITH_SIGHDL
-static int handleSigFlags(void)
-{
-    if (sigflags[SIGINT] || sigflags[SIGTERM])
-    {
-	shutdownRef = 0;
-	PSC_Event_raise(&shutdown, 0, 0);
-    }
-#ifndef HAVE_TIMERFD
-    if (sigflags[SIGALRM])
-    {
-	PSC_Timer_underrun();
-    }
-#endif
-    if (sigflags[SIGCHLD])
-    {
-	reapChildren();
-    }
-    int handled = 0;
-    for (int s = 0; s < NSIG; ++s) if (sigflags[s])
-    {
-	sigflags[s] = 0;
-	handled = 1;
-	if (sigcallback[s]) sigcallback[s](s);
-    }
-    return handled;
-}
-#endif
-
-#ifdef HAVE_SIGNALFD
+#ifdef SIGFD_RDFD
 static int handleSigfd(void)
 {
-    if (sfd < 0) return -1;
+    if (SIGFD_RDFD < 0) return -1;
 
-    struct signalfd_siginfo fdsi;
+    SIGFD_TYPE fdsi;
     ssize_t rrc;
-    while ((rrc = read(sfd, &fdsi, sizeof fdsi)) == sizeof fdsi)
+    while ((rrc = read(SIGFD_RDFD, &fdsi, sizeof fdsi)) == sizeof fdsi)
     {
-	switch (fdsi.ssi_signo)
+	switch (SIGFD_VALUE(fdsi))
 	{
 	    case SIGINT:
 	    case SIGTERM:
-		shutdownRef = 0;
+		svc->shutdownRef = 0;
 		PSC_Event_raise(&shutdown, 0, 0);
 		break;
 
@@ -855,9 +932,10 @@ static int handleSigfd(void)
 	    default:
 		break;
 	}
-	if (sigcallback[fdsi.ssi_signo])
+	SigHdlRec *r = sighdlrec(SIGFD_VALUE(fdsi));
+	if (r && r->hdl)
 	{
-	    sigcallback[fdsi.ssi_signo](fdsi.ssi_signo);
+	    r->hdl(SIGFD_VALUE(fdsi));
 	}
     }
     if (rrc < 0 && errno != EWOULDBLOCK) return -1;
@@ -875,27 +953,31 @@ static int processEvents(void)
 {
     port_event_t ev[EVP_MAX_EVENTS];
     unsigned nev = 1;
+    int pgrc;
 #ifdef WITH_SIGHDL
-    sigset_t origmask;
-    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
-    errno = 0;
-    int pgrc = port_getn(epfd, ev, EVP_MAX_EVENTS, &nev, 0);
-    int pgerr = errno;
-    pthread_sigmask(SIG_SETMASK, &origmask, 0);
-    if (!handleSigFlags() && pgrc < 0)
+    if (!svc->svcid)
     {
-	if (pgerr == EINTR) return 0;
-	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
-	return -1;
+	sigset_t origmask;
+	pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
+	errno = 0;
+	do
+	{
+	    nev = 1;
+	    pgrc = port_getn(svc->epfd, ev, EVP_MAX_EVENTS, &nev, 0);
+	} while (pgrc < 0 && errno == EINTR && nev == 0);
+	if (errno == EINTR) pgrc = 0;
+	pthread_sigmask(SIG_SETMASK, &origmask, 0);
     }
-#else
-    int pgrc = port_getn(epfd, ev, EVP_MAX_EVENTS, &nev, 0);
+    else
+#endif
+    {
+	pgrc = port_getn(svc->epfd, ev, EVP_MAX_EVENTS, &nev, 0);
+    }
     if (pgrc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
 	return -1;
     }
-#endif
     for (unsigned i = 0; i < nev; ++i)
     {
 	if (ev[i].portev_source == PORT_SOURCE_TIMER)
@@ -903,12 +985,13 @@ static int processEvents(void)
 	    PSC_Timer_doexpire(ev[i].portev_user);
 	    continue;
 	}
-#ifdef HAVE_SIGNALFD
-	if (ev[i].portev_events & POLLIN && (int)ev[i].portev_object == sfd)
+#ifdef SIGFD_RDFD
+	if (!svc->svcid && ev[i].portev_events & POLLIN
+		&& (int)ev[i].portev_object == SIGFD_RDFD)
 	{
 	    if (handleSigfd() >= 0)
 	    {
-		reregister(sfd);
+		reregister(SIGFD_RDFD);
 		continue;
 	    }
 	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
@@ -917,12 +1000,12 @@ static int processEvents(void)
 #endif
 	if (ev[i].portev_events & POLLOUT)
 	{
-	    PSC_Event_raise(&readyWrite, (int)ev[i].portev_object, 0);
+	    PSC_Event_raise(&svc->readyWrite, (int)ev[i].portev_object, 0);
 	    reregister((int)ev[i].portev_object);
 	}
 	if (ev[i].portev_events & POLLIN)
 	{
-	    PSC_Event_raise(&readyRead, (int)ev[i].portev_object, 0);
+	    PSC_Event_raise(&svc->readyRead, (int)ev[i].portev_object, 0);
 	    reregister((int)ev[i].portev_object);
 	}
     }
@@ -939,14 +1022,18 @@ static const char *eventBackendInfo(void)
 static int processEvents(void)
 {
     struct kevent ev[KQ_MAX_EVENTS];
-    int qrc = kevent(kqfd, changes, nchanges, ev, KQ_MAX_EVENTS, 0);
+    int qrc;
+    do
+    {
+	qrc = kevent(svc->kqfd, svc->changes, svc->nchanges,
+		ev, KQ_MAX_EVENTS, 0);
+    } while (qrc < 0 && errno == EINTR);
     if (qrc < 0)
     {
-	if (errno == EINTR) return 0;
 	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
 	return -1;
     }
-    nchanges = 0;
+    svc->nchanges = 0;
     PSC_Timer *timer;
     for (int i = 0; i <	qrc; ++i)
     {
@@ -958,7 +1045,7 @@ static int processEvents(void)
 		{
 		    case SIGINT:
 		    case SIGTERM:
-			shutdownRef = 0;
+			svc->shutdownRef = 0;
 			PSC_Event_raise(&shutdown, 0, 0);
 			break;
 
@@ -979,11 +1066,11 @@ static int processEvents(void)
 		break;
 
 	    case EVFILT_WRITE:
-		PSC_Event_raise(&readyWrite, ev[i].ident, 0);
+		PSC_Event_raise(&svc->readyWrite, ev[i].ident, 0);
 		break;
 
 	    case EVFILT_READ:
-		PSC_Event_raise(&readyRead, ev[i].ident, 0);
+		PSC_Event_raise(&svc->readyRead, ev[i].ident, 0);
 		break;
 
 	    default:
@@ -1003,25 +1090,30 @@ static const char *eventBackendInfo(void)
 static int processEvents(void)
 {
     struct epoll_event ev[EP_MAX_EVENTS];
+    int prc;
 #ifdef WITH_SIGHDL
-    int prc = epoll_pwait2(epfd, ev, EP_MAX_EVENTS, 0, &sigorigmask);
-    if (!handleSigFlags() && prc < 0)
+    if (!svc->svcid)
     {
-	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
-	return -1;
+	do
+	{
+	    prc = epoll_pwait2(svc->epfd, ev, EP_MAX_EVENTS, 0, &sigorigmask);
+	} while (prc < 0 && errno == EINTR);
     }
-#else
-    int prc = epoll_wait(epfd, ev, EP_MAX_EVENTS, -1);
+    else
+#endif
+    {
+	prc = epoll_wait(svc->epfd, ev, EP_MAX_EVENTS, -1);
+    }
     if (prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
 	return -1;
     }
-#endif
     for (int i = 0; i < prc; ++i)
     {
-#ifdef HAVE_SIGNALFD
-	if (ev[i].events & EPOLLIN && ev[i].data.fd == sfd)
+#ifdef SIGFD_RDFD
+	if (!svc->svcid && ev[i].events & EPOLLIN
+		&& ev[i].data.fd == SIGFD_RDFD)
 	{
 	    if (handleSigfd() >= 0) continue;
 	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
@@ -1030,11 +1122,11 @@ static int processEvents(void)
 #endif
 	if (ev[i].events & EPOLLOUT)
 	{
-	    PSC_Event_raise(&readyWrite, ev[i].data.fd, 0);
+	    PSC_Event_raise(&svc->readyWrite, ev[i].data.fd, 0);
 	}
 	if (ev[i].events & EPOLLIN)
 	{
-	    PSC_Event_raise(&readyRead, ev[i].data.fd, 0);
+	    PSC_Event_raise(&svc->readyRead, ev[i].data.fd, 0);
 	}
     }
     return 0;
@@ -1049,48 +1141,52 @@ static const char *eventBackendInfo(void)
 
 static int processEvents(void)
 {
+    int prc;
 #ifdef WITH_SIGHDL
-    sigset_t origmask;
-    pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
-    errno = 0;
-    int prc = poll(fds, nfds, -1);
-    int pollerr = errno;
-    pthread_sigmask(SIG_SETMASK, &origmask, 0);
-    if (!handleSigFlags() && prc < 0)
+    if (!svc->svcid)
     {
-	if (pollerr == EINTR) return 0;
-	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
-	return -1;
+	sigset_t origmask;
+	pthread_sigmask(SIG_SETMASK, &sigorigmask, &origmask);
+	errno = 0;
+	do
+	{
+	    prc = poll(svc->fds, svc->nfds, -1);
+	} while (prc < 0 && errno == EINTR);
+	pthread_sigmask(SIG_SETMASK, &origmask, 0);
     }
-#else
-    int prc = poll(fds, nfds, -1);
+    else
+#endif
+    {
+	prc = poll(svc->fds, svc->nfds, -1);
+    }
     if (prc < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
 	return -1;
     }
-#endif
-    for (size_t i = 0; prc > 0 && i < nfds; ++i)
+    for (size_t i = 0; prc > 0 && i < svc->nfds; ++i)
     {
-	if (!fds[i].revents) continue;
+	if (!svc->fds[i].revents) continue;
 	--prc;
-#ifdef HAVE_SIGNALFD
-	if (fds[i].revents & POLLIN && fds[i].fd == sfd)
+#ifdef SIGFD_RDFD
+	if (!svc->svcid && svc->fds[i].revents & POLLIN
+		&& svc->fds[i].fd == SIGFD_RDFD)
 	{
-	    if (handleSigfd() >= 0) continue;
+	    if (handleSigfd() >= 0) goto next;
 	    PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
 	    return -1;
 	}
 #endif
-	if (fds[i].revents & POLLOUT)
+	if (svc->fds[i].revents & POLLOUT)
 	{
-	    PSC_Event_raise(&readyWrite, fds[i].fd, 0);
+	    PSC_Event_raise(&svc->readyWrite, svc->fds[i].fd, 0);
 	}
-	if (fds[i].revents & POLLIN)
+	if (svc->fds[i].revents & POLLIN)
 	{
-	    PSC_Event_raise(&readyRead, fds[i].fd, 0);
+	    PSC_Event_raise(&svc->readyRead, svc->fds[i].fd, 0);
 	}
-	fds[i].revents = 0;
+next:
+	svc->fds[i].revents = 0;
     }
     return 0;
 }
@@ -1111,129 +1207,151 @@ static int processEvents(void)
     fd_set wfds;
     fd_set *r = 0;
     fd_set *w = 0;
-    if (nread)
+    if (svc->nread)
     {
-	memcpy(&rfds, &readfds, sizeof rfds);
+	memcpy(&rfds, &svc->readfds, sizeof rfds);
 	r = &rfds;
     }
-    if (nwrite)
+    if (svc->nwrite)
     {
-	memcpy(&wfds, &writefds, sizeof wfds);
+	memcpy(&wfds, &svc->writefds, sizeof wfds);
 	w = &wfds;
     }
+    int src;
 #ifdef WITH_SIGHDL
-    int src = pselect(nfds, r, w, 0, 0, &sigorigmask);
-    if (!handleSigFlags() && src < 0)
+    if (!svc->svcid)
     {
-	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
-	return -1;
+	do
+	{
+	    src = pselect(svc->nfds, r, w, 0, 0, &sigorigmask);
+	} while (src < 0 && errno == EINTR);
     }
-#else
-    int src = select(nfds, r, w, 0, 0);
+    else
+#endif
+    {
+	src = select(svc->nfds, r, w, 0, 0);
+    }
     if (src < 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
 	return -1;
     }
-#endif
-    if (w) for (int i = 0; src > 0 && i < nfds; ++i)
+    if (w) for (int i = 0; src > 0 && i < svc->nfds; ++i)
     {
 	if (FD_ISSET(i, w))
 	{
 	    --src;
-	    PSC_Event_raise(&readyWrite, i, 0);
+	    PSC_Event_raise(&svc->readyWrite, i, 0);
 	}
     }
-    if (r) for (int i = 0; src > 0 && i < nfds; ++i)
+    if (r) for (int i = 0; src > 0 && i < svc->nfds; ++i)
     {
 	if (FD_ISSET(i, r))
 	{
 	    --src;
-#ifdef HAVE_SIGNALFD
-	    if (i == sfd)
+#ifdef SIGFD_RDFD
+	    if (!svc->svcid && i == SIGFD_RDFD)
 	    {
 		if (handleSigfd() >= 0) continue;
 		PSC_Log_msg(PSC_L_ERROR, "reading signalfd failed");
 		return -1;
 	    }
 #endif
-	    PSC_Event_raise(&readyRead, i, 0);
+	    PSC_Event_raise(&svc->readyRead, i, 0);
 	}
     }
     return 0;
 }
 #endif
 
-static int serviceLoop(int isRun)
+static int serviceLoop(ServiceLoopFlags flags)
 {
     int rc = EXIT_FAILURE;
 
-    PSC_RunOpts *opts = runOpts();
-
-    sigemptyset(&sigblockmask);
-#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
-    sigaddset(&sigblockmask, SIGTERM);
-    sigaddset(&sigblockmask, SIGINT);
-#endif
-    sigaddset(&sigblockmask, SIGALRM);
-    sigaddset(&sigblockmask, SIGCHLD);
-    if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
-	return rc;
-    }
+    PSC_RunOpts *opts = 0;
 
 #if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
 #endif
+
+    if (flags & SLF_SVCMAIN)
+    {
+	opts = runOpts();
+
+	sigemptyset(&sigblockmask);
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
+	sigaddset(&sigblockmask, SIGTERM);
+	sigaddset(&sigblockmask, SIGINT);
+#endif
+	sigaddset(&sigblockmask, SIGALRM);
+	sigaddset(&sigblockmask, SIGCHLD);
+	if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
+	    return rc;
+	}
+
 #ifdef WITH_SIGHDL
-    handler.sa_handler = handlesig;
-    sigemptyset(&handler.sa_mask);
+	if (pipe(sfd) < 0)
+	{
+	    PSC_Log_msg(PSC_L_FATAL, "service: cannot create signal pipe");
+	    goto done;
+	}
+	fcntl(sfd[0], F_SETFD, FD_CLOEXEC);
+	fcntl(sfd[1], F_SETFD, FD_CLOEXEC);
+	fcntl(sfd[0], F_SETFL, fcntl(sfd[0], F_GETFL) | O_NONBLOCK);
+	fcntl(sfd[1], F_SETFL, fcntl(sfd[1], F_GETFL) | O_NONBLOCK);
 
-    if (sigaction(SIGTERM, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
-	goto done;
-    }
+	handler.sa_handler = handlesig;
+	sigemptyset(&handler.sa_mask);
 
-    if (sigaction(SIGINT, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGINT");
-	goto done;
-    }
+	if (sigaction(SIGTERM, &handler, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
+	    goto done;
+	}
+
+	if (sigaction(SIGINT, &handler, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGINT");
+	    goto done;
+	}
 
 #ifndef HAVE_TIMERFD
-    if (sigaction(SIGALRM, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
-	goto done;
-    }
+	if (sigaction(SIGALRM, &handler, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
+	    goto done;
+	}
 #endif
 
-    if (sigaction(SIGCHLD, &handler, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
-	goto done;
-    }
+	if (sigaction(SIGCHLD, &handler, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
+	    goto done;
+	}
 #endif
+
+#ifdef HAVE_SIGNALFD
+	if (initSigfd() < 0)
+	{
+	    PSC_Log_msg(PSC_L_FATAL, "service: cannot open signalfd");
+	    goto done;
+	}
+#endif
+    }
+
+    svcinit();
 
 #ifdef HAVE_EVPORTS
-    epfd = port_create();
-    if (epfd < 0)
+    svc->epfd = port_create();
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: cannot create event port");
 	goto done;
     }
-    fcntl(epfd, F_SETFD, O_CLOEXEC);
-#endif
-
-#ifdef HAVE_SIGNALFD
-    if (initSigfd() < 0)
-    {
-	PSC_Log_msg(PSC_L_FATAL, "service: cannot open signalfd");
-	goto done;
-    }
+    fcntl(svc->epfd, F_SETFD, O_CLOEXEC);
 #endif
 
 #ifdef HAVE_KQUEUE
@@ -1242,230 +1360,279 @@ static int serviceLoop(int isRun)
 	PSC_Log_msg(PSC_L_FATAL, "service: cannot open kqueue");
 	goto done;
     }
-    if (nchanges) flushChanges();
+    if (svc->nchanges) flushChanges();
 #endif
 
 #ifdef HAVE_EPOLL
-    epfd = epoll_create1(EPOLL_CLOEXEC);
-    if (epfd < 0)
+    svc->epfd = epoll_create1(EPOLL_CLOEXEC);
+    if (svc->epfd < 0)
     {
 	PSC_Log_msg(PSC_L_FATAL, "service: cannot open epoll");
 	goto done;
     }
 #endif
 
-    PSC_EAStartup sea = { EXIT_SUCCESS };
-    PSC_Event_raise(&prestartup, 0, &sea);
-    if (sea.rc != EXIT_SUCCESS)
+    if (flags & SLF_SVCMAIN)
     {
-	rc = sea.rc;
-	goto done;
-    }
-
-    if (opts->uid != -1 && geteuid() == 0)
-    {
-	if (opts->daemonize)
+	PSC_EAStartup sea = { EXIT_SUCCESS };
+	PSC_Event_raise(&prestartup, 0, &sea);
+	if (sea.rc != EXIT_SUCCESS)
 	{
-	    if (chown(opts->pidfile, opts->uid, opts->gid) < 0)
-	    {
-		PSC_Log_msg(PSC_L_WARNING,
-			"service: cannot change owner of pidfile");
-	    }
+	    rc = sea.rc;
+	    goto done;
 	}
-	if (opts->gid != -1)
+
+	if (opts->uid != -1 && geteuid() == 0)
 	{
-	    gid_t gid = opts->gid;
-	    if (setgroups(1, &gid) < 0 || setgid(gid) < 0)
+	    if (opts->daemonize)
+	    {
+		if (chown(opts->pidfile, opts->uid, opts->gid) < 0)
+		{
+		    PSC_Log_msg(PSC_L_WARNING,
+			    "service: cannot change owner of pidfile");
+		}
+	    }
+	    if (opts->gid != -1)
+	    {
+		gid_t gid = opts->gid;
+		if (setgroups(1, &gid) < 0 || setgid(gid) < 0)
+		{
+		    PSC_Log_msg(PSC_L_ERROR,
+			    "service: cannot set specified group");
+		    return rc;
+		}
+	    }
+	    if (setuid(opts->uid) < 0)
 	    {
 		PSC_Log_msg(PSC_L_ERROR,
-			"service: cannot set specified group");
+			"service: cannot set specified user");
 		return rc;
 	    }
 	}
-	if (setuid(opts->uid) < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR,
-		    "service: cannot set specified user");
-	    return rc;
-	}
-    }
 
-    PSC_Event_raise(&startup, 0, &sea);
-    rc = sea.rc;
-    if (rc != EXIT_SUCCESS) goto done;
+	PSC_Event_raise(&startup, 0, &sea);
+	rc = sea.rc;
+	if (rc != EXIT_SUCCESS) goto done;
 
 #if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
-    for (int s = 0; s < NSIG; ++s)
-    {
-	if (sigcallback[s]) sigaddset(&sigblockmask, s);
-    }
-    if (sigprocmask(SIG_SETMASK, &sigblockmask, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
-	return rc;
-    }
+	for (int h = 0; h < 32; ++h)
+	{
+	    for (SigHdlRec *r = sigcallbacks[h]; r; r = r->next)
+	    {
+		sigaddset(&sigblockmask, r->signo);
+	    }
+	}
+	if (sigprocmask(SIG_SETMASK, &sigblockmask, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
+	    return rc;
+	}
 #endif
 
 #ifdef HAVE_SIGNALFD
-    initSigfd();
-    PSC_Service_registerRead(sfd);
+	initSigfd();
 #endif
 
 #ifdef WITH_SIGHDL
-    for (int s = 0; s < NSIG; ++s)
-    {
-	switch (s)
+	for (int h = 0; h < 32; ++h)
 	{
-	    case SIGTERM:
-	    case SIGINT:
-#ifndef HAVE_TIMERFD
-	    case SIGALRM:
-#endif
-	    case SIGCHLD:
-		break;
-
-	    default:
-		if (sigcallback[s] && sigaction(s, &handler, 0) < 0)
+	    for (SigHdlRec *r = sigcallbacks[h]; r; r = r->next)
+	    {
+		switch (r->signo)
 		{
-		    PSC_Log_fmt(PSC_L_ERROR, "cannot set signal handler "
-			    "for signal %d", s);
+		    case SIGTERM:
+		    case SIGINT:
+#ifndef HAVE_TIMERFD
+		    case SIGALRM:
+#endif
+		    case SIGCHLD:
+			break;
+
+		    default:
+			if (sigaction(r->signo, &handler, 0) < 0)
+			{
+			    PSC_Log_fmt(PSC_L_ERROR,
+				    "cannot set signal handler for signal %d",
+				    r->signo);
+			}
 		}
+	    }
 	}
-    }
 #endif
 
-    if (isRun && opts->daemonize)
-    {
-	if (opts->logEnabled)
-	{
-	    const char *logident = opts->logident;
-	    if (!logident) logident = DEFLOGIDENT;
-	    PSC_Log_setAsync(1);
-	    PSC_Log_setSyslogLogger(logident, LOG_DAEMON, 0);
-	}
-	if (opts->waitLaunched)
-	{
-	    PSC_Daemon_launched();
-	}
-    }
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
+	PSC_Service_registerRead(SIGFD_RDFD);
+#endif
 
-    running = 1;
-    shutdownRef = -1;
-    PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
-	    "%s (signals: "
+	if ((flags & SLF_SVCRUN) && opts->daemonize)
+	{
+	    if (opts->logEnabled)
+	    {
+		const char *logident = opts->logident;
+		if (!logident) logident = DEFLOGIDENT;
+		PSC_Log_setAsync(1);
+		PSC_Log_setSyslogLogger(logident, LOG_DAEMON, 0);
+	    }
+	    if (opts->waitLaunched)
+	    {
+		PSC_Daemon_launched();
+	    }
+	}
+
+	svc->running = 1;
+	svc->shutdownRef = -1;
+	PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
+		"%s (signals: "
 #ifdef HAVE_KQUEUE
-	    "kqueue"
+		"kqueue"
 #elif defined(HAVE_SIGNALFD)
-	    "signalfd"
+		"signalfd"
 #else
-	    "async handlers"
+		"async handlers"
 #endif
-	    ", timers: "
+		", timers: "
 #ifdef HAVE_EVPORTS
-	    "event ports"
+		"event ports"
 #elif defined(HAVE_KQUEUE)
-	    "kqueue"
+		"kqueue"
 #elif defined(HAVE_TIMERFD)
-	    "timerfd"
+		"timerfd"
 #else
-	    "setitimer"
+		"setitimer"
 #endif
-	    ")", eventBackendInfo());
+		")", eventBackendInfo());
 
-    if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
+	if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
 
-    while (shutdownRef != 0)
+    }
+    else
+    {
+	svc->running = 1;
+	svc->shutdownRef = -1;
+    }
+
+    while (svc->shutdownRef != 0)
     {
 	if (processEvents() < 0)
 	{
 	    rc = EXIT_FAILURE;
 	    break;
 	}
-	PSC_Event_raise(&eventsDone, 0, 0);
+	PSC_Event_raise(&svc->eventsDone, 0, 0);
     }
 
 shutdown:
-    PSC_Timer_destroy(shutdownTimer);
-    shutdownTimer = 0;
-    running = 0;
+    PSC_Timer_destroy(svc->shutdownTimer);
+    svc->shutdownTimer = 0;
+    svc->running = 0;
     PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
 
 done:
+    if (flags & SLF_SVCMAIN)
+    {
 #if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
-    handler.sa_handler = SIG_DFL;
-    for (int s = 0; s < NSIG; ++s)
-    {
-	sigaction(s, &handler, 0);
-    }
+	handler.sa_handler = SIG_DFL;
+	for (int s = 0; s < NSIG; ++s)
+	{
+	    sigaction(s, &handler, 0);
+	}
 #endif
-    if (sigprocmask(SIG_SETMASK, &sigorigmask, 0) < 0)
-    {
-	PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
-	rc = EXIT_FAILURE;
-    }
+	if (sigprocmask(SIG_SETMASK, &sigorigmask, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
+	    rc = EXIT_FAILURE;
+	}
 
 #ifdef HAVE_SIGNALFD
-    if (sfd >= 0)
-    {
-	close(sfd);
-	sfd = -1;
-    }
+	if (sfd >= 0)
+	{
+	    close(sfd);
+	    sfd = -1;
+	}
 #endif
 
+#ifdef WITH_SIGHDL
+	if (sfd[0] >= 0)
+	{
+	    close(sfd[0]);
+	    sfd[0] = -1;
+	}
+
+	if (sfd[1] >= 0)
+	{
+	    close(sfd[1]);
+	    sfd[1] = -1;
+	}
+#endif
+
+#if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
+	for (int i = 0; i < 32; ++i)
+	{
+	    SigHdlRec *n = 0;
+	    SigHdlRec *r = sigcallbacks[i];
+	    while (r)
+	    {
+		n = r->next;
+		free(r);
+		r = n;
+	    }
+	    sigcallbacks[i] = 0;
+	}
+#endif
+    }
+
 #ifdef WITH_POLL
-    free(fds);
-    fds = 0;
-    fdssz = 0;
-    nfds = 0;
+    free(svc->fds);
 #endif
 
 #ifdef HAVE_EVPORTS
-    if (epfd >= 0)
+    if (svc->epfd >= 0)
     {
-	close(epfd);
-	epfd = -1;
+	close(svc->epfd);
     }
     for (int i = 0; i < 32; ++i)
     {
 	EvportWatch *n = 0;
-	EvportWatch *w = watches[i];
+	EvportWatch *w = svc->watches[i];
 	while (w)
 	{
 	    n = w->next;
 	    free(w);
 	    w = n;
 	}
-	watches[i] = 0;
     }
 #endif
 
 #ifdef HAVE_KQUEUE
-    if (kqfd >= 0)
+    if (svc->kqfd >= 0)
     {
-	close(kqfd);
-	kqfd = -1;
+	close(svc->kqfd);
     }
 #endif
 
 #ifdef HAVE_EPOLL
-    if (epfd >= 0)
+    if (svc->epfd >= 0)
     {
-	close(epfd);
-	epfd = -1;
+	close(svc->epfd);
     }
     for (int i = 0; i < 32; ++i)
     {
 	EpollWatch *n = 0;
-	EpollWatch *w = watches[i];
+	EpollWatch *w = svc->watches[i];
 	while (w)
 	{
 	    n = w->next;
 	    free(w);
 	    w = n;
 	}
-	watches[i] = 0;
     }
 #endif
+
+    free(svc->readyRead.handlers);
+    free(svc->readyWrite.handlers);
+    free(svc->eventsDone.handlers);
+    free(svc);
+    svc = 0;
 
     return rc;
 }
@@ -1478,24 +1645,18 @@ static int serviceMain(void *data)
 
     if (PSC_ThreadPool_init() < 0) goto done;
 
-    rc = serviceLoop(1);
+    rc = serviceLoop(SLF_SVCRUN | SLF_SVCMAIN);
 
 done:
     PSC_ThreadPool_done();
 
-    free(readyRead.handlers);
-    free(readyWrite.handlers);
     free(prestartup.handlers);
     free(startup.handlers);
     free(shutdown.handlers);
-    free(eventsDone.handlers);
     free(childExited.handlers);
-    memset(&readyRead, 0, sizeof readyRead);
-    memset(&readyWrite, 0, sizeof readyWrite);
     memset(&prestartup, 0, sizeof prestartup);
     memset(&startup, 0, sizeof startup);
     memset(&shutdown, 0, sizeof shutdown);
-    memset(&eventsDone, 0, sizeof eventsDone);
     memset(&childExited, 0, sizeof childExited);
 
     return rc;
@@ -1503,7 +1664,7 @@ done:
 
 SOEXPORT int PSC_Service_loop(void)
 {
-    return serviceLoop(0);
+    return serviceLoop(SLF_SVCMAIN);
 }
 
 SOEXPORT int PSC_Service_run(void)
@@ -1524,7 +1685,7 @@ SOEXPORT int PSC_Service_run(void)
 
 SOEXPORT void PSC_Service_quit(void)
 {
-    shutdownRef = 0;
+    if (svc) svc->shutdownRef = 0;
 }
 
 static void shutdownTimeout(void *receiver, void *sender, void *args)
@@ -1533,36 +1694,41 @@ static void shutdownTimeout(void *receiver, void *sender, void *args)
     (void)sender;
     (void)args;
 
-    shutdownRef = 0;
+    if (svc) svc->shutdownRef = 0;
 }
 
 SOEXPORT void PSC_Service_shutdownLock(void)
 {
-    if (shutdownRef >= 0) ++shutdownRef;
-    if (!shutdownTimer)
+    if (svc->shutdownRef >= 0) ++svc->shutdownRef;
+    if (!svc->shutdownTimer)
     {
-	shutdownTimer = PSC_Timer_create();
-	PSC_Event_register(PSC_Timer_expired(shutdownTimer), 0,
+	svc->shutdownTimer = PSC_Timer_create();
+	PSC_Event_register(PSC_Timer_expired(svc->shutdownTimer), 0,
 		shutdownTimeout, 0);
-	PSC_Timer_setMs(shutdownTimer, 5000);
-	PSC_Timer_start(shutdownTimer, 0);
+	PSC_Timer_setMs(svc->shutdownTimer, 5000);
+	PSC_Timer_start(svc->shutdownTimer, 0);
     }
 }
 
 SOEXPORT void PSC_Service_shutdownUnlock(void)
 {
-    if (shutdownRef > 0) --shutdownRef;
+    if (svc->shutdownRef > 0) --svc->shutdownRef;
 }
 
 SOEXPORT void PSC_Service_panic(const char *msg)
 {
-    if (running) for (int i = 0; i < numPanicHandlers; ++i)
+    int mainpanic = 0;
+    if (svc && !svc->svcid && svc->running)
     {
-	panicHandlers[i](msg);
+	mainpanic = 1;
+	for (int i = 0; i < numPanicHandlers; ++i)
+	{
+	    panicHandlers[i](msg);
+	}
     }
     PSC_Log_setPanic();
     PSC_Log_msg(PSC_L_FATAL, msg);
-    if (running) longjmp(panicjmp, -1);
+    if (mainpanic) longjmp(panicjmp, -1);
     else abort();
 }
 
@@ -1590,6 +1756,6 @@ SOEXPORT int PSC_EAChildExited_signal(const PSC_EAChildExited *self)
 
 SOLOCAL int PSC_Service_shutsdown(void)
 {
-    return shutdownRef >= 0;
+    return svc->shutdownRef >= 0;
 }
 
