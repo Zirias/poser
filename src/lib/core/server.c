@@ -2,6 +2,7 @@
 
 #include "certinfo.h"
 #include "connection.h"
+#include "ipaddr.h"
 
 #include <poser/core/event.h>
 #include <poser/core/hash.h>
@@ -112,6 +113,13 @@ typedef struct SockInfo
     enum saddrt st;
 } SockInfo;
 
+typedef struct AcceptRecord
+{
+    PSC_Server *srv;
+    PSC_IpAddr *addr;
+    int fd;
+} AcceptRecord;
+
 struct PSC_Server
 {
     PSC_Event *clientConnected;
@@ -130,6 +138,7 @@ struct PSC_Server
     PSC_Proto proto;
     int port;
     int disabled;
+    int nextthr;
 #ifdef WITH_TLS
     enum tlslevel tls;
 #endif
@@ -160,6 +169,13 @@ static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
 }
 #endif
 
+static void doremove(void *arg)
+{
+    PSC_Server *self = arg;
+    --self->nconn;
+    if (!self->nsocks && !self->nconn) PSC_Server_destroy(self);
+}
+
 static void removeConnection(void *receiver, void *sender, void *args)
 {
     (void)args;
@@ -167,10 +183,8 @@ static void removeConnection(void *receiver, void *sender, void *args)
     PSC_Server *self = receiver;
     PSC_Connection *conn = sender;
 
-    if (!self->nconn) return;
     PSC_Event_unregister(self->closeAll, conn, closeConnection, 0);
-    --self->nconn;
-    if (!self->nsocks && !self->nconn) PSC_Server_destroy(self);
+    PSC_Service_runOnThread(-1, doremove, self);
 }
 
 static void closeConnection(void *receiver, void *sender, void *args)
@@ -179,6 +193,37 @@ static void closeConnection(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Connection_close(receiver, 0);
+}
+
+static void doaccept(void *arg)
+{
+    AcceptRecord *rec = arg;
+    ConnOpts co = {
+	.rdbufsz = rec->srv->rdbufsz,
+#ifdef WITH_TLS
+	.tls_ctx = rec->srv->tls_ctx,
+	.tls_cert = 0,
+	.tls_key = 0,
+	.tls_mode = rec->srv->tls != TL_NONE ? TM_SERVER : TM_NONE,
+#endif
+	.createmode = CCM_NORMAL
+    };
+    PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
+    PSC_Event_register(rec->srv->closeAll, newconn, closeConnection, 0);
+    PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
+	    removeConnection, 0);
+    if (rec->srv->path)
+    {
+	PSC_Connection_setRemoteAddrStr(newconn, rec->srv->path);
+    }
+    else
+    {
+	PSC_Connection_setRemoteAddr(newconn, rec->addr);
+    }
+    PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
+	    PSC_Connection_remoteAddr(newconn));
+    PSC_Event_raise(rec->srv->clientConnected, 0, newconn);
+    free(rec);
 }
 
 static void acceptConnection(void *receiver, void *sender, void *args)
@@ -235,32 +280,21 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 		"server: rejected connection while disabled");
 	return;
     }
-    ConnOpts co = {
-	.rdbufsz = self->rdbufsz,
-#ifdef WITH_TLS
-	.tls_ctx = self->tls_ctx,
-	.tls_cert = 0,
-	.tls_key = 0,
-	.tls_mode = self->tls != TL_NONE ? TM_SERVER : TM_NONE,
-#endif
-	.createmode = CCM_NORMAL
-    };
-    PSC_Connection *newconn = PSC_Connection_create(connfd, &co);
+
+    AcceptRecord *rec = PSC_malloc(sizeof *rec);
+    rec->srv = self;
+    rec->addr = PSC_IpAddr_fromSockAddr(sa);
+    rec->fd = connfd;
+
+    int thr = -1;
+    int nthr = PSC_Service_workers();
+    if (nthr)
+    {
+	thr = self->nextthr++;
+	if (self->nextthr == nthr) self->nextthr = 0;
+    }
+    PSC_Service_runOnThread(thr, doaccept, rec);
     ++self->nconn;
-    PSC_Event_register(self->closeAll, newconn, closeConnection, 0);
-    PSC_Event_register(PSC_Connection_closed(newconn), self,
-	    removeConnection, 0);
-    if (self->path)
-    {
-	PSC_Connection_setRemoteAddrStr(newconn, self->path);
-    }
-    else if (sa)
-    {
-	PSC_Connection_setRemoteAddr(newconn, sa);
-    }
-    PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
-	    PSC_Connection_remoteAddr(newconn));
-    PSC_Event_raise(self->clientConnected, 0, newconn);
 }
 
 static int bindcmp(const void *a, const void *b)
@@ -434,6 +468,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->proto = opts->proto;
     self->port = opts->port;
     self->disabled = 0;
+    self->nextthr = 0;
 #ifdef WITH_TLS
     self->tls = props.tls;
     self->tls_ctx = props.tls_ctx;

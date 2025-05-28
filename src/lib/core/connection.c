@@ -904,7 +904,7 @@ SOEXPORT void PSC_Connection_receiveLine(PSC_Connection *self)
 }
 
 SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
-	struct sockaddr *addr)
+	PSC_IpAddr *addr)
 {
     PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
@@ -913,11 +913,10 @@ SOLOCAL void PSC_Connection_setRemoteAddr(PSC_Connection *self,
     self->addr = 0;
     self->name = 0;
     self->port = 0;
-    PSC_IpAddr *ipAddr = PSC_IpAddr_fromSockAddr(addr);
-    if (ipAddr)
+    if (addr)
     {
-	self->ipAddr = ipAddr;
-	self->port = PSC_IpAddr_port(ipAddr);
+	self->ipAddr = addr;
+	self->port = PSC_IpAddr_port(addr);
     }
 }
 

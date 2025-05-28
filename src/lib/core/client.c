@@ -204,7 +204,7 @@ static PSC_Connection *createFromAddrinfo(
 	.blacklisthits = opts->blacklisthits
     };
     PSC_Connection *conn = PSC_Connection_create(fd, &copts);
-    PSC_Connection_setRemoteAddr(conn, res->ai_addr);
+    PSC_Connection_setRemoteAddr(conn, PSC_IpAddr_fromSockAddr(res->ai_addr));
     freeaddrinfo(res0);
     return conn;
 }
