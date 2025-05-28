@@ -66,4 +66,18 @@ PSC_RunOpts_foreground(void);
 DECLEXPORT void
 PSC_RunOpts_nowait(void);
 
+/** Enable or disable using worker threads for additional event loops.
+ * When this is set to a non-zero value, the service will launch additional
+ * threads running their own event loop. These threads will be used for
+ * handling connections accepted by a PSC_Server.
+ * @memberof PSC_RunOpts
+ * @static
+ * @param workerThreads the number of worker threads to launch. If this number
+ *                      is negative, launch as many worker threads as there
+ *                      are CPU cores available, unless that number cannot be
+ *                      determined, than use the absolute value as a fallback.
+ */
+DECLEXPORT void
+PSC_RunOpts_workerThreads(int workerThreads);
+
 #endif

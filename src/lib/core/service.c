@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pthread.h>
 #include <setjmp.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -21,6 +22,19 @@
 #include <sys/wait.h>
 #include <syslog.h>
 #include <unistd.h>
+
+#undef SVC_NO_ATOMICS
+#ifdef __STDC_NO_ATOMICS__
+#  define SVC_NO_ATOMICS
+#else
+#  include <stdatomic.h>
+#  if ATOMIC_INT_LOCK_FREE != 2
+#    define SVC_NO_ATOMICS
+#  endif
+#endif
+#ifdef SVC_NO_ATOMICS
+#  include <semaphore.h>
+#endif
 
 #ifndef NSIG
 #  define NSIG 64
@@ -120,19 +134,25 @@ typedef enum ServiceLoopFlags
 typedef enum SvcCommandType
 {
     SCT_STOP,
-    SCT_ACCEPT
+    SCT_ACCEPT,
+    SCT_TIMER
 } SvcCommandType;
 
 typedef struct SvcCommand
 {
     SvcCommandType type;
-    int fd;
+    union
+    {
+	int id;
+	void *ptr;
+    };
 } SvcCommand;
 
 typedef struct SecondaryService
 {
     pthread_t handle;
     int commandpipe[2];
+    int threadno;
 } SecondaryService;
 
 typedef struct Service
@@ -163,7 +183,6 @@ typedef struct Service
     int nchanges;
 #endif
     int running;
-    int shutdownRef;
 #if defined(HAVE_EVPORTS) || defined(HAVE_EPOLL)
     int epfd;
 #endif
@@ -172,11 +191,20 @@ typedef struct Service
     int nwrite;
     int nfds;
 #endif
+#ifdef SVC_NO_ATOMICS
+    int shutdownRef;
+#else
+    atomic_int shutdownRef;
+#endif
 } Service;
 
 static THREADLOCAL Service *svc;
-// static SecondaryService *ssvc;
-// static size_t nssvc;
+static Service *mainsvc;
+static SecondaryService *ssvc;
+static int nssvc;
+#ifdef SVC_NO_ATOMICS
+sem_t shutdownrq;
+#endif
 
 static PSC_Event prestartup;
 static PSC_Event startup;
@@ -1264,6 +1292,37 @@ static int processEvents(void)
 }
 #endif
 
+static void handleCommand(void *receiver, void *sender, void *args)
+{
+    (void)receiver;
+    (void)sender;
+
+    int fd = *((int *)args);
+    SvcCommand command;
+    while (read(fd, &command, sizeof command) == sizeof command)
+    {
+	switch (command.type)
+	{
+	    case SCT_STOP:
+		svc->shutdownRef = 0;
+		break;
+
+	    default:
+		break;
+	}
+    }
+}
+
+static int serviceLoop(ServiceLoopFlags flags);
+
+static void *runsecondary(void *arg)
+{
+    svcinit();
+    svc->svcid = arg;
+    intptr_t rc = serviceLoop(0);
+    return (void *)rc;
+}
+
 static int serviceLoop(ServiceLoopFlags flags)
 {
     int rc = EXIT_FAILURE;
@@ -1481,6 +1540,10 @@ static int serviceLoop(ServiceLoopFlags flags)
 
 	svc->running = 1;
 	svc->shutdownRef = -1;
+	mainsvc = svc;
+#ifdef SVC_NO_ATOMICS
+	sem_init(&shutdownrq, 0, 0);
+#endif
 	PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
 		"%s (signals: "
 #ifdef HAVE_KQUEUE
@@ -1504,9 +1567,64 @@ static int serviceLoop(ServiceLoopFlags flags)
 
 	if ((rc = panicreturn()) != EXIT_SUCCESS) goto shutdown;
 
+	if (opts->workerThreads)
+	{
+	    if (opts->workerThreads < 0)
+	    {
+#ifdef _SC_NPROCESSORS_CONF
+		long ncpu = sysconf(_SC_NPROCESSORS_CONF);
+		if (ncpu >= 1)
+		{
+		    nssvc = ncpu > INT_MAX ? INT_MAX : ncpu;
+		}
+		else
+#endif
+		{
+		    nssvc = -opts->workerThreads;
+		}
+	    }
+	    else nssvc = opts->workerThreads;
+	}
+	else nssvc = 0;
+
+	if (nssvc)
+	{
+	    ssvc = PSC_malloc(nssvc * sizeof *ssvc);
+	    memset(ssvc, 0, nssvc * sizeof *ssvc);
+	    for (int i = 0; i < nssvc; ++i)
+	    {
+		if (pipe(ssvc[i].commandpipe) < 0)
+		{
+		    PSC_Log_msg(PSC_L_ERROR,
+			    "service: error creating command pipe");
+		    ssvc[i].commandpipe[1] = -1;
+		    goto shutdown;
+		}
+		fcntl(ssvc[i].commandpipe[0], F_SETFD, FD_CLOEXEC);
+		fcntl(ssvc[i].commandpipe[1], F_SETFD, FD_CLOEXEC);
+		fcntl(ssvc[i].commandpipe[0], F_SETFL,
+			fcntl(ssvc[i].commandpipe[0], F_GETFL) | O_NONBLOCK);
+		fcntl(ssvc[i].commandpipe[1], F_SETFL,
+			fcntl(ssvc[i].commandpipe[1], F_GETFL) | O_NONBLOCK);
+		ssvc[i].threadno = i;
+		if (pthread_create(&ssvc[i].handle, 0,
+			    runsecondary, ssvc+i) != 0)
+		{
+		    PSC_Log_msg(PSC_L_ERROR,
+			    "service: error creating worker thread");
+		    close(ssvc[i].commandpipe[0]);
+		    close(ssvc[i].commandpipe[1]);
+		    ssvc[i].commandpipe[1] = -1;
+		    goto shutdown;
+		}
+	    }
+	}
     }
     else
     {
+	PSC_Service_registerRead(svc->svcid->commandpipe[0]);
+	PSC_Event_register(&svc->readyRead, 0, handleCommand,
+		svc->svcid->commandpipe[0]);
 	svc->running = 1;
 	svc->shutdownRef = -1;
     }
@@ -1519,17 +1637,49 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    break;
 	}
 	PSC_Event_raise(&svc->eventsDone, 0, 0);
+#ifdef SVC_NO_ATOMICS
+	if (flags & SLF_SVCMAIN)
+	{
+	    int sr;
+	    sem_getvalue(&shutdownrq, &sr);
+	    if (sr)
+	    {
+		for (int i = 0; i < sr; ++i) sem_trywait(&shutdownrq);
+		if (svc->shutdownRef == -1) svc->shutdownRef = 0;
+	    }
+	}
+#endif
     }
 
 shutdown:
     PSC_Timer_destroy(svc->shutdownTimer);
     svc->shutdownTimer = 0;
     svc->running = 0;
-    PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
+    if (flags & SLF_SVCMAIN) PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
 
 done:
     if (flags & SLF_SVCMAIN)
     {
+	if (nssvc)
+	{
+	    SvcCommand stopcmd = { .type = SCT_STOP };
+	    for (int i = 0; i < nssvc; ++i)
+	    {
+		if (ssvc[i].commandpipe[1] < 0) break;
+		if (write(ssvc[i].commandpipe[1], &stopcmd, sizeof stopcmd)
+			!= sizeof stopcmd) continue;
+		pthread_join(ssvc[i].handle, 0);
+		close(ssvc[i].commandpipe[0]);
+		close(ssvc[i].commandpipe[1]);
+	    }
+	    free(ssvc);
+	    nssvc = 0;
+	}
+
+#ifdef SVC_NO_ATOMICS
+	sem_destroy(&shutdownrq);
+#endif
+
 #if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
 	handler.sa_handler = SIG_DFL;
 	for (int s = 0; s < NSIG; ++s)
@@ -1579,6 +1729,8 @@ done:
 	    sigcallbacks[i] = 0;
 	}
 #endif
+
+	mainsvc = 0;
     }
 
 #ifdef WITH_POLL
@@ -1681,7 +1833,17 @@ SOEXPORT int PSC_Service_run(void)
 
 SOEXPORT void PSC_Service_quit(void)
 {
-    if (svc) svc->shutdownRef = 0;
+    if (!mainsvc) return;
+#ifdef SVC_NO_ATOMICS
+    if (mainsvc == svc)
+    {
+	if (mainsvc->shutdownRef == -1) mainsvc->shutdownRef = 0;
+    }
+    else sem_post(&shutdownrq);
+#else
+    int expected = -1;
+    atomic_compare_exchange_strong(&mainsvc->shutdownRef, &expected, 0);
+#endif
 }
 
 static void shutdownTimeout(void *receiver, void *sender, void *args)

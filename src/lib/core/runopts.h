@@ -9,6 +9,7 @@ typedef struct PSC_RunOpts
     const char *logident;
     long uid;
     long gid;
+    int workerThreads;
     int daemonize;
     int waitLaunched;
     int logEnabled;

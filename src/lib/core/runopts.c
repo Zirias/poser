@@ -46,3 +46,9 @@ SOEXPORT void PSC_RunOpts_nowait(void)
     if (!initialized) PSC_RunOpts_init(0);
     opts.waitLaunched = 0;
 }
+
+SOEXPORT void PSC_RunOpts_workerThreads(int workerThreads)
+{
+    if (!initialized) PSC_RunOpts_init(0);
+    opts.workerThreads = workerThreads;
+}
