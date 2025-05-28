@@ -131,21 +131,10 @@ typedef enum ServiceLoopFlags
     SLF_SVCMAIN	    = (1 << 1)
 } ServiceLoopFlags;
 
-typedef enum SvcCommandType
-{
-    SCT_STOP,
-    SCT_ACCEPT,
-    SCT_TIMER
-} SvcCommandType;
-
 typedef struct SvcCommand
 {
-    SvcCommandType type;
-    union
-    {
-	int id;
-	void *ptr;
-    };
+    PSC_OnThreadExec func;
+    void *arg;
 } SvcCommand;
 
 typedef struct SecondaryService
@@ -202,6 +191,7 @@ static THREADLOCAL Service *svc;
 static Service *mainsvc;
 static SecondaryService *ssvc;
 static int nssvc;
+static int commandpipe[2];
 #ifdef SVC_NO_ATOMICS
 sem_t shutdownrq;
 #endif
@@ -1292,6 +1282,12 @@ static int processEvents(void)
 }
 #endif
 
+static void shutdownWorker(void *arg)
+{
+    (void)arg;
+    svc->shutdownRef = 0;
+}
+
 static void handleCommand(void *receiver, void *sender, void *args)
 {
     (void)receiver;
@@ -1301,15 +1297,7 @@ static void handleCommand(void *receiver, void *sender, void *args)
     SvcCommand command;
     while (read(fd, &command, sizeof command) == sizeof command)
     {
-	switch (command.type)
-	{
-	    case SCT_STOP:
-		svc->shutdownRef = 0;
-		break;
-
-	    default:
-		break;
-	}
+	command.func(command.arg);
     }
 }
 
@@ -1523,6 +1511,22 @@ static int serviceLoop(ServiceLoopFlags flags)
 	PSC_Service_registerRead(SIGFD_RDFD);
 #endif
 
+	if (pipe(commandpipe) < 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "service: error creating command pipe");
+	    commandpipe[0] = -1;
+	    commandpipe[1] = -1;
+	    goto shutdown;
+	}
+	fcntl(commandpipe[0], F_SETFD, FD_CLOEXEC);
+	fcntl(commandpipe[1], F_SETFD, FD_CLOEXEC);
+	fcntl(commandpipe[0], F_SETFL,
+		fcntl(commandpipe[0], F_GETFL) | O_NONBLOCK);
+	fcntl(commandpipe[1], F_SETFL,
+		fcntl(commandpipe[1], F_GETFL) | O_NONBLOCK);
+	PSC_Service_registerRead(commandpipe[0]);
+	PSC_Event_register(&svc->readyRead, 0, handleCommand, commandpipe[0]);
+
 	if ((flags & SLF_SVCRUN) && opts->daemonize)
 	{
 	    if (opts->logEnabled)
@@ -1662,12 +1666,10 @@ done:
     {
 	if (nssvc)
 	{
-	    SvcCommand stopcmd = { .type = SCT_STOP };
 	    for (int i = 0; i < nssvc; ++i)
 	    {
 		if (ssvc[i].commandpipe[1] < 0) break;
-		if (write(ssvc[i].commandpipe[1], &stopcmd, sizeof stopcmd)
-			!= sizeof stopcmd) continue;
+		PSC_Service_runOnThread(i, shutdownWorker, 0);
 		pthread_join(ssvc[i].handle, 0);
 		close(ssvc[i].commandpipe[0]);
 		close(ssvc[i].commandpipe[1]);
@@ -1692,6 +1694,9 @@ done:
 	    PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
 	    rc = EXIT_FAILURE;
 	}
+
+	if (commandpipe[0] >= 0) close(commandpipe[0]);
+	if (commandpipe[1] >= 0) close(commandpipe[1]);
 
 #ifdef HAVE_SIGNALFD
 	if (sfd >= 0)
@@ -1888,6 +1893,49 @@ SOEXPORT void PSC_Service_panic(const char *msg)
     PSC_Log_msg(PSC_L_FATAL, msg);
     if (mainpanic) longjmp(panicjmp, -1);
     else abort();
+}
+
+SOEXPORT int PSC_Service_workers(void)
+{
+    return nssvc;
+}
+
+SOEXPORT int PSC_Service_threadNo(void)
+{
+    if (!svc) return -2;
+    if (!svc->svcid) return -1;
+    return svc->svcid->threadno;
+}
+
+SOEXPORT void PSC_Service_runOnThread(int threadNo,
+	PSC_OnThreadExec func, void *arg)
+{
+    SvcCommand cmd = { .func = func, .arg = arg };
+    if (threadNo < 0)
+    {
+	if (svc && !svc->svcid)
+	{
+	    func(arg);
+	    return;
+	}
+	if (!mainsvc) return;
+	if (write(commandpipe[1], &cmd, sizeof cmd) != sizeof cmd)
+	{
+	    PSC_Log_msg(PSC_L_WARNING,
+		    "service: cannot execute on main thread");
+	}
+	return;
+    }
+    if (threadNo >= nssvc) return;
+    if (svc && svc->svcid && threadNo == svc->svcid->threadno)
+    {
+	func(arg);
+	return;
+    }
+    if (write(ssvc[threadNo].commandpipe[1], &cmd, sizeof cmd) != sizeof cmd)
+    {
+	PSC_Log_msg(PSC_L_WARNING, "service: cannot execute on worker thread");
+    }
 }
 
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)

@@ -60,6 +60,11 @@ typedef void (*PSC_SignalHandler)(int signo);
  */
 typedef void (*PSC_PanicHandler)(const char *msg) ATTR_NONNULL((1));
 
+/** A function to execute on a different worker thread.
+ * @param arg optional argument
+ */
+typedef void (*PSC_OnThreadExec)(void *arg);
+
 /** A file descriptor is ready for reading.
  * The file descriptor is used as the id of the event, so handlers must be
  * registered using the file descriptor of interest as the id. A pointer to
@@ -313,6 +318,40 @@ PSC_Service_shutdownUnlock(void);
 DECLEXPORT void
 PSC_Service_panic(const char *msg)
     ATTR_NONNULL((1)) ATTR_NORETURN;
+
+/** Get the number of worker threads.
+ * Returns the number of extra worker threads running.
+ * @memberof PSC_Service
+ * @static
+ * @returns the number of worker threads
+ */
+DECLEXPORT int
+PSC_Service_workers(void);
+
+/** Get current worker thread number.
+ * Returns the number of the current worker thread.
+ * @memberof PSC_Service
+ * @static
+ * @returns the number of the current worker thread, or -1 if called from the
+ *          main thread, or -2 if called from a thread not used by the service
+ */
+DECLEXPORT int
+PSC_Service_threadNo(void);
+
+/** Schedule a function for execution on a different thread.
+ * The given function is scheduled for execution on the worker thread
+ * specified by @p threadNo. If called from the target thread, the function
+ * is executed immediately.
+ * @memberof PSC_Service
+ * @static
+ * @param threadNo the number of the worker thread to execute on, or a
+ *                 negative number for execution on the main thread
+ * @param func the function to execute
+ * @param arg an optional argument passed to the function
+ */
+DECLEXPORT void
+PSC_Service_runOnThread(int threadNo, PSC_OnThreadExec func, void *arg)
+    ATTR_NONNULL((2));
 
 /** Return a status code from a (pre)startup event.
  * Call this to signal an error condition from the PSC_Service_prestartup() or
