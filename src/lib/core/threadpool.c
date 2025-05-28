@@ -62,6 +62,7 @@ struct PSC_ThreadJob
     const char *panicmsg;
     int hasCompleted;
     int timeoutTicks;
+    int thrno;
 #ifdef HAVE_UCONTEXT
     ucontext_t caller;
     void *stack;
@@ -92,7 +93,6 @@ typedef struct Thread
     pthread_mutex_t lock;
     sem_t start;
     sem_t cancel;
-    int pipefd[2];
     int stoprq;
 #ifdef HAVE_UCONTEXT
     ucontext_t context;
@@ -130,10 +130,10 @@ static Thread *availableThread(void);
 static PSC_ThreadJob *dequeueJob(void);
 static int enqueueJob(PSC_ThreadJob *job) ATTR_NONNULL((1));
 static void panicHandler(const char *msg) ATTR_NONNULL((1));
-static void startThreadJob(Thread *t, PSC_ThreadJob *j)
+static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
     ATTR_NONNULL((1)) ATTR_NONNULL((2));
 static void stopThreads(int nthr);
-static void threadJobDone(void *receiver, void *sender, void *args);
+static void threadJobDone(void *arg);
 static void *worker(void *arg);
 static void workerInterrupt(int signum);
 
@@ -192,12 +192,7 @@ static void *worker(void *arg)
 #endif
 	}
 	else t->job->panicmsg = panicmsg;
-	if (write(t->pipefd[1], "0", 1) < 1)
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "threadpool: can't notify main thread");
-	    pthread_mutex_unlock(&t->lock);
-	    return 0;
-	}
+	PSC_Service_runOnThread(t->job->thrno, threadJobDone, t);
 	pthread_mutex_unlock(&t->lock);
     }
 
@@ -291,12 +286,12 @@ SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
     else
 #endif
     {
-	if (write(currentThread->pipefd[1], "0", 1) < 1) goto out;
+	PSC_Service_runOnThread(self->threadJob->thrno,
+		threadJobDone, self->thread);
 	pthread_mutex_unlock(&currentThread->lock);
 	sem_wait(&currentThread->start);
 	pthread_mutex_lock(&currentThread->lock);
     }
-out:;
     void *result = self->result;
     self->threadJob->task = 0;
     free(self);
@@ -320,7 +315,7 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 	    return;
 	}
 	PSC_List_remove(self->thread->waitingTasks, self->threadJob);
-	startThreadJob(self->thread, self->threadJob);
+	startThreadJob(self->thread, self->threadJob, 0);
     }
     else
 #endif
@@ -353,8 +348,6 @@ static void stopThreads(int nthr)
 	    sem_post(&threads[i].start);
 	}
 	pthread_join(threads[i].handle, 0);
-	close(threads[i].pipefd[0]);
-	close(threads[i].pipefd[1]);
 	sem_destroy(&threads[i].cancel);
 	sem_destroy(&threads[i].start);
 	pthread_mutex_destroy(&threads[i].lock);
@@ -400,13 +393,17 @@ static Thread *availableThread(void)
     Thread *fallback = 0;
     for (int i = 0; i < nthreads; ++i)
     {
-	if (threads[i].job) continue;
+	if (pthread_mutex_trylock(&threads[i].lock) != 0) continue;
 #ifdef HAVE_UCONTEXT
 	if (PSC_List_size(threads[i].waitingTasks) > 0)
 	{
 	    if (!fallback) fallback = threads+i;
 	}
-	else return threads+i;
+	else
+	{
+	    if (fallback) pthread_mutex_unlock(&fallback->lock);
+	    return threads+i;
+	}
 #else
 	return threads+i;
 #endif
@@ -422,19 +419,8 @@ static void jobTimeout(void *receiver, void *sender, void *args)
     PSC_ThreadPool_cancel(receiver);
 }
 
-static void startThreadJob(Thread *t, PSC_ThreadJob *j)
+static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
 {
-    if (pthread_kill(t->handle, 0) == ESRCH)
-    {
-	pthread_join(t->handle, 0);
-	PSC_Log_msg(PSC_L_WARNING, "threadpool: restarting failed thread");
-	if (pthread_create(&t->handle, 0, worker, t) < 0)
-	{
-	    PSC_Log_msg(PSC_L_FATAL, "threadpool: error restarting thread");
-	    PSC_Service_quit();
-	}
-	return;
-    }
     if (j->timeoutTicks)
     {
 	if (!j->timeout)
@@ -449,29 +435,15 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 #ifdef HAVE_UCONTEXT
     if (j->async && !j->stack) j->stack = StackMgr_getStack();
 #endif
-    pthread_mutex_lock(&t->lock);
+    if (!locked) pthread_mutex_lock(&t->lock);
     t->job = j;
-    if (t->stoprq < 0)
-    {
-	PSC_Service_registerRead(t->pipefd[0]);
-	t->stoprq = 0;
-    }
-    pthread_mutex_unlock(&t->lock);
     sem_post(&t->start);
+    pthread_mutex_unlock(&t->lock);
 }
 
-static void threadJobDone(void *receiver, void *sender, void *args)
+static void threadJobDone(void *arg)
 {
-    (void)sender;
-    (void)args;
-
-    Thread *t = receiver;
-    char buf[2];
-    if (read(t->pipefd[0], buf, sizeof buf) <= 0)
-    {
-	PSC_Log_msg(PSC_L_WARNING, "threadpool: error reading internal pipe");
-	return;
-    }
+    Thread *t = arg;
 #ifdef HAVE_UCONTEXT
     int async = t->job->async;
 #endif
@@ -521,7 +493,7 @@ static void threadJobDone(void *receiver, void *sender, void *args)
     {
 	next = dequeueJob();
     }
-    if (next) startThreadJob(t, next);
+    if (next) startThreadJob(t, next, 0);
     if (task) task->job(task);
 }
 
@@ -653,43 +625,18 @@ SOEXPORT int PSC_ThreadPool_init(void)
 		    "threadpool: error creating semaphore");
 	    goto rollback_start;
 	}
-	if (pipe(threads[i].pipefd) < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
-	    goto rollback_cancel;
-	}
-	int cfd = threads[i].pipefd[1];
-	if (threads[i].pipefd[0] > cfd) cfd = threads[i].pipefd[0];
-	if (!PSC_Service_isValidFd(cfd, "threadpool"))
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating pipe");
-	    goto rollback_pipe;
-	}
-	fcntl(threads[i].pipefd[0], F_SETFD, O_CLOEXEC);
-	fcntl(threads[i].pipefd[1], F_SETFD, O_CLOEXEC);
-	fcntl(threads[i].pipefd[0], F_SETFL,
-		fcntl(threads[i].pipefd[0], F_GETFL) | O_NONBLOCK);
-	fcntl(threads[i].pipefd[1], F_SETFL,
-		fcntl(threads[i].pipefd[1], F_GETFL) | O_NONBLOCK);
-	PSC_Event_register(PSC_Service_readyRead(), threads+i, threadJobDone,
-		threads[i].pipefd[0]);
 	if (pthread_create(&threads[i].handle, 0, worker, threads+i) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating thread");
-	    PSC_Event_unregister(PSC_Service_readyRead(), threads+i,
-		    threadJobDone, threads[i].pipefd[0]);
-	    goto rollback_pipe;
+	    goto rollback_cancel;
 	}
-	threads[i].stoprq = -1;
+	threads[i].stoprq = 0;
 #ifdef HAVE_UCONTEXT
 	threads[i].waitingTasks = PSC_List_create();
 	threads[i].finishedTasks = PSC_Queue_create();
 #endif
 	continue;
 
-rollback_pipe:
-	close(threads[i].pipefd[0]);
-	close(threads[i].pipefd[1]);
 rollback_cancel:
 	sem_destroy(&threads[i].cancel);
 rollback_start:
@@ -742,14 +689,12 @@ SOEXPORT int PSC_ThreadPool_active(void)
 
 SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 {
-    if (mainthread && threads)
+    job->thrno = PSC_Service_threadNo();
+    Thread *t = availableThread();
+    if (t)
     {
-	Thread *t = availableThread();
-	if (t)
-	{
-	    startThreadJob(t, job);
-	    return 0;
-	}
+	startThreadJob(t, job, 1);
+	return 0;
     }
     return enqueueJob(job);
 }
