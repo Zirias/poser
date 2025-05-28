@@ -35,7 +35,6 @@
 #endif
 
 #define BINDCHUNK 8
-#define CONNCHUNK 8
 
 #ifdef WITH_TLS
 enum ccertmode
@@ -116,9 +115,8 @@ typedef struct SockInfo
 struct PSC_Server
 {
     PSC_Event *clientConnected;
-    PSC_Event *clientDisconnected;
+    PSC_Event *closeAll;
     PSC_Timer *shutdownTimer;
-    PSC_Connection **conn;
     char *path;
 #ifdef WITH_TLS
     SSL_CTX *tls_ctx;
@@ -126,8 +124,7 @@ struct PSC_Server
     PSC_CertValidator validator;
 #endif
     uint64_t bhash;
-    size_t conncapa;
-    size_t connsize;
+    size_t nconn;
     size_t nsocks;
     size_t rdbufsz;
     PSC_Proto proto;
@@ -141,6 +138,7 @@ struct PSC_Server
 
 static void acceptConnection(void *receiver, void *sender, void *args);
 static void removeConnection(void *receiver, void *sender, void *args);
+static void closeConnection(void *recever, void *sender, void *args);
 
 #ifdef WITH_TLS
 static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
@@ -168,23 +166,19 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     PSC_Server *self = receiver;
     PSC_Connection *conn = sender;
-    if (!self->connsize) return;
-    for (size_t pos = 0; pos < self->connsize; ++pos)
-    {
-	if (self->conn[pos] == conn)
-	{
-	    PSC_Log_fmt(PSC_L_DEBUG, "server: client disconnected from %s",
-		    PSC_Connection_remoteAddr(conn));
-	    memmove(self->conn+pos, self->conn+pos+1,
-		    (self->connsize - pos) * sizeof *self->conn);
-	    --self->connsize;
-	    PSC_Event_raise(self->clientDisconnected, 0, conn);
-	    if (!self->nsocks && !self->connsize) PSC_Server_destroy(self);
-	    return;
-	}
-    }
-    PSC_Log_msg(PSC_L_ERROR,
-	    "server: trying to remove non-existing connection");
+
+    if (!self->nconn) return;
+    PSC_Event_unregister(self->closeAll, conn, closeConnection, 0);
+    --self->nconn;
+    if (!self->nsocks && !self->nconn) PSC_Server_destroy(self);
+}
+
+static void closeConnection(void *receiver, void *sender, void *args)
+{
+    (void)sender;
+    (void)args;
+
+    PSC_Connection_close(receiver, 0);
 }
 
 static void acceptConnection(void *receiver, void *sender, void *args)
@@ -241,12 +235,6 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 		"server: rejected connection while disabled");
 	return;
     }
-    if (self->connsize == self->conncapa)
-    {
-	self->conncapa += CONNCHUNK;
-	self->conn = PSC_realloc(self->conn,
-		self->conncapa * sizeof *self->conn);
-    }
     ConnOpts co = {
 	.rdbufsz = self->rdbufsz,
 #ifdef WITH_TLS
@@ -258,7 +246,8 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	.createmode = CCM_NORMAL
     };
     PSC_Connection *newconn = PSC_Connection_create(connfd, &co);
-    self->conn[self->connsize++] = newconn;
+    ++self->nconn;
+    PSC_Event_register(self->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), self,
 	    removeConnection, 0);
     if (self->path)
@@ -436,13 +425,11 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->clientConnected = PSC_Event_create(self);
-    self->clientDisconnected = PSC_Event_create(self);
+    self->closeAll = PSC_Event_create(self);
     self->shutdownTimer = 0;
-    self->conn = PSC_malloc(CONNCHUNK * sizeof *self->conn);
     self->path = path;
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
-    self->conncapa = CONNCHUNK;
-    self->connsize = 0;
+    self->nconn = 0;
     self->rdbufsz = opts->rdbufsz;
     self->proto = opts->proto;
     self->port = opts->port;
@@ -891,11 +878,6 @@ SOEXPORT PSC_Event *PSC_Server_clientConnected(PSC_Server *self)
     return self->clientConnected;
 }
 
-SOEXPORT PSC_Event *PSC_Server_clientDisconnected(PSC_Server *self)
-{
-    return self->clientDisconnected;
-}
-
 SOEXPORT void PSC_Server_disable(PSC_Server *self)
 {
     self->disabled = 1;
@@ -918,7 +900,7 @@ SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
 {
     if (!self) return;
 
-    if (!self->connsize)
+    if (!self->nconn)
     {
 	PSC_Server_destroy(self);
 	return;
@@ -948,16 +930,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 {
     if (!self) return;
 
-    size_t connsz = self->connsize;
-    self->connsize = 0;
-    for (size_t pos = 0; pos < connsz; ++pos)
-    {
-	PSC_Log_fmt(PSC_L_DEBUG, "server: client disconnected from %s",
-		PSC_Connection_remoteAddr(self->conn[pos]));
-	PSC_Event_raise(self->clientDisconnected, 0, self->conn[pos]);
-	PSC_Connection_destroy(self->conn[pos]);
-    }
-    free(self->conn);
+    if (self->nconn) PSC_Event_raise(self->closeAll, 0, 0);
     PSC_Timer_destroy(self->shutdownTimer);
     if (!self->nsocks)
     {
@@ -970,7 +943,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 		self->socks[i].fd);
 	close(self->socks[i].fd);
     }
-    PSC_Event_destroy(self->clientDisconnected);
+    PSC_Event_destroy(self->closeAll);
     PSC_Event_destroy(self->clientConnected);
     if (self->path)
     {

@@ -245,21 +245,6 @@ DECLEXPORT PSC_Event *
 PSC_Server_clientConnected(PSC_Server *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
-/** Client disconnected.
- * This event fires after a connection with a client was closed. The
- * PSC_Connection object of the closed connection is passed as the event
- * arguments.
- *
- * Note that when you already monitor the closed event of the PSC_Connection,
- * you will probably not need this event.
- * @memberof PSC_Server
- * @param self the PSC_Server
- * @returns the client disconnected event
- */
-DECLEXPORT PSC_Event *
-PSC_Server_clientDisconnected(PSC_Server *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
-
 /** Disable the server.
  * This disables accepting new connections while still listening. It's
  * implemented by immediately closing any new connection with a linger timeout
