@@ -1,96 +1,114 @@
 #include "event.h"
 
+#include <poser/core/dictionary.h>
 #include <poser/core/util.h>
 
 #include <stdlib.h>
 #include <string.h>
 
-#define EVCHUNKSIZE 4
-
-struct EvHandler
+typedef struct EvHandler
 {
+    PSC_EventHandler cb;
     void *receiver;
-    PSC_EventHandler handler;
     int id;
+} EvHandler;
+
+/* Explicit initializer, use to avoid non-zero padding, so the struct
+ * can be used as the key for the index dictionary */
+#define EVHDL_INIT(x, c, r, i) do { \
+    memset((x), 0, sizeof *(x)); \
+    (x)->cb = (c); \
+    (x)->receiver = (r); \
+    (x)->id = (i); \
+} while (0);
+
+struct EvHandlerEntry
+{
+    EvHandlerEntry *next;
+    EvHandlerEntry *prev;
+    EvHandler handler;
 };
 
 SOEXPORT PSC_Event *PSC_Event_create(void *sender)
 {
     PSC_Event *self = PSC_malloc(sizeof *self);
+    memset(self, 0, sizeof *self);
     self->sender = sender;
-    self->handlers = 0;
-    self->size = 0;
-    self->capa = 0;
-    self->dirty = 0;
     return self;
 }
 
 SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
 	PSC_EventHandler handler, int id)
 {
-    if (self->dirty)
+    EvHandler hdl;
+    EVHDL_INIT(&hdl, handler, receiver, id);
+    if (self->index && PSC_Dictionary_get(self->index, &hdl, sizeof hdl))
     {
-	for (size_t pos = 0; pos < self->size; ++pos)
-	{
-	    if (!self->handlers[pos].handler)
-	    {
-		--self->size;
-		if (pos < self->size)
-		{
-		    memmove(self->handlers + pos, self->handlers + pos + 1,
-			    (self->size - pos) * sizeof *self->handlers);
-		}
-		--pos;
-	    }
-	}
-	self->dirty = 0;
+	return;
     }
-    if (self->size == self->capa)
-    {
-        self->capa += EVCHUNKSIZE;
-        self->handlers = PSC_realloc(self->handlers,
-                self->capa * sizeof *self->handlers);
-    }
-    self->handlers[self->size].receiver = receiver;
-    self->handlers[self->size].handler = handler;
-    self->handlers[self->size].id = id;
-    ++self->size;
+    EvHandlerEntry *entry = PSC_malloc(sizeof *entry);
+    entry->prev = self->last;
+    entry->next = 0;
+    entry->handler = hdl;
+    if (!self->index) self->index = PSC_Dictionary_create(PSC_DICT_NODELETE);
+    PSC_Dictionary_set(self->index, &hdl, sizeof hdl, entry, 0);
+    if (self->last) self->last->next = entry;
+    else self->first = entry;
+    self->last = entry;
 }
 
 SOEXPORT void PSC_Event_unregister(
 	PSC_Event *self, void *receiver, PSC_EventHandler handler, int id)
 {
-    size_t pos;
-    for (pos = 0; pos < self->size; ++pos)
-    {
-        if (self->handlers[pos].receiver == receiver
-                && self->handlers[pos].handler == handler
-		&& self->handlers[pos].id == id)
-        {
-	    self->handlers[pos].handler = 0;
-	    self->dirty = 1;
-            break;
-        }
-    }
+    if (!self->first || !self->index) return;
+    EvHandler hdl;
+    EVHDL_INIT(&hdl, handler, receiver, id);
+    EvHandlerEntry *entry = PSC_Dictionary_get(self->index, &hdl, sizeof hdl);
+    if (!entry) return;
+    PSC_Dictionary_set(self->index, &hdl, sizeof hdl, 0, 0);
+    if (entry->prev) entry->prev->next = entry->next;
+    else self->first = entry->next;
+    if (entry->next) entry->next->prev = entry->prev;
+    else self->last = entry->prev;
+    free(entry);
 }
 
 SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
-    for (size_t i = 0; i < self->size; ++i)
+    for (EvHandlerEntry *entry = self->first; entry;)
     {
-	if (self->handlers[i].id == id && self->handlers[i].handler)
+	EvHandlerEntry *next = entry->next;
+	if (entry->handler.id == id)
 	{
 	    if (!args && id) args = &id;
-	    self->handlers[i].handler(self->handlers[i].receiver,
-		    self->sender, args);
+	    entry->handler.cb(entry->handler.receiver, self->sender, args);
 	}
+	entry = next;
     }
+}
+
+SOLOCAL void PSC_Event_destroyStatic(PSC_Event *self)
+{
+    PSC_Dictionary_destroy(self->index);
+    for (EvHandlerEntry *entry = self->first; entry;)
+    {
+	EvHandlerEntry *next = entry->next;
+	free(entry);
+	entry = next;
+    }
+    memset(self, 0, sizeof *self);
 }
 
 SOEXPORT void PSC_Event_destroy(PSC_Event *self)
 {
     if (!self) return;
-    free(self->handlers);
+    PSC_Dictionary_destroy(self->index);
+    for (EvHandlerEntry *entry = self->first; entry;)
+    {
+	EvHandlerEntry *next = entry->next;
+	free(entry);
+	entry = next;
+    }
     free(self);
 }
 

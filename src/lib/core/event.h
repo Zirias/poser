@@ -5,22 +5,17 @@
 
 #include <stddef.h>
 
-C_CLASS_DECL(EvHandler);
+C_CLASS_DECL(EvHandlerEntry);
+C_CLASS_DECL(PSC_Dictionary);
 
 struct PSC_Event
 {
     void *sender;
-    EvHandler *handlers;
-    union
-    {
-	struct
-	{
-	    size_t size;
-	    size_t capa;
-	};
-	void *arg;
-    };
-    int dirty;
+    EvHandlerEntry *first;
+    EvHandlerEntry *last;
+    PSC_Dictionary *index;
 };
+
+void PSC_Event_destroyStatic(PSC_Event *self);
 
 #endif

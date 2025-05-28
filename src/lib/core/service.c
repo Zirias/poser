@@ -1628,9 +1628,9 @@ done:
     }
 #endif
 
-    free(svc->readyRead.handlers);
-    free(svc->readyWrite.handlers);
-    free(svc->eventsDone.handlers);
+    PSC_Event_destroyStatic(&svc->readyRead);
+    PSC_Event_destroyStatic(&svc->readyWrite);
+    PSC_Event_destroyStatic(&svc->eventsDone);
     free(svc);
     svc = 0;
 
@@ -1650,14 +1650,10 @@ static int serviceMain(void *data)
 done:
     PSC_ThreadPool_done();
 
-    free(prestartup.handlers);
-    free(startup.handlers);
-    free(shutdown.handlers);
-    free(childExited.handlers);
-    memset(&prestartup, 0, sizeof prestartup);
-    memset(&startup, 0, sizeof startup);
-    memset(&shutdown, 0, sizeof shutdown);
-    memset(&childExited, 0, sizeof childExited);
+    PSC_Event_destroyStatic(&prestartup);
+    PSC_Event_destroyStatic(&startup);
+    PSC_Event_destroyStatic(&shutdown);
+    PSC_Event_destroyStatic(&childExited);
 
     return rc;
 }
