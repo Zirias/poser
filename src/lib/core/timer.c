@@ -28,6 +28,9 @@
 #  include <unistd.h>
 void expired(void *receiver, void *sender, void *args);
 #else
+#  include <poser/core/log.h>
+#  include <poser/core/service.h>
+#  include <pthread.h>
 #  include <sys/time.h>
 
 C_CLASS_DECL(PSC_TimerJob);
@@ -56,6 +59,8 @@ struct PSC_Timer
 #  endif
     int job;
 #else
+    int thrno;
+    pthread_mutex_t lock;
     PSC_TimerJob *job;
 #endif
     unsigned ms;
@@ -117,6 +122,14 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 	self->job = -1;
     }
 #endif
+#if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
+    self->thrno = PSC_Service_threadNo();
+    if (pthread_mutex_init(&self->lock, 0) != 0)
+    {
+	self->thrno = -2;
+	PSC_Log_msg(PSC_L_ERROR, "timer: cannot create mutex");
+    }
+#endif
     return self;
 }
 
@@ -125,18 +138,17 @@ SOEXPORT PSC_Event *PSC_Timer_expired(PSC_Timer *self)
     return self->expired;
 }
 
+#if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE) || defined(HAVE_TIMERFD)
 SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
 {
     if (self->job)
     {
-#if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
-	PSC_Timer_stop(self);
-#endif
 	self->ms = ms;
 	PSC_Timer_start(self, self->periodic);
     }
     else self->ms = ms;
 }
+#endif
 
 #ifdef HAVE_EVPORTS
 
@@ -333,20 +345,7 @@ static void enqueueandstart(PSC_Timer *self)
     start();
 }
 
-SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
-{
-    if (self->job) PSC_Timer_stop(self);
-    if (!self->job && self->ms)
-    {
-	stopandadjust();
-	self->periodic = periodic;
-	self->job = PSC_malloc(sizeof *self->job);
-	self->job->timer = self;
-	enqueueandstart(self);
-    }
-}
-
-SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
+static void dostoplocked(PSC_Timer *self)
 {
     if (self->job)
     {
@@ -372,10 +371,73 @@ SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
     }
 }
 
+static void dostartlocked(PSC_Timer *self)
+{
+    if (self->job) dostoplocked(self);
+    if (!self->job && self->ms)
+    {
+	stopandadjust();
+	self->job = PSC_malloc(sizeof *self->job);
+	self->job->timer = self;
+	enqueueandstart(self);
+    }
+}
+
+static void dostop(void *arg)
+{
+    PSC_Timer *self = arg;
+    pthread_mutex_lock(&self->lock);
+    dostoplocked(self);
+    pthread_mutex_unlock(&self->lock);
+}
+
+static void dostart(void *arg)
+{
+    PSC_Timer *self = arg;
+    pthread_mutex_lock(&self->lock);
+    dostartlocked(self);
+    pthread_mutex_unlock(&self->lock);
+}
+
+static void doraise(void *arg)
+{
+    PSC_Timer *self = arg;
+    PSC_Event_raise(self->expired, 0, 0);
+}
+
+SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
+{
+    if (self->thrno < -1) return;
+    pthread_mutex_lock(&self->lock);
+    self->ms = ms;
+    if (self->job)
+    {
+	PSC_Service_runOnThread(-1, dostop, self);
+	PSC_Service_runOnThread(-1, dostart, self);
+    }
+    pthread_mutex_unlock(&self->lock);
+}
+
+SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
+{
+    if (self->thrno < -1) return;
+    pthread_mutex_lock(&self->lock);
+    self->periodic = periodic;
+    PSC_Service_runOnThread(-1, dostart, self);
+    pthread_mutex_unlock(&self->lock);
+}
+
+SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
+{
+    if (self->thrno < -1) return;
+    PSC_Service_runOnThread(-1, dostop, self);
+}
+
 SOLOCAL void PSC_Timer_underrun(void)
 {
     if (!jobs) return;
     PSC_Timer *self = jobs->timer;
+    pthread_mutex_lock(&self->lock);
     struct timeval elapsed = jobs->remaining;
     jobs = jobs->next;
     adjust(&elapsed);
@@ -389,7 +451,8 @@ SOLOCAL void PSC_Timer_underrun(void)
 	self->job = 0;
 	start();
     }
-    PSC_Event_raise(self->expired, 0, 0);
+    PSC_Service_runOnThread(self->thrno, doraise, self);
+    pthread_mutex_unlock(&self->lock);
 }
 #endif
 
@@ -408,6 +471,9 @@ SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
     }
 #else
     if (self->job) PSC_Timer_stop(self);
+#endif
+#if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
+    pthread_mutex_destroy(&self->lock);
 #endif
     PSC_Event_destroy(self->expired);
     free(self);
