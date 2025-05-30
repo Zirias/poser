@@ -130,7 +130,7 @@ static Thread *availableThread(void);
 static PSC_ThreadJob *dequeueJob(void);
 static int enqueueJob(PSC_ThreadJob *job) ATTR_NONNULL((1));
 static void panicHandler(const char *msg) ATTR_NONNULL((1));
-static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
+static void startThreadJob(Thread *t, PSC_ThreadJob *j)
     ATTR_NONNULL((1)) ATTR_NONNULL((2));
 static void stopThreads(int nthr);
 static void threadJobDone(void *arg);
@@ -309,13 +309,16 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 #ifdef HAVE_UCONTEXT
     if (self->threadJob->async)
     {
+	pthread_mutex_lock(&self->thread->lock);
 	if (self->thread->job)
 	{
 	    PSC_Queue_enqueue(self->thread->finishedTasks, self->threadJob, 0);
+	    pthread_mutex_unlock(&self->thread->lock);
 	    return;
 	}
 	PSC_List_remove(self->thread->waitingTasks, self->threadJob);
-	startThreadJob(self->thread, self->threadJob, 0);
+	startThreadJob(self->thread, self->threadJob);
+	pthread_mutex_unlock(&self->thread->lock);
     }
     else
 #endif
@@ -398,6 +401,7 @@ static Thread *availableThread(void)
 	if (PSC_List_size(threads[i].waitingTasks) > 0)
 	{
 	    if (!fallback) fallback = threads+i;
+	    else pthread_mutex_unlock(&threads[i].lock);
 	}
 	else
 	{
@@ -419,7 +423,7 @@ static void jobTimeout(void *receiver, void *sender, void *args)
     PSC_ThreadPool_cancel(receiver);
 }
 
-static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
+static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 {
     if (j->timeoutTicks)
     {
@@ -435,7 +439,6 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
 #ifdef HAVE_UCONTEXT
     if (j->async && !j->stack) j->stack = StackMgr_getStack();
 #endif
-    if (!locked) pthread_mutex_lock(&t->lock);
     t->job = j;
     sem_post(&t->start);
     pthread_mutex_unlock(&t->lock);
@@ -444,11 +447,11 @@ static void startThreadJob(Thread *t, PSC_ThreadJob *j, int locked)
 static void threadJobDone(void *arg)
 {
     Thread *t = arg;
+    pthread_mutex_lock(&t->lock);
 #ifdef HAVE_UCONTEXT
     int async = t->job->async;
 #endif
     if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
-    pthread_mutex_lock(&t->lock);
     if (t->job->panicmsg)
     {
 	const char *msg = t->job->panicmsg;
@@ -479,7 +482,6 @@ static void threadJobDone(void *arg)
 	PSC_ThreadJob_destroy(t->job);
     }
     t->job = 0;
-    pthread_mutex_unlock(&t->lock);
     PSC_ThreadJob *next = 0;
 #ifdef HAVE_UCONTEXT
     if (async)
@@ -493,7 +495,8 @@ static void threadJobDone(void *arg)
     {
 	next = dequeueJob();
     }
-    if (next) startThreadJob(t, next, 0);
+    if (next) startThreadJob(t, next);
+    pthread_mutex_unlock(&t->lock);
     if (task) task->job(task);
 }
 
@@ -693,7 +696,7 @@ SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
     Thread *t = availableThread();
     if (t)
     {
-	startThreadJob(t, job, 1);
+	startThreadJob(t, job);
 	return 0;
     }
     return enqueueJob(job);
