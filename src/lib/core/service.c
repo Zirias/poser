@@ -1924,7 +1924,6 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	    func(arg);
 	    return;
 	}
-	if (!mainsvc) return;
 	if (write(commandpipe[1], &cmd, sizeof cmd) != sizeof cmd)
 	{
 	    PSC_Log_msg(PSC_L_WARNING,
@@ -1933,7 +1932,12 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	sem_post(&cmdsem);
 	return;
     }
-    if (threadNo >= nssvc) return;
+    if (threadNo >= nssvc)
+    {
+	PSC_Log_msg(PSC_L_ERROR,
+		"service: attempt to run on non-existing thread");
+	return;
+    }
     if (svc && svc->svcid && threadNo == svc->svcid->threadno)
     {
 	func(arg);
