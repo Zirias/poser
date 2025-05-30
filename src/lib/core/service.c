@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <setjmp.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -31,9 +32,6 @@
 #  if ATOMIC_INT_LOCK_FREE != 2
 #    define SVC_NO_ATOMICS
 #  endif
-#endif
-#ifdef SVC_NO_ATOMICS
-#  include <semaphore.h>
 #endif
 
 #ifndef NSIG
@@ -140,6 +138,7 @@ typedef struct SvcCommand
 typedef struct SecondaryService
 {
     pthread_t handle;
+    sem_t cmdsem;
     int commandpipe[2];
     int threadno;
 } SecondaryService;
@@ -192,6 +191,7 @@ static Service *mainsvc;
 static SecondaryService *ssvc;
 static int nssvc;
 static int commandpipe[2];
+static sem_t cmdsem;
 #ifdef SVC_NO_ATOMICS
 sem_t shutdownrq;
 #endif
@@ -1290,13 +1290,15 @@ static void shutdownWorker(void *arg)
 
 static void handleCommand(void *receiver, void *sender, void *args)
 {
-    (void)receiver;
     (void)sender;
 
+    Service *s = receiver;
     int fd = *((int *)args);
+    sem_t *sem = s ? &s->svcid->cmdsem : &cmdsem;
     SvcCommand command;
     while (read(fd, &command, sizeof command) == sizeof command)
     {
+	sem_wait(sem);
 	command.func(command.arg);
     }
 }
@@ -1545,6 +1547,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	svc->running = 1;
 	svc->shutdownRef = -1;
 	mainsvc = svc;
+	sem_init(&cmdsem, 0, 0);
 #ifdef SVC_NO_ATOMICS
 	sem_init(&shutdownrq, 0, 0);
 #endif
@@ -1611,6 +1614,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 		fcntl(ssvc[i].commandpipe[1], F_SETFL,
 			fcntl(ssvc[i].commandpipe[1], F_GETFL) | O_NONBLOCK);
 		ssvc[i].threadno = i;
+		sem_init(&ssvc[i].cmdsem, 0, 0);
 		if (pthread_create(&ssvc[i].handle, 0,
 			    runsecondary, ssvc+i) != 0)
 		{
@@ -1627,7 +1631,7 @@ static int serviceLoop(ServiceLoopFlags flags)
     else
     {
 	PSC_Service_registerRead(svc->svcid->commandpipe[0]);
-	PSC_Event_register(&svc->readyRead, 0, handleCommand,
+	PSC_Event_register(&svc->readyRead, svc, handleCommand,
 		svc->svcid->commandpipe[0]);
 	svc->running = 1;
 	svc->shutdownRef = -1;
@@ -1671,6 +1675,7 @@ done:
 		if (ssvc[i].commandpipe[1] < 0) break;
 		PSC_Service_runOnThread(i, shutdownWorker, 0);
 		pthread_join(ssvc[i].handle, 0);
+		sem_destroy(&ssvc[i].cmdsem);
 		close(ssvc[i].commandpipe[0]);
 		close(ssvc[i].commandpipe[1]);
 	    }
@@ -1681,6 +1686,7 @@ done:
 #ifdef SVC_NO_ATOMICS
 	sem_destroy(&shutdownrq);
 #endif
+	sem_destroy(&cmdsem);
 
 #if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
 	handler.sa_handler = SIG_DFL;
@@ -1924,6 +1930,7 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	    PSC_Log_msg(PSC_L_WARNING,
 		    "service: cannot execute on main thread");
 	}
+	sem_post(&cmdsem);
 	return;
     }
     if (threadNo >= nssvc) return;
@@ -1936,6 +1943,7 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
     {
 	PSC_Log_msg(PSC_L_WARNING, "service: cannot execute on worker thread");
     }
+    sem_post(&ssvc[threadNo].cmdsem);
 }
 
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
