@@ -397,6 +397,11 @@ static Thread *availableThread(void)
     for (int i = 0; i < nthreads; ++i)
     {
 	if (pthread_mutex_trylock(&threads[i].lock) != 0) continue;
+	if (threads[i].job)
+	{
+	    pthread_mutex_unlock(&threads[i].lock);
+	    continue;
+	}
 #ifdef HAVE_UCONTEXT
 	if (PSC_List_size(threads[i].waitingTasks) > 0)
 	{
@@ -423,19 +428,22 @@ static void jobTimeout(void *receiver, void *sender, void *args)
     PSC_ThreadPool_cancel(receiver);
 }
 
+static void setupjobtimeout(void *arg)
+{
+    PSC_ThreadJob *j = arg;
+    if (!j->timeout)
+    {
+	j->timeout = PSC_Timer_create();
+	PSC_Event_register(PSC_Timer_expired(j->timeout), j,
+		jobTimeout, 0);
+    }
+    PSC_Timer_setMs(j->timeout, 500 * j->timeoutTicks);
+    PSC_Timer_start(j->timeout, 0);
+}
+
 static void startThreadJob(Thread *t, PSC_ThreadJob *j)
 {
-    if (j->timeoutTicks)
-    {
-	if (!j->timeout)
-	{
-	    j->timeout = PSC_Timer_create();
-	    PSC_Event_register(PSC_Timer_expired(j->timeout), j,
-		    jobTimeout, 0);
-	}
-	PSC_Timer_setMs(j->timeout, 500 * j->timeoutTicks);
-	PSC_Timer_start(j->timeout, 0);
-    }
+    if (j->timeoutTicks) PSC_Service_runOnThread(j->thrno, setupjobtimeout, j);
 #ifdef HAVE_UCONTEXT
     if (j->async && !j->stack) j->stack = StackMgr_getStack();
 #endif
