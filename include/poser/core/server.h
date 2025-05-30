@@ -245,6 +245,17 @@ DECLEXPORT PSC_Event *
 PSC_Server_clientConnected(PSC_Server *self)
     CMETHOD ATTR_RETNONNULL ATTR_PURE;
 
+/** Server shutdown complete.
+ * This event fires just before destruction of the server, after all client
+ * connections were closed.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ * @returns the shutdown complete event
+ */
+DECLEXPORT PSC_Event *
+PSC_Server_shutdownComplete(PSC_Server *self)
+    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+
 /** Disable the server.
  * This disables accepting new connections while still listening. It's
  * implemented by immediately closing any new connection with a linger timeout
@@ -267,6 +278,15 @@ PSC_Server_disable(PSC_Server *self)
  */
 DECLEXPORT void
 PSC_Server_enable(PSC_Server *self)
+    CMETHOD;
+
+/** Number of connections to this server.
+ * @memberof PSC_Server
+ * @param self the PSC_Server
+ * @returns the current number of connections
+ */
+DECLEXPORT size_t
+PSC_Server_connections(const PSC_Server *self)
     CMETHOD;
 
 /** Graceful server shutdown.

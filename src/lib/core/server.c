@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,6 +124,7 @@ typedef struct AcceptRecord
 struct PSC_Server
 {
     PSC_Event *clientConnected;
+    PSC_Event *shutdownComplete;
     PSC_Event *closeAll;
     PSC_Timer *shutdownTimer;
     char *path;
@@ -131,6 +133,7 @@ struct PSC_Server
     void *validatorObj;
     PSC_CertValidator validator;
 #endif
+    pthread_mutex_t lock;
     uint64_t bhash;
     size_t nconn;
     size_t nsocks;
@@ -169,13 +172,6 @@ static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
 }
 #endif
 
-static void doremove(void *arg)
-{
-    PSC_Server *self = arg;
-    --self->nconn;
-    if (!self->nsocks && !self->nconn) PSC_Server_destroy(self);
-}
-
 static void removeConnection(void *receiver, void *sender, void *args)
 {
     (void)args;
@@ -183,8 +179,10 @@ static void removeConnection(void *receiver, void *sender, void *args)
     PSC_Server *self = receiver;
     PSC_Connection *conn = sender;
 
+    pthread_mutex_lock(&self->lock);
     PSC_Event_unregister(self->closeAll, conn, closeConnection, 0);
-    PSC_Service_runOnThread(-1, doremove, self);
+    --self->nconn;
+    pthread_mutex_unlock(&self->lock);
 }
 
 static void closeConnection(void *receiver, void *sender, void *args)
@@ -198,6 +196,7 @@ static void closeConnection(void *receiver, void *sender, void *args)
 static void doaccept(void *arg)
 {
     AcceptRecord *rec = arg;
+    pthread_mutex_lock(&rec->srv->lock);
     ConnOpts co = {
 	.rdbufsz = rec->srv->rdbufsz,
 #ifdef WITH_TLS
@@ -209,6 +208,7 @@ static void doaccept(void *arg)
 	.createmode = CCM_NORMAL
     };
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
+    ++rec->srv->nconn;
     PSC_Event_register(rec->srv->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
 	    removeConnection, 0);
@@ -223,6 +223,7 @@ static void doaccept(void *arg)
     PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
 	    PSC_Connection_remoteAddr(newconn));
     PSC_Event_raise(rec->srv->clientConnected, 0, newconn);
+    pthread_mutex_unlock(&rec->srv->lock);
     free(rec);
 }
 
@@ -294,7 +295,6 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	if (self->nextthr == nthr) self->nextthr = 0;
     }
     PSC_Service_runOnThread(thr, doaccept, rec);
-    ++self->nconn;
 }
 
 static int bindcmp(const void *a, const void *b)
@@ -459,9 +459,11 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->clientConnected = PSC_Event_create(self);
+    self->shutdownComplete = PSC_Event_create(self);
     self->closeAll = PSC_Event_create(self);
     self->shutdownTimer = 0;
     self->path = path;
+    pthread_mutex_init(&self->lock, 0);
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
     self->nconn = 0;
     self->rdbufsz = opts->rdbufsz;
@@ -913,6 +915,11 @@ SOEXPORT PSC_Event *PSC_Server_clientConnected(PSC_Server *self)
     return self->clientConnected;
 }
 
+SOEXPORT PSC_Event *PSC_Server_shutdownComplete(PSC_Server *self)
+{
+    return self->shutdownComplete;
+}
+
 SOEXPORT void PSC_Server_disable(PSC_Server *self)
 {
     self->disabled = 1;
@@ -929,6 +936,15 @@ static void forceDestroy(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Server_destroy(receiver);
+}
+
+SOEXPORT size_t PSC_Server_connections(const PSC_Server *self)
+{
+    size_t n;
+    pthread_mutex_lock(&((PSC_Server *)self)->lock);
+    n = self->nconn;
+    pthread_mutex_unlock(&((PSC_Server *)self)->lock);
+    return n;
 }
 
 SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
@@ -978,8 +994,11 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 		self->socks[i].fd);
 	close(self->socks[i].fd);
     }
+    pthread_mutex_destroy(&self->lock);
     PSC_Event_destroy(self->closeAll);
     PSC_Event_destroy(self->clientConnected);
+    PSC_Event_raise(self->shutdownComplete, 0, 0);
+    PSC_Event_destroy(self->shutdownComplete);
     if (self->path)
     {
 	unlink(self->path);
