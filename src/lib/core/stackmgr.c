@@ -19,6 +19,7 @@
 #include "stackmgr.h"
 
 #include <poser/core/util.h>
+#include <pthread.h>
 #include <stdlib.h>
 
 #ifdef STACK_MFLAGS
@@ -33,6 +34,7 @@ static size_t sz = 2U * 1024U * 1024U;
 static void **stacks;
 static size_t nstacks;
 static size_t cstacks;
+static pthread_mutex_t stackslock = PTHREAD_MUTEX_INITIALIZER;
 
 SOLOCAL int StackMgr_setSize(size_t stacksz)
 {
@@ -50,12 +52,16 @@ SOLOCAL size_t StackMgr_size(void)
 
 SOLOCAL void *StackMgr_getStack(void)
 {
-    if (nstacks) return stacks[--nstacks];
+    void *stack = 0;
+    pthread_mutex_lock(&stackslock);
+    if (nstacks) stack = stacks[--nstacks];
+    pthread_mutex_unlock(&stackslock);
+    if (stack) return stack;
 #ifdef STACK_MFLAGS
-    void *stack = mmap(0, sz, PROT_READ|PROT_WRITE, STACK_MFLAGS, -1, 0);
+    stack = mmap(0, sz, PROT_READ|PROT_WRITE, STACK_MFLAGS, -1, 0);
     if (stack == MAP_FAILED) PSC_Service_panic("stack allocation failed.");
 #else
-    void *stack = PSC_malloc(sz);
+    stack = PSC_malloc(sz);
 #endif
     return stack;
 }
@@ -63,6 +69,7 @@ SOLOCAL void *StackMgr_getStack(void)
 SOLOCAL void StackMgr_returnStack(void *stack)
 {
     if (!stack) return;
+    pthread_mutex_lock(&stackslock);
     if (nstacks == cstacks)
     {
 	cstacks += STACKSCHUNK;
@@ -72,6 +79,7 @@ SOLOCAL void StackMgr_returnStack(void *stack)
 #if defined(STACK_MFLAGS) && defined(HAVE_MADVISE) && defined(HAVE_MADVFREE)
     madvise(stack, sz, MADV_FREE);
 #endif
+    pthread_mutex_unlock(&stackslock);
 }
 
 SOLOCAL void StackMgr_clean(void)
