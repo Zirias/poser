@@ -17,6 +17,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,6 +135,7 @@ struct PSC_Server
     PSC_CertValidator validator;
 #endif
     pthread_mutex_t lock;
+    sem_t allclosed;
     uint64_t bhash;
     size_t nconn;
     size_t nsocks;
@@ -181,7 +183,7 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     pthread_mutex_lock(&self->lock);
     PSC_Event_unregister(self->closeAll, conn, closeConnection, 0);
-    --self->nconn;
+    if (!--self->nconn) sem_post(&self->allclosed);
     pthread_mutex_unlock(&self->lock);
 }
 
@@ -208,7 +210,7 @@ static void doaccept(void *arg)
 	.createmode = CCM_NORMAL
     };
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
-    ++rec->srv->nconn;
+    if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
     PSC_Event_register(rec->srv->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
 	    removeConnection, 0);
@@ -464,6 +466,7 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->shutdownTimer = 0;
     self->path = path;
     pthread_mutex_init(&self->lock, 0);
+    sem_init(&self->allclosed, 0, 1);
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
     self->nconn = 0;
     self->rdbufsz = opts->rdbufsz;
@@ -981,8 +984,12 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 {
     if (!self) return;
 
-    if (self->nconn) PSC_Event_raise(self->closeAll, 0, 0);
     PSC_Timer_destroy(self->shutdownTimer);
+    if (self->nconn)
+    {
+	PSC_Event_raise(self->closeAll, 0, 0);
+	sem_wait(&self->allclosed);
+    }
     if (!self->nsocks)
     {
 	PSC_Event_unregister(PSC_Service_shutdown(), self, forceDestroy, 0);
@@ -994,6 +1001,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 		self->socks[i].fd);
 	close(self->socks[i].fd);
     }
+    sem_destroy(&self->allclosed);
     pthread_mutex_destroy(&self->lock);
     PSC_Event_destroy(self->closeAll);
     PSC_Event_destroy(self->clientConnected);
