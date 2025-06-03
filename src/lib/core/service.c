@@ -146,7 +146,6 @@ typedef struct SecondaryService
 typedef struct Service
 {
     SecondaryService *svcid;
-    PSC_Timer *shutdownTimer;
 #ifdef HAVE_EVPORTS
     EvportWatch *watches[32];
 #endif
@@ -167,8 +166,10 @@ typedef struct Service
 #endif
 #ifdef HAVE_KQUEUE
     struct kevent changes[KQ_MAX_CHANGES];
+    uintptr_t deadtimers[KQ_MAX_CHANGES];
     int kqfd;
     int nchanges;
+    int ndeadtimers;
 #endif
     int running;
 #if defined(HAVE_EVPORTS) || defined(HAVE_EPOLL)
@@ -189,6 +190,7 @@ typedef struct Service
 static THREADLOCAL Service *svc;
 static Service *mainsvc;
 static SecondaryService *ssvc;
+static PSC_Timer *shutdownTimer;
 static int nssvc;
 static int commandpipe[2];
 static sem_t cmdsem;
@@ -200,6 +202,7 @@ static PSC_Event prestartup;
 static PSC_Event startup;
 static PSC_Event shutdown;
 static PSC_Event childExited;
+static pthread_mutex_t childLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct PSC_EAStartup
 {
@@ -321,6 +324,16 @@ SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 SOEXPORT PSC_Event *PSC_Service_childExited(void)
 {
     return &childExited;
+}
+
+SOEXPORT void PSC_Service_lockChildren(void)
+{
+    pthread_mutex_lock(&childLock);
+}
+
+SOEXPORT void PSC_Service_unlockChildren(void)
+{
+    pthread_mutex_unlock(&childLock);
 }
 
 #ifdef WITH_SELECT
@@ -802,6 +815,14 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 SOLOCAL void PSC_Service_armTimer(void *timer, unsigned ms, int periodic)
 {
     if (initKqueue() < 0) return;
+    for (int i = 0; i < svc->ndeadtimers; ++i)
+    {
+	if ((uintptr_t)timer == svc->deadtimers[i])
+	{
+	    svc->deadtimers[i] = 0;
+	    break;
+	}
+    }
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_ADD|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
     flushChanges();
@@ -813,6 +834,14 @@ SOLOCAL void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic)
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_DELETE|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
     flushChanges();
+}
+
+SOLOCAL void PSC_Service_killTimer(void *timer)
+{
+    if (svc->ndeadtimers < KQ_MAX_CHANGES)
+    {
+	svc->deadtimers[svc->ndeadtimers++] = (uintptr_t)timer;
+    }
 }
 #endif
 
@@ -916,7 +945,9 @@ static void reapChildren(void)
 	    ea.signaled = 1;
 	}
 	else continue;
+	pthread_mutex_lock(&childLock);
 	PSC_Event_raise(&childExited, (int)pid, &ea);
+	pthread_mutex_unlock(&childLock);
     }
 }
 
@@ -1080,7 +1111,15 @@ static int processEvents(void)
 
 	    case EVFILT_TIMER:
 		timer = (PSC_Timer *)ev[i].ident;
-		PSC_Timer_doexpire(timer);
+		for (int j = 0; j < svc->ndeadtimers; ++j)
+		{
+		    if (svc->deadtimers[j] == ev[i].ident)
+		    {
+			timer = 0;
+			break;
+		    }
+		}
+		if (timer) PSC_Timer_doexpire(timer);
 		break;
 
 	    case EVFILT_WRITE:
@@ -1095,6 +1134,7 @@ static int processEvents(void)
 		break;
 	}
     }
+    svc->ndeadtimers = 0;
     return 0;
 }
 #endif
@@ -1327,6 +1367,11 @@ static int serviceLoop(ServiceLoopFlags flags)
     if (flags & SLF_SVCMAIN)
     {
 	opts = runOpts();
+
+	if (flags & SLF_SVCRUN)
+	{
+	    if (PSC_ThreadPool_init() < 0) return rc;
+	}
 
 	sigemptyset(&sigblockmask);
 #if defined(WITH_SIGHDL) || defined(HAVE_SIGNALFD)
@@ -1660,10 +1705,14 @@ static int serviceLoop(ServiceLoopFlags flags)
     }
 
 shutdown:
-    PSC_Timer_destroy(svc->shutdownTimer);
-    svc->shutdownTimer = 0;
     svc->running = 0;
-    if (flags & SLF_SVCMAIN) PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
+    if (flags & SLF_SVCMAIN)
+    {
+	PSC_Timer_destroy(shutdownTimer);
+	shutdownTimer = 0;
+	PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
+	if (flags & SLF_SVCRUN) PSC_ThreadPool_done();
+    }
 
 done:
     if (flags & SLF_SVCMAIN)
@@ -1804,14 +1853,7 @@ static int serviceMain(void *data)
 {
     (void)data;
 
-    int rc = EXIT_FAILURE;
-
-    if (PSC_ThreadPool_init() < 0) goto done;
-
-    rc = serviceLoop(SLF_SVCRUN | SLF_SVCMAIN);
-
-done:
-    PSC_ThreadPool_done();
+    int rc = serviceLoop(SLF_SVCRUN | SLF_SVCMAIN);
 
     PSC_Event_destroyStatic(&prestartup);
     PSC_Event_destroyStatic(&startup);
@@ -1868,19 +1910,21 @@ static void shutdownTimeout(void *receiver, void *sender, void *args)
 
 SOEXPORT void PSC_Service_shutdownLock(void)
 {
+    if (!svc || !mainsvc || svc != mainsvc) return;
     if (svc->shutdownRef >= 0) ++svc->shutdownRef;
-    if (!svc->shutdownTimer)
+    if (!shutdownTimer)
     {
-	svc->shutdownTimer = PSC_Timer_create();
-	PSC_Event_register(PSC_Timer_expired(svc->shutdownTimer), 0,
+	shutdownTimer = PSC_Timer_create();
+	PSC_Event_register(PSC_Timer_expired(shutdownTimer), 0,
 		shutdownTimeout, 0);
-	PSC_Timer_setMs(svc->shutdownTimer, 5000);
-	PSC_Timer_start(svc->shutdownTimer, 0);
+	PSC_Timer_setMs(shutdownTimer, 5000);
+	PSC_Timer_start(shutdownTimer, 0);
     }
 }
 
 SOEXPORT void PSC_Service_shutdownUnlock(void)
 {
+    if (!svc || !mainsvc || svc != mainsvc) return;
     if (svc->shutdownRef > 0) --svc->shutdownRef;
 }
 

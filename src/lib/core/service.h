@@ -13,6 +13,7 @@ int PSC_Service_epfd(void);
 #ifdef HAVE_KQUEUE
 void PSC_Service_armTimer(void *timer, unsigned ms, int periodic);
 void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic);
+void PSC_Service_killTimer(void *timer);
 #endif
 
 #endif
