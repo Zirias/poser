@@ -66,6 +66,7 @@ SOEXPORT void PSC_Event_unregister(
     EvHandlerEntry *entry = PSC_Dictionary_get(self->index, &hdl, sizeof hdl);
     if (!entry) return;
     PSC_Dictionary_set(self->index, &hdl, sizeof hdl, 0, 0);
+    if (entry == self->handling) self->handling = entry->next;
     if (entry->prev) entry->prev->next = entry->next;
     else self->first = entry->next;
     if (entry->next) entry->next->prev = entry->prev;
@@ -77,13 +78,13 @@ SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
     for (EvHandlerEntry *entry = self->first; entry;)
     {
-	EvHandlerEntry *next = entry->next;
+	self->handling = entry->next;
 	if (entry->handler.id == id)
 	{
 	    if (!args && id) args = &id;
 	    entry->handler.cb(entry->handler.receiver, self->sender, args);
 	}
-	entry = next;
+	entry = self->handling;
     }
 }
 

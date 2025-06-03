@@ -13,6 +13,7 @@ struct PSC_Event
     void *sender;
     EvHandlerEntry *first;
     EvHandlerEntry *last;
+    EvHandlerEntry *handling;
     PSC_Dictionary *index;
 };
 
