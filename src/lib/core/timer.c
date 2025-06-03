@@ -42,6 +42,7 @@ struct PSC_TimerJob
     struct timeval remaining;
 };
 
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static PSC_TimerJob *jobs;
 static int initialized;
 static const struct itimerval itvzero;
@@ -60,7 +61,6 @@ struct PSC_Timer
     int job;
 #else
     int thrno;
-    pthread_mutex_t lock;
     PSC_TimerJob *job;
 #endif
     unsigned ms;
@@ -86,11 +86,13 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
     }
 #endif
 #if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
+    pthread_mutex_lock(&lock);
     if (!initialized)
     {
 	setitimer(ITIMER_REAL, &itvzero, 0);
 	initialized = 1;
     }
+    pthread_mutex_unlock(&lock);
 #endif
     PSC_Timer *self = PSC_malloc(sizeof *self);
     self->expired = PSC_Event_create(self);
@@ -124,11 +126,6 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 #endif
 #if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
     self->thrno = PSC_Service_threadNo();
-    if (pthread_mutex_init(&self->lock, 0) != 0)
-    {
-	self->thrno = -2;
-	PSC_Log_msg(PSC_L_ERROR, "timer: cannot create mutex");
-    }
 #endif
     return self;
 }
@@ -385,18 +382,18 @@ static void dostartlocked(PSC_Timer *self)
 
 static void dostop(void *arg)
 {
+    pthread_mutex_lock(&lock);
     PSC_Timer *self = arg;
-    pthread_mutex_lock(&self->lock);
     dostoplocked(self);
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&lock);
 }
 
 static void dostart(void *arg)
 {
+    pthread_mutex_lock(&lock);
     PSC_Timer *self = arg;
-    pthread_mutex_lock(&self->lock);
     dostartlocked(self);
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&lock);
 }
 
 static void doraise(void *arg)
@@ -407,24 +404,22 @@ static void doraise(void *arg)
 
 SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
 {
-    if (self->thrno < -1) return;
-    pthread_mutex_lock(&self->lock);
+    pthread_mutex_lock(&lock);
     self->ms = ms;
     if (self->job)
     {
 	PSC_Service_runOnThread(-1, dostop, self);
 	PSC_Service_runOnThread(-1, dostart, self);
     }
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&lock);
 }
 
 SOEXPORT void PSC_Timer_start(PSC_Timer *self, int periodic)
 {
-    if (self->thrno < -1) return;
-    pthread_mutex_lock(&self->lock);
+    pthread_mutex_lock(&lock);
     self->periodic = periodic;
     PSC_Service_runOnThread(-1, dostart, self);
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&lock);
 }
 
 SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
@@ -435,9 +430,9 @@ SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
 
 SOLOCAL void PSC_Timer_underrun(void)
 {
+    pthread_mutex_lock(&lock);
     if (!jobs) return;
     PSC_Timer *self = jobs->timer;
-    pthread_mutex_lock(&self->lock);
     struct timeval elapsed = jobs->remaining;
     jobs = jobs->next;
     adjust(&elapsed);
@@ -452,7 +447,7 @@ SOLOCAL void PSC_Timer_underrun(void)
 	start();
     }
     PSC_Service_runOnThread(self->thrno, doraise, self);
-    pthread_mutex_unlock(&self->lock);
+    pthread_mutex_unlock(&lock);
 }
 #endif
 
@@ -472,8 +467,8 @@ SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
 #else
     if (self->job) PSC_Timer_stop(self);
 #endif
-#if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
-    pthread_mutex_destroy(&self->lock);
+#ifdef HAVE_KQUEUE
+    PSC_Service_killTimer(self);
 #endif
     PSC_Event_destroy(self->expired);
     free(self);
