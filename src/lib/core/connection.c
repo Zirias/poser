@@ -73,7 +73,6 @@ struct PSC_Connection
     char *name;
     void *data;
     void (*deleter)(void *);
-    pthread_mutex_t wrlock;
     size_t rdbufsz;
     size_t rdbufused;
     size_t rdbufpos;
@@ -82,9 +81,9 @@ struct PSC_Connection
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
     int fd;
+    int thrno;
     int paused;
     int port;
-    int thrno;
     int rdreg;
     int wrreg;
 #ifdef WITH_TLS
@@ -143,10 +142,10 @@ static void wantreadwrite(PSC_Connection *self)
 	    self->tls_connect_st == SSL_ERROR_WANT_WRITE ||
 	    self->tls_read_st == SSL_ERROR_WANT_WRITE ||
 	    self->tls_write_st == SSL_ERROR_WANT_WRITE ||
-	    ((self->wrbuflen || self->nrecs)
+	    (!self->paused && (self->wrbuflen || self->nrecs)
 	    && !self->tlsConnectTimer && !self->tls_shutdown_st)
 #else
-	    self->wrbuflen || self->nrecs
+	    (!self->paused && (self->wrbuflen || self->nrecs))
 #endif
        )
     {
@@ -263,7 +262,6 @@ static void dowrite(PSC_Connection *self)
 {
     PSC_Log_fmt(PSC_L_DEBUG, "connection: writing to %s",
 	    PSC_Connection_remoteAddr(self));
-    pthread_mutex_lock(&self->wrlock);
     uint8_t notno = 0;
     if (self->nrecs && !self->wrbuflen)
     {
@@ -321,7 +319,6 @@ static void dowrite(PSC_Connection *self)
 	    if (self->wrbufpos < self->wrbuflen)
 	    {
 		wantreadwrite(self);
-		pthread_mutex_unlock(&self->wrlock);
 		return;
 	    }
 	    else
@@ -344,7 +341,6 @@ static void dowrite(PSC_Connection *self)
 			PSC_Connection_remoteAddr(self));
 		self->nrecs = 0;
 		self->wrbuflen = 0;
-		pthread_mutex_unlock(&self->wrlock);
 		PSC_Connection_close(self, 0);
 		return;
 	    }
@@ -367,11 +363,7 @@ static void dowrite(PSC_Connection *self)
 		PSC_Event_raise(self->dataSent, 0,
 			self->writenotify[notno].id);
 	    }
-	    if (self->wrbufpos < self->wrbuflen)
-	    {
-		pthread_mutex_unlock(&self->wrlock);
-		return;
-	    }
+	    if (self->wrbufpos < self->wrbuflen) return;
 	    else
 	    {
 		self->wrbuflen = 0;
@@ -395,7 +387,6 @@ static void dowrite(PSC_Connection *self)
 	}
 	wantreadwrite(self);
     }
-    pthread_mutex_unlock(&self->wrlock);
 }
 
 static void writeConnection(void *receiver, void *sender, void *args)
@@ -469,11 +460,7 @@ static void tryWrite(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Connection *self = receiver;
-    int try = 0;
-    pthread_mutex_lock(&self->wrlock);
-    if (!self->wrreg && (self->nrecs || self->wrbuflen)) try = 1;
-    pthread_mutex_unlock(&self->wrlock);
-    if (try) dowrite(self);
+    if (!self->wrreg && (self->nrecs || self->wrbuflen)) dowrite(self);
 }
 
 static const char *locateeol(const char *str)
@@ -745,15 +732,14 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->dataReceived = PSC_Event_create(self);
     self->dataSent = PSC_Event_create(self);
     self->connectTimer = 0;
-    pthread_mutex_init(&self->wrlock, 0);
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
     self->rdbufpos = 0;
     self->rdexpect = 0;
     self->fd = fd;
+    self->thrno = PSC_Service_threadNo();
     self->paused = 0;
     self->port = 0;
-    self->thrno = PSC_Service_threadNo();
     self->rdreg = 0;
     self->wrreg = 0;
     self->ipAddr = 0;
@@ -958,7 +944,6 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
 	const uint8_t *buf, size_t sz, void *id)
 {
     int rc = -1;
-    pthread_mutex_lock(&self->wrlock);
     if (self->type == CT_PIPERD) goto done;
     if (self->deleteScheduled) goto done;
     if (self->connectTimer) goto done;
@@ -981,11 +966,6 @@ SOEXPORT int PSC_Connection_sendAsync(PSC_Connection *self,
     rec->id = id;
     rc = 0;
 done:
-    pthread_mutex_unlock(&self->wrlock);
-    if (rc == 0 && PSC_Service_threadNo() != self->thrno)
-    {
-	PSC_Service_runOnThread(self->thrno, wakethr, 0);
-    }
     return rc;
 }
 
@@ -1002,6 +982,11 @@ SOEXPORT void PSC_Connection_pause(PSC_Connection *self)
     wantreadwrite(self);
     PSC_Event_unregister(PSC_Service_readyRead(), self,
 	    readConnection, self->fd);
+    if (self->type != CT_PIPERD)
+    {
+	PSC_Event_unregister(PSC_Service_eventsDone(), self,
+		tryWrite, 0);
+    }
 }
 
 SOEXPORT int PSC_Connection_resume(PSC_Connection *self)
@@ -1010,6 +995,11 @@ SOEXPORT int PSC_Connection_resume(PSC_Connection *self)
     if (--self->paused) return 0;
     PSC_Event_register(PSC_Service_readyRead(), self,
 	    readConnection, self->fd);
+    if (self->type != CT_PIPERD)
+    {
+	PSC_Event_register(PSC_Service_eventsDone(), self,
+		tryWrite, 0);
+    }
     wantreadwrite(self);
     return 1;
 }
@@ -1026,7 +1016,7 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
     return 1;
 }
 
-SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
+static void doclose(PSC_Connection *self, int blacklist)
 {
     if (self->deleteScheduled) return;
     if (blacklist && self->blacklisthits && self->ipAddr)
@@ -1035,6 +1025,22 @@ SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
     }
     PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
     deleteLater(self);
+}
+
+static void docloseblist(void *arg)
+{
+    doclose(arg, 1);
+}
+
+static void doclosenorm(void *arg)
+{
+    doclose(arg, 0);
+}
+
+SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
+{
+    PSC_Service_runOnThread(self->thrno,
+	    blacklist ? docloseblist : doclosenorm, self);
 }
 
 SOEXPORT void PSC_Connection_setData(PSC_Connection *self,
@@ -1116,7 +1122,6 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_Event_unregister(PSC_Service_readyWrite(), self,
 	    writeConnection, self->fd);
     if (self->deleter) self->deleter(self->data);
-    pthread_mutex_destroy(&self->wrlock);
     PSC_IpAddr_destroy(self->ipAddr);
     free(self->addr);
     free(self->name);
