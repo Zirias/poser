@@ -19,8 +19,6 @@
 
 #ifdef HAVE_UCONTEXT
 #  include "stackmgr.h"
-#  include <poser/core/list.h>
-#  include <poser/core/queue.h>
 #  include <ucontext.h>
 #endif
 
@@ -48,10 +46,6 @@
 #define QLENPERTHREAD 2
 #endif
 
-#ifndef DEFJOBSTACKKB
-#define DEFJOBSTACKKB 64
-#endif
-
 struct PSC_ThreadJob
 {
     PSC_ThreadProc proc;
@@ -60,9 +54,11 @@ struct PSC_ThreadJob
     PSC_Timer *timeout;
     PSC_AsyncTask *task;
     const char *panicmsg;
+    pthread_mutex_t lock;
     int hasCompleted;
-    int timeoutTicks;
+    int pthrno;
     int thrno;
+    unsigned timeoutMs;
 #ifdef HAVE_UCONTEXT
     ucontext_t caller;
     void *stack;
@@ -82,21 +78,25 @@ typedef struct PSC_ThreadOpts
     int qLenPerThread;
 } PSC_ThreadOpts;
 
+typedef struct JobQueue
+{
+    unsigned sz;
+    unsigned avail;
+    unsigned enqpos;
+    unsigned deqpos;
+    pthread_mutex_t lock;
+    sem_t count;
+    PSC_ThreadJob *jobs[];
+} JobQueue;
+
 typedef struct Thread
 {
-    PSC_ThreadJob *job;
-#ifdef HAVE_UCONTEXT
-    PSC_Queue *finishedTasks;
-    PSC_List *waitingTasks;
-#endif
     pthread_t handle;
-    pthread_mutex_t lock;
-    sem_t start;
-    sem_t cancel;
-    int stoprq;
+    sem_t stop;
 #ifdef HAVE_UCONTEXT
     ucontext_t context;
 #endif
+    int pthrno;
 } Thread;
 
 struct PSC_AsyncTask
@@ -106,6 +106,7 @@ struct PSC_AsyncTask
     Thread *thread;
     void *arg;
     void *result;
+    sem_t complete;
 #ifdef HAVE_UCONTEXT
     ucontext_t resume;
 #endif
@@ -113,25 +114,17 @@ struct PSC_AsyncTask
 
 static PSC_ThreadOpts opts;
 static Thread *threads;
-static PSC_ThreadJob **jobQueue;
-static pthread_mutex_t queuelock;
+static JobQueue *jobQueue;
 static int nthreads;
-static int queuesize;
-static int queueAvail;
-static int nextIdx;
-static int lastIdx;
+static int rthreads;
 
 static THREADLOCAL int mainthread;
 static THREADLOCAL jmp_buf panicjmp;
 static THREADLOCAL const char *panicmsg;
 static THREADLOCAL Thread *currentThread;
+static THREADLOCAL PSC_ThreadJob *currentJob;
 
-static Thread *availableThread(void);
-static PSC_ThreadJob *dequeueJob(void);
-static int enqueueJob(PSC_ThreadJob *job) ATTR_NONNULL((1));
 static void panicHandler(const char *msg) ATTR_NONNULL((1));
-static void startThreadJob(Thread *t, PSC_ThreadJob *j)
-    ATTR_NONNULL((1)) ATTR_NONNULL((2));
 static void stopThreads(int nthr);
 static void threadJobDone(void *arg);
 static void *worker(void *arg);
@@ -145,9 +138,101 @@ static void workerInterrupt(int signum)
 #ifdef HAVE_UCONTEXT
 static void runThreadJob(void)
 {
-    currentThread->job->proc(currentThread->job->arg);
+    PSC_ThreadJob *job = currentJob;
+    job->proc(job->arg);
+    setcontext(&job->caller);
 }
 #endif
+
+static JobQueue *JobQueue_create(unsigned sz)
+{
+    JobQueue *self = PSC_malloc(sizeof *self + sz * sizeof *self->jobs);
+    self->sz = sz;
+    self->avail = sz;
+    self->enqpos = 0;
+    self->deqpos = 0;
+    if (sem_init(&self->count, 0, 0) != 0)
+    {
+	free(self);
+	return 0;
+    }
+    if (pthread_mutex_init(&self->lock, 0) != 0)
+    {
+	sem_destroy(&self->count);
+	free(self);
+	return 0;
+    }
+    return self;
+}
+
+static int JobQueue_enqueue(JobQueue *self, PSC_ThreadJob *job)
+{
+    pthread_mutex_lock(&self->lock);
+    if (!self->avail)
+    {
+	pthread_mutex_unlock(&self->lock);
+	return -1;
+    }
+    --self->avail;
+    self->jobs[self->enqpos++] = job;
+    if (self->enqpos == self->sz) self->enqpos = 0;
+    sem_post(&self->count);
+    pthread_mutex_unlock(&self->lock);
+    return 0;
+}
+
+static PSC_ThreadJob *JobQueue_dequeue(JobQueue *self)
+{
+    if (sem_wait(&self->count) < 0) return 0;
+    pthread_mutex_lock(&self->lock);
+    PSC_ThreadJob *job = self->jobs[self->deqpos++];
+    if (self->deqpos == self->sz) self->deqpos = 0;
+    ++self->avail;
+    pthread_mutex_unlock(&self->lock);
+    return job;
+}
+
+static void JobQueue_destroy(JobQueue *self)
+{
+    if (!self) return;
+    pthread_mutex_destroy(&self->lock);
+    sem_destroy(&self->count);
+    free(self);
+}
+
+static void workerDone(void *arg)
+{
+    Thread *t = arg;
+    t->pthrno = -1;
+    pthread_join(t->handle, 0);
+    sem_destroy(&t->stop);
+    if (--rthreads) return;
+    free(threads);
+    threads = 0;
+    JobQueue_destroy(jobQueue);
+    PSC_Service_unregisterPanic(panicHandler);
+    mainthread = 0;
+#ifdef HAVE_UCONTEXT
+    StackMgr_clean();
+#endif
+    PSC_Service_shutdownUnlock();
+}
+
+static int checkpanic(void)
+{
+    if (setjmp(panicjmp))
+    {
+	if (currentJob)
+	{
+	    currentJob->panicmsg = panicmsg;
+	    PSC_Service_runOnThread(currentJob->thrno,
+		    threadJobDone, currentJob);
+	    pthread_mutex_unlock(&currentJob->lock);
+	}
+	return 1;
+    }
+    return 0;
+}
 
 static void *worker(void *arg)
 {
@@ -162,54 +247,65 @@ static void *worker(void *arg)
     if (sigaction(SIGUSR1, &handler, 0) < 0) return 0;
     if (pthread_sigmask(SIG_UNBLOCK, &handler.sa_mask, 0) < 0) return 0;
 
-    for (;;)
+    if (!checkpanic()) for (;;)
     {
-	sem_wait(&t->start);
-	pthread_mutex_lock(&t->lock);
-	int iscanceled = 0;
-	sem_getvalue(&t->cancel, &iscanceled);
-	if (iscanceled) sem_trywait(&t->cancel);
-	if (t->stoprq) break;
-	if (!setjmp(panicjmp))
+	currentJob = JobQueue_dequeue(jobQueue);
+	int stopped = 0;
+	sem_getvalue(&t->stop, &stopped);
+	if (stopped) break;
+	if (!currentJob) continue;
+	pthread_mutex_lock(&currentJob->lock);
+	if (currentJob->hasCompleted)
 	{
+	    currentJob->pthrno = t->pthrno;
 #ifdef HAVE_UCONTEXT
-	    if (!t->job->async) t->job->proc(t->job->arg);
-	    else if (t->job->task)
+	    if (!currentJob->async) currentJob->proc(currentJob->arg);
+	    else if (currentJob->task)
 	    {
-		swapcontext(&t->job->caller, &t->job->task->resume);
+		swapcontext(&currentJob->caller, &currentJob->task->resume);
 	    }
 	    else
 	    {
 		getcontext(&t->context);
-		t->context.uc_stack.ss_sp = t->job->stack;
+		if (!currentJob->stack) currentJob->stack = StackMgr_getStack();
+		t->context.uc_stack.ss_sp = currentJob->stack;
 		t->context.uc_stack.ss_size = StackMgr_size();
-		t->context.uc_link = &t->job->caller;
+		t->context.uc_link = 0;
 		makecontext(&t->context, runThreadJob, 0);
-		swapcontext(&t->job->caller, &t->context);
+		swapcontext(&currentJob->caller, &t->context);
 	    }
 #else
-	    t->job->proc(t->job->arg);
+	    currentJob->proc(currentJob->arg);
 #endif
 	}
-	else t->job->panicmsg = panicmsg;
-	PSC_Service_runOnThread(t->job->thrno, threadJobDone, t);
-	pthread_mutex_unlock(&t->lock);
+	currentJob->pthrno = -1;
+	PSC_Service_runOnThread(currentJob->thrno, threadJobDone, currentJob);
+	pthread_mutex_unlock(&currentJob->lock);
+	currentJob = 0;
     }
 
-    pthread_mutex_unlock(&t->lock);
+    PSC_Service_runOnThread(-1, workerDone, t);
     return 0;
 }
 
 SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
-	PSC_ThreadProc proc, void *arg, int timeoutTicks)
+	PSC_ThreadProc proc, void *arg, int timeoutMs)
 {
     PSC_ThreadJob *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
+    if (pthread_mutex_init(&self->lock, 0) != 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot create thread job lock");
+	free(self);
+	return 0;
+    }
+    pthread_mutex_lock(&self->lock);
     self->proc = proc;
     self->arg = arg;
     self->finished = PSC_Event_create(self);
-    self->timeoutTicks = timeoutTicks;
+    self->timeoutMs = timeoutMs;
     self->hasCompleted = 1;
+    self->pthrno = -1;
     return self;
 }
 
@@ -238,6 +334,7 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 #ifdef HAVE_UCONTEXT
     StackMgr_returnStack(self->stack);
 #endif
+    pthread_mutex_destroy(&self->lock);
     PSC_Timer_destroy(self->timeout);
     PSC_Event_destroy(self->finished);
     free(self);
@@ -245,10 +342,8 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 
 SOEXPORT int PSC_ThreadJob_canceled(void)
 {
-    if (!currentThread->job->hasCompleted) return 1;
-    int rc = 0;
-    sem_getvalue(&currentThread->cancel, &rc);
-    return rc;
+    if (!currentJob) return 1;
+    return !PSC_ThreadJob_hasCompleted(currentJob);
 }
 
 SOEXPORT int PSC_AsyncTask_awaitIsBlocking(void)
@@ -274,7 +369,7 @@ SOEXPORT PSC_AsyncTask *PSC_AsyncTask_create(PSC_AsyncTaskJob job)
 SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
 {
     self->thread = currentThread;
-    self->threadJob = currentThread->job;
+    self->threadJob = currentJob;
     self->threadJob->task = self;
     self->arg = arg;
 
@@ -286,14 +381,27 @@ SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
     else
 #endif
     {
+	if (sem_init(&self->complete, 0, 0) != 0)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot create semaphore "
+		    "for async task, skipping execution!");
+	    free(self);
+	    return 0;
+	}
 	PSC_Service_runOnThread(self->threadJob->thrno,
-		threadJobDone, self->thread);
-	pthread_mutex_unlock(&currentThread->lock);
-	sem_wait(&currentThread->start);
-	pthread_mutex_lock(&currentThread->lock);
+		threadJobDone, self->threadJob);
+	pthread_mutex_unlock(&self->threadJob->lock);
+	sem_wait(&self->complete);
+	pthread_mutex_lock(&self->threadJob->lock);
     }
     void *result = self->result;
     self->threadJob->task = 0;
+#ifdef HAVE_UCONTEXT
+    if (!self->threadJob->async)
+#endif
+    {
+	sem_destroy(&self->complete);
+    }
     free(self);
     return result;
 }
@@ -306,118 +414,30 @@ SOEXPORT void *PSC_AsyncTask_arg(PSC_AsyncTask *self)
 SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 {
     self->result = result;
-#ifdef HAVE_UCONTEXT
-    if (self->threadJob->async)
+    if (self->threadJob->timeout)
     {
-	pthread_mutex_lock(&self->thread->lock);
-	if (self->thread->job)
-	{
-	    PSC_Queue_enqueue(self->thread->finishedTasks, self->threadJob, 0);
-	    pthread_mutex_unlock(&self->thread->lock);
-	    return;
-	}
-	PSC_List_remove(self->thread->waitingTasks, self->threadJob);
-	startThreadJob(self->thread, self->threadJob);
-	pthread_mutex_unlock(&self->thread->lock);
+	PSC_Timer_start(self->threadJob->timeout, 0);
     }
+#ifdef HAVE_UCONTEXT
+    if (self->threadJob->async) JobQueue_enqueue(jobQueue, self->threadJob);
     else
 #endif
     {
-	if (self->threadJob->timeout)
-	{
-	    PSC_Timer_setMs(self->threadJob->timeout,
-		    500 * self->threadJob->timeoutTicks);
-	    PSC_Timer_start(self->threadJob->timeout, 0);
-	}
-	pthread_mutex_lock(&self->thread->lock);
-	sem_post(&self->thread->start);
-	pthread_mutex_unlock(&self->thread->lock);
+	sem_post(&self->complete);
     }
+    pthread_mutex_unlock(&self->threadJob->lock);
 }
 
 static void stopThreads(int nthr)
 {
     for (int i = 0; i < nthr; ++i)
     {
-	if (pthread_kill(threads[i].handle, 0) >= 0)
+	if (threads[i].pthrno >= 0)
 	{
-	    if (pthread_mutex_trylock(&threads[i].lock) != 0)
-	    {
-		pthread_kill(threads[i].handle, SIGUSR1);
-		pthread_mutex_lock(&threads[i].lock);
-	    }
-	    threads[i].stoprq = 1;
-	    pthread_mutex_unlock(&threads[i].lock);
-	    sem_post(&threads[i].start);
+	    sem_post(&threads[i].stop);
+	    pthread_kill(threads[i].handle, SIGUSR1);
 	}
-	pthread_join(threads[i].handle, 0);
-	sem_destroy(&threads[i].cancel);
-	sem_destroy(&threads[i].start);
-	pthread_mutex_destroy(&threads[i].lock);
-#ifdef HAVE_UCONTEXT
-	PSC_List_destroy(threads[i].waitingTasks);
-	PSC_Queue_destroy(threads[i].finishedTasks);
-#endif
     }
-}
-
-static int enqueueJob(PSC_ThreadJob *job)
-{
-    int rc = -1;
-    pthread_mutex_lock(&queuelock);
-    if (!queueAvail) goto done;
-    rc = 0;
-    jobQueue[nextIdx++] = job;
-    --queueAvail;
-    if (nextIdx == queuesize) nextIdx = 0;
-done:
-    pthread_mutex_unlock(&queuelock);
-    return rc;
-}
-
-static PSC_ThreadJob *dequeueJob(void)
-{
-    PSC_ThreadJob *job = 0;
-    pthread_mutex_lock(&queuelock);
-    while (!job)
-    {
-	if (queueAvail == queuesize) break;
-	job = jobQueue[lastIdx];
-	jobQueue[lastIdx++] = 0;
-	++queueAvail;
-	if (lastIdx == queuesize) lastIdx = 0;
-    }
-    pthread_mutex_unlock(&queuelock);
-    return job;
-}
-
-static Thread *availableThread(void)
-{
-    Thread *fallback = 0;
-    for (int i = 0; i < nthreads; ++i)
-    {
-	if (pthread_mutex_trylock(&threads[i].lock) != 0) continue;
-	if (threads[i].job)
-	{
-	    pthread_mutex_unlock(&threads[i].lock);
-	    continue;
-	}
-#ifdef HAVE_UCONTEXT
-	if (PSC_List_size(threads[i].waitingTasks) > 0)
-	{
-	    if (!fallback) fallback = threads+i;
-	    else pthread_mutex_unlock(&threads[i].lock);
-	}
-	else
-	{
-	    if (fallback) pthread_mutex_unlock(&fallback->lock);
-	    return threads+i;
-	}
-#else
-	return threads+i;
-#endif
-    }
-    return fallback;
 }
 
 static void jobTimeout(void *receiver, void *sender, void *args)
@@ -428,84 +448,28 @@ static void jobTimeout(void *receiver, void *sender, void *args)
     PSC_ThreadPool_cancel(receiver);
 }
 
-static void setupjobtimeout(void *arg)
-{
-    PSC_ThreadJob *j = arg;
-    if (!j->timeout)
-    {
-	j->timeout = PSC_Timer_create();
-	PSC_Event_register(PSC_Timer_expired(j->timeout), j,
-		jobTimeout, 0);
-    }
-    PSC_Timer_setMs(j->timeout, 500 * j->timeoutTicks);
-    PSC_Timer_start(j->timeout, 0);
-}
-
-static void startThreadJob(Thread *t, PSC_ThreadJob *j)
-{
-    if (j->timeoutTicks) PSC_Service_runOnThread(j->thrno, setupjobtimeout, j);
-#ifdef HAVE_UCONTEXT
-    if (j->async && !j->stack) j->stack = StackMgr_getStack();
-#endif
-    t->job = j;
-    sem_post(&t->start);
-    pthread_mutex_unlock(&t->lock);
-}
-
 static void threadJobDone(void *arg)
 {
-    Thread *t = arg;
-    pthread_mutex_lock(&t->lock);
-#ifdef HAVE_UCONTEXT
-    int async = t->job->async;
-#endif
-    if (t->job->timeout) PSC_Timer_stop(t->job->timeout);
-    if (t->job->panicmsg)
+    PSC_ThreadJob *job = arg;
+    pthread_mutex_lock(&job->lock);
+    if (job->timeout) PSC_Timer_stop(job->timeout);
+    if (job->panicmsg)
     {
-	const char *msg = t->job->panicmsg;
-	PSC_ThreadJob_destroy(t->job);
-	t->job = 0;
-	pthread_mutex_unlock(&t->lock);
+	const char *msg = job->panicmsg;
+	pthread_mutex_unlock(&job->lock);
+	PSC_ThreadJob_destroy(job);
 	PSC_Service_panic(msg);
     }
-    PSC_AsyncTask *task = t->job->task;
-    if (task)
+    if (job->task)
     {
-#ifdef HAVE_UCONTEXT
-	if (async)
-	{
-	    PSC_List_append(t->waitingTasks, t->job, 0);
-	}
-	else
-#endif
-	{
-	    pthread_mutex_unlock(&t->lock);
-	    task->job(task);
-	    return;
-	}
+	job->task->job(job->task);
     }
     else
     {
-	PSC_Event_raise(t->job->finished, 0, t->job->arg);
-	PSC_ThreadJob_destroy(t->job);
+	PSC_Event_raise(job->finished, 0, job->arg);
+	pthread_mutex_unlock(&job->lock);
+	PSC_ThreadJob_destroy(job);
     }
-    t->job = 0;
-    PSC_ThreadJob *next = 0;
-#ifdef HAVE_UCONTEXT
-    if (async)
-    {
-	next = PSC_Queue_dequeue(t->finishedTasks);
-	if (next) PSC_List_remove(t->waitingTasks, next);
-	else next = dequeueJob();
-    }
-    else
-#endif
-    {
-	next = dequeueJob();
-    }
-    if (next) startThreadJob(t, next);
-    pthread_mutex_unlock(&t->lock);
-    if (task) task->job(task);
 }
 
 static void panicHandler(const char *msg)
@@ -598,6 +562,7 @@ SOEXPORT int PSC_ThreadPool_init(void)
 	nthreads = opts.defNThreads;
 #endif
     }
+    int queuesize;
     if (opts.queueLen)
     {
 	queuesize = opts.queueLen;
@@ -614,59 +579,33 @@ SOEXPORT int PSC_ThreadPool_init(void)
 
     threads = PSC_malloc(nthreads * sizeof *threads);
     memset(threads, 0, nthreads * sizeof *threads);
-    jobQueue = PSC_malloc(queuesize * sizeof *jobQueue);
-    memset(jobQueue, 0, queuesize * sizeof *jobQueue);
+    jobQueue = JobQueue_create(queuesize);
 
+    rthreads = 0;
     for (int i = 0; i < nthreads; ++i)
     {
-	if (pthread_mutex_init(&threads[i].lock, 0) != 0)
+	if (sem_init(&threads[i].stop, 0, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating mutex");
+	    PSC_Log_msg(PSC_L_ERROR,
+		    "threadpool: error creating semaphore");
 	    goto rollback;
-	}
-	if (sem_init(&threads[i].start, 0, 0) < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR,
-		    "threadpool: error creating semaphore");
-	    goto rollback_lock;
-	}
-	if (sem_init(&threads[i].cancel, 0, 0) < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR,
-		    "threadpool: error creating semaphore");
-	    goto rollback_start;
 	}
 	if (pthread_create(&threads[i].handle, 0, worker, threads+i) != 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "threadpool: error creating thread");
 	    goto rollback_cancel;
 	}
-	threads[i].stoprq = 0;
-#ifdef HAVE_UCONTEXT
-	threads[i].waitingTasks = PSC_List_create();
-	threads[i].finishedTasks = PSC_Queue_create();
-#endif
+	threads[i].pthrno = i;
+	++rthreads;
 	continue;
 
 rollback_cancel:
-	sem_destroy(&threads[i].cancel);
-rollback_start:
-	sem_destroy(&threads[i].start);
-rollback_lock:
-	pthread_mutex_destroy(&threads[i].lock);
+	sem_destroy(&threads[i].stop);
 rollback:
 	stopThreads(i);
 	goto done;
     }
     rc = 0;
-    queueAvail = queuesize;
-    nextIdx = 0;
-    lastIdx = 0;
-    if (pthread_mutex_init(&queuelock, 0) < 0)
-    {
-	stopThreads(nthreads);
-	rc = -1;
-    }
 
 done:
     if (sigprocmask(SIG_SETMASK, &mask, 0) < 0)
@@ -685,9 +624,8 @@ done:
     {
 	free(threads);
 	threads = 0;
-	free(jobQueue);
+	JobQueue_destroy(jobQueue);
 	jobQueue = 0;
-	queueAvail = 0;
     }
 
     return rc;
@@ -701,63 +639,33 @@ SOEXPORT int PSC_ThreadPool_active(void)
 SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 {
     job->thrno = PSC_Service_threadNo();
-    Thread *t = availableThread();
-    if (t)
+    int rc = JobQueue_enqueue(jobQueue, job);
+    if (rc == 0 && job->timeoutMs)
     {
-	startThreadJob(t, job);
-	return 0;
+	if (!job->timeout)
+	{
+	    job->timeout = PSC_Timer_create();
+	    PSC_Event_register(PSC_Timer_expired(job->timeout), job,
+		    jobTimeout, 0);
+	}
+	PSC_Timer_setMs(job->timeout, job->timeoutMs);
+	PSC_Timer_start(job->timeout, 0);
     }
-    return enqueueJob(job);
+    if (rc == 0) pthread_mutex_unlock(&job->lock);
+    return rc;
 }
 
 SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 {
+    pthread_mutex_lock(&job->lock);
     job->hasCompleted = 0;
-    if (job->task) return;
-
-    if (threads)
-    {
-	for (int i = 0; i < nthreads; ++i)
-	{
-	    if (threads[i].job == job)
-	    {
-		sem_post(&threads[i].cancel);
-		pthread_kill(threads[i].handle, SIGUSR1);
-		return;
-	    }
-	}
-    }
-    if (queueAvail != queuesize)
-    {
-	int i = lastIdx;
-	do
-	{
-	    if (jobQueue[i] == job)
-	    {
-		PSC_Event_raise(job->finished, 0, job->arg);
-		PSC_ThreadJob_destroy(job);
-		jobQueue[i] = 0;
-		return;
-	    }
-	    if (++i == queuesize) i = 0;
-	} while ( i != nextIdx);
-    }
+    if (job->pthrno >= 0) pthread_kill(threads[job->pthrno].handle, SIGUSR1);
+    pthread_mutex_unlock(&job->lock);
 }
 
 SOEXPORT void PSC_ThreadPool_done(void)
 {
     if (!threads) return;
     stopThreads(nthreads);
-    free(threads);
-    threads = 0;
-    pthread_mutex_destroy(&queuelock);
-    for (int i = 0; i < queuesize; ++i) PSC_ThreadJob_destroy(jobQueue[i]);
-    free(jobQueue);
-    jobQueue = 0;
-    queueAvail = 0;
-    PSC_Service_unregisterPanic(panicHandler);
-    mainthread = 0;
-#ifdef HAVE_UCONTEXT
-    StackMgr_clean();
-#endif
+    PSC_Service_shutdownLock();
 }

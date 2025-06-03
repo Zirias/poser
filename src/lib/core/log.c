@@ -127,7 +127,7 @@ SOEXPORT void PSC_Log_msg(PSC_LogLevel level, const char *message)
 	lja->writer = currentwriter;
 	lja->writerdata = writerdata;
 	strcpy(lja->message, message);
-	PSC_ThreadJob *job = PSC_ThreadJob_create(logmsgJobProc, lja, 8);
+	PSC_ThreadJob *job = PSC_ThreadJob_create(logmsgJobProc, lja, 4000);
 	PSC_ThreadPool_enqueue(job);
     }
     else currentwriter(level, message, writerdata);

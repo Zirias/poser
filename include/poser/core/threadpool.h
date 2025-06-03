@@ -58,13 +58,13 @@ typedef void (*PSC_AsyncTaskJob)(PSC_AsyncTask *task);
  * @memberof PSC_ThreadJob
  * @param proc the function to run on the worker thread
  * @param arg the data to work on
- * @param timeoutTicks if non-zero, automatically cancel the job after this
- *                     many "ticks" (multiples of 500ms)
- * @returns a newly created thread job
+ * @param timeoutMs if non-zero, automatically cancel the job after this many
+ *                  milliseconds passed
+ * @returns a newly created thread job, or NULL on error
  */
 DECLEXPORT PSC_ThreadJob *
-PSC_ThreadJob_create(PSC_ThreadProc proc, void *arg, int timeoutTicks)
-    ATTR_NONNULL((1)) ATTR_RETNONNULL;
+PSC_ThreadJob_create(PSC_ThreadProc proc, void *arg, int timeoutMs)
+    ATTR_NONNULL((1));
 
 /** Enable private stack for the job,
  * Enable creating/using a private stack for this job. If not enabled,
