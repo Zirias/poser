@@ -797,7 +797,7 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 	    if (sigaction(signo, &sa, 0) < 0) return;
 	}
 	EV_SET(addChange(), signo, EVFILT_SIGNAL, EV_ADD, 0, 0,
-		(void *)handler);
+		(void *)(uintptr_t)handler);
     }
     else if (signo == SIGTERM || signo == SIGINT || signo == SIGCHLD)
     {
@@ -1105,7 +1105,8 @@ static int processEvents(void)
 		    default:
 			break;
 		}
-		PSC_SignalHandler handler = (PSC_SignalHandler)ev[i].udata;
+		PSC_SignalHandler handler =
+		    (PSC_SignalHandler)(uintptr_t)ev[i].udata;
 		if (handler) handler(ev[i].ident);
 		break;
 
