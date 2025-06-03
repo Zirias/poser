@@ -47,6 +47,7 @@ struct PSC_Process
     PSC_Connection *streams[3];
     int execError;
     int argc;
+    int thrno;
     pid_t pid;
     PSC_EAProcessDone doneArgs;
     PSC_StreamAction actions[3];
@@ -215,36 +216,56 @@ static void streamClosed(void *receiver, void *sender, void *args)
     tryDestroy(self);
 }
 
+struct endprocargs
+{
+    PSC_Process *proc;
+    pid_t pid;
+    int signo;
+    int status;
+};
+
+static void endprocess(void *arg)
+{
+    struct endprocargs *epa = arg;
+
+    if (epa->pid != epa->proc->pid) goto done;
+
+    PSC_Timer_destroy(epa->proc->killtimer);
+    epa->proc->killtimer = 0;
+
+    if (epa->proc->streams[PSC_ST_STDIN])
+    {
+	PSC_Connection_close(epa->proc->streams[PSC_ST_STDIN], 0);
+    }
+
+    if (epa->signo)
+    {
+	epa->proc->doneArgs.status = CS_SIGNALED;
+	epa->proc->doneArgs.exitval = epa->signo;
+    }
+    else
+    {
+	epa->proc->doneArgs.status = CS_EXITED;
+	epa->proc->doneArgs.exitval = epa->status;
+    }
+
+    tryDestroy(epa->proc);
+done:
+    free(epa);
+}
+
 static void childExited(void *receiver, void *sender, void *args)
 {
     (void)sender;
 
-    PSC_Process *self = receiver;
     PSC_EAChildExited *ea = args;
+    struct endprocargs *epa = PSC_malloc(sizeof *epa);
+    epa->proc = receiver;
+    epa->pid = PSC_EAChildExited_pid(ea);
+    epa->signo = PSC_EAChildExited_signal(ea);
+    epa->status = PSC_EAChildExited_status(ea);
 
-    if (PSC_EAChildExited_pid(ea) != self->pid) return;
-
-    PSC_Timer_destroy(self->killtimer);
-    self->killtimer = 0;
-
-    if (self->streams[PSC_ST_STDIN])
-    {
-	PSC_Connection_close(self->streams[PSC_ST_STDIN], 0);
-    }
-
-    int signo = PSC_EAChildExited_signal(ea);
-    if (signo)
-    {
-	self->doneArgs.status = CS_SIGNALED;
-	self->doneArgs.exitval = signo;
-    }
-    else
-    {
-	self->doneArgs.status = CS_EXITED;
-	self->doneArgs.exitval = PSC_EAChildExited_status(ea);
-    }
-
-    tryDestroy(self);
+    PSC_Service_runOnThread(epa->proc->thrno, endprocess, epa);
 }
 
 static int runprocess(PSC_Process *self,
@@ -252,6 +273,7 @@ static int runprocess(PSC_Process *self,
 	const char *path, PSC_ProcessMain main)
 {
     if (self->pid) return -1;
+    self->thrno = PSC_Service_threadNo();
 
     int rc = -1;
     int pipefd[][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
@@ -262,8 +284,13 @@ static int runprocess(PSC_Process *self,
 		&& (!cb || createPipe(pipefd[i], stdfddir[i]) < 0)) goto done;
     }
 
+    PSC_Service_lockChildren();
     pid_t pid = fork();
-    if (pid < 0) goto done;
+    if (pid < 0)
+    {
+	PSC_Service_unlockChildren();
+	goto done;
+    }
 
     if (pid == 0)
     {
@@ -283,6 +310,7 @@ static int runprocess(PSC_Process *self,
     self->pid = pid;
     self->doneArgs.status = CS_RUNNING;
     PSC_Event_register(PSC_Service_childExited(), self, childExited, pid);
+    PSC_Service_unlockChildren();
 
     ConnOpts opts;
     memset(&opts, 0, sizeof opts);
