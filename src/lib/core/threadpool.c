@@ -69,8 +69,12 @@ struct PSC_ThreadJob
     PSC_Timer *timeout;
     PSC_AsyncTask *task;
     const char *panicmsg;
+#ifdef THRP_NO_ATOMICS
     pthread_mutex_t lock;
     int hasCompleted;
+#else
+    atomic_int hasCompleted;
+#endif
     int pthrno;
     int thrno;
     unsigned timeoutMs;
@@ -302,7 +306,6 @@ static int checkpanic(void)
 	    currentJob->panicmsg = panicmsg;
 	    PSC_Service_runOnThread(currentJob->thrno,
 		    threadJobDone, currentJob);
-	    pthread_mutex_unlock(&currentJob->lock);
 	}
 	return 1;
     }
@@ -329,9 +332,16 @@ static void *worker(void *arg)
 	sem_getvalue(&t->stop, &stopped);
 	if (stopped) break;
 	if (!currentJob) continue;
+#ifdef THRP_NO_ATOMICS
 	pthread_mutex_lock(&currentJob->lock);
 	if (currentJob->hasCompleted)
 	{
+	    pthread_mutex_unlock(&currentJob->lock);
+#else
+	if (atomic_load_explicit(&currentJob->hasCompleted,
+		    memory_order_consume))
+	{
+#endif
 	    currentJob->pthrno = t->pthrno;
 #ifdef HAVE_UCONTEXT
 	    if (!currentJob->async) currentJob->proc(currentJob->arg);
@@ -353,9 +363,11 @@ static void *worker(void *arg)
 	    currentJob->proc(currentJob->arg);
 #endif
 	}
+#ifdef THRP_NO_ATOMICS
+	else pthread_mutex_unlock(&currentJob->lock);
+#endif
 	currentJob->pthrno = -1;
 	PSC_Service_runOnThread(currentJob->thrno, threadJobDone, currentJob);
-	pthread_mutex_unlock(&currentJob->lock);
 	currentJob = 0;
     }
 
@@ -368,13 +380,14 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
 {
     PSC_ThreadJob *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
+#ifdef THRP_NO_ATOMICS
     if (pthread_mutex_init(&self->lock, 0) != 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot create thread job lock");
 	free(self);
 	return 0;
     }
-    pthread_mutex_lock(&self->lock);
+#endif
     self->proc = proc;
     self->arg = arg;
     self->finished = PSC_Event_create(self);
@@ -409,7 +422,9 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
 #ifdef HAVE_UCONTEXT
     StackMgr_returnStack(self->stack);
 #endif
+#ifdef THRP_NO_ATOMICS
     pthread_mutex_destroy(&self->lock);
+#endif
     PSC_Timer_destroy(self->timeout);
     PSC_Event_destroy(self->finished);
     free(self);
@@ -465,9 +480,7 @@ SOEXPORT void *PSC_AsyncTask_await(PSC_AsyncTask *self, void *arg)
 	}
 	PSC_Service_runOnThread(self->threadJob->thrno,
 		threadJobDone, self->threadJob);
-	pthread_mutex_unlock(&self->threadJob->lock);
 	sem_wait(&self->complete);
-	pthread_mutex_lock(&self->threadJob->lock);
     }
     void *result = self->result;
     self->threadJob->task = 0;
@@ -500,7 +513,6 @@ SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
     {
 	sem_post(&self->complete);
     }
-    pthread_mutex_unlock(&self->threadJob->lock);
 }
 
 static void stopThreads(int nthr)
@@ -526,12 +538,10 @@ static void jobTimeout(void *receiver, void *sender, void *args)
 static void threadJobDone(void *arg)
 {
     PSC_ThreadJob *job = arg;
-    pthread_mutex_lock(&job->lock);
     if (job->timeout) PSC_Timer_stop(job->timeout);
     if (job->panicmsg)
     {
 	const char *msg = job->panicmsg;
-	pthread_mutex_unlock(&job->lock);
 	PSC_ThreadJob_destroy(job);
 	PSC_Service_panic(msg);
     }
@@ -542,7 +552,6 @@ static void threadJobDone(void *arg)
     else
     {
 	PSC_Event_raise(job->finished, 0, job->arg);
-	pthread_mutex_unlock(&job->lock);
 	PSC_ThreadJob_destroy(job);
     }
 }
@@ -726,16 +735,19 @@ SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 	PSC_Timer_setMs(job->timeout, job->timeoutMs);
 	PSC_Timer_start(job->timeout, 0);
     }
-    if (rc == 0) pthread_mutex_unlock(&job->lock);
     return rc;
 }
 
 SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 {
+#ifdef THRP_NO_ATOMICS
     pthread_mutex_lock(&job->lock);
     job->hasCompleted = 0;
-    if (job->pthrno >= 0) pthread_kill(threads[job->pthrno].handle, SIGUSR1);
     pthread_mutex_unlock(&job->lock);
+#else
+    atomic_store_explicit(&job->hasCompleted, 0, memory_order_release);
+#endif
+    if (job->pthrno >= 0) pthread_kill(threads[job->pthrno].handle, SIGUSR1);
 }
 
 SOEXPORT void PSC_ThreadPool_done(void)
