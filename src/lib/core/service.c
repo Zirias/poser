@@ -1381,6 +1381,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 #endif
 	sigaddset(&sigblockmask, SIGALRM);
 	sigaddset(&sigblockmask, SIGCHLD);
+	sigaddset(&sigblockmask, SIGPIPE);
 	if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
 	{
 	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
