@@ -17,6 +17,21 @@
 #include <string.h>
 #include <unistd.h>
 
+#undef THRP_NO_ATOMICS
+#undef THRP_ATOMIC
+#ifdef __STDC_NO_ATOMICS__
+#  define THRP_NO_ATOMICS
+#  define THRP_ATOMIC
+#else
+#  include <stdatomic.h>
+#  if ATOMIC_POINTER_LOCK_FREE != 2
+#    define THRP_NO_ATOMICS
+#    define THRP_ATOMIC
+#  else
+#    define THRP_ATOMIC _Atomic
+#  endif
+#endif
+
 #ifdef HAVE_UCONTEXT
 #  include "stackmgr.h"
 #  include <ucontext.h>
@@ -81,12 +96,22 @@ typedef struct PSC_ThreadOpts
 typedef struct JobQueue
 {
     unsigned sz;
+#ifdef THRP_NO_ATOMICS
     unsigned avail;
     unsigned enqpos;
     unsigned deqpos;
     pthread_mutex_t lock;
+#else
+    char _pad0[64 - sizeof(unsigned)];
+    atomic_uint avail;
+    char _pad1[64 - sizeof(unsigned)];
+    atomic_uint enqpos;
+    char _pad2[64 - sizeof(unsigned)];
+    atomic_uint deqpos;
+    char _pad3[64 - sizeof(unsigned)];
+#endif
     sem_t count;
-    PSC_ThreadJob *jobs[];
+    PSC_ThreadJob *THRP_ATOMIC jobs[];
 } JobQueue;
 
 typedef struct Thread
@@ -156,15 +181,20 @@ static JobQueue *JobQueue_create(unsigned sz)
 	free(self);
 	return 0;
     }
+#ifdef THRP_NO_ATOMICS
     if (pthread_mutex_init(&self->lock, 0) != 0)
     {
 	sem_destroy(&self->count);
 	free(self);
 	return 0;
     }
+#else
+    memset(self->jobs, 0, sz * sizeof *self->jobs);
+#endif
     return self;
 }
 
+#ifdef THRP_NO_ATOMICS
 static int JobQueue_enqueue(JobQueue *self, PSC_ThreadJob *job)
 {
     pthread_mutex_lock(&self->lock);
@@ -191,11 +221,56 @@ static PSC_ThreadJob *JobQueue_dequeue(JobQueue *self)
     pthread_mutex_unlock(&self->lock);
     return job;
 }
+#else
+static int JobQueue_enqueue(JobQueue *self, PSC_ThreadJob *job)
+{
+    unsigned avail = atomic_load_explicit(&self->avail, memory_order_consume);
+    do
+    {
+	if (!avail) return -1;
+    } while (!atomic_compare_exchange_strong_explicit(&self->avail, &avail,
+		avail - 1, memory_order_release, memory_order_consume));
+
+    unsigned next;
+    unsigned enqpos = atomic_load_explicit(&self->enqpos,
+	    memory_order_consume);
+    do
+    {
+	next = enqpos + 1;
+	if (next == self->sz) next = 0;
+    } while (!atomic_compare_exchange_strong_explicit(&self->enqpos, &enqpos,
+		next, memory_order_release, memory_order_consume));
+    atomic_store_explicit(self->jobs + enqpos, job, memory_order_release);
+    sem_post(&self->count);
+    return 0;
+}
+
+static PSC_ThreadJob *JobQueue_dequeue(JobQueue *self)
+{
+    if (sem_wait(&self->count) < 0) return 0;
+    unsigned next;
+    unsigned deqpos = atomic_load_explicit(&self->deqpos,
+	    memory_order_consume);
+    do
+    {
+	next = deqpos + 1;
+	if (next == self->sz) next = 0;
+    } while (!atomic_compare_exchange_strong_explicit(&self->deqpos, &deqpos,
+		next, memory_order_release, memory_order_consume));
+    PSC_ThreadJob *job;
+    while (!(job = atomic_exchange_explicit(self->jobs + deqpos, 0,
+		    memory_order_relaxed))) ;
+    atomic_fetch_add_explicit(&self->avail, 1, memory_order_release);
+    return job;
+}
+#endif
 
 static void JobQueue_destroy(JobQueue *self)
 {
     if (!self) return;
+#ifdef THRP_NO_ATOMICS
     pthread_mutex_destroy(&self->lock);
+#endif
     sem_destroy(&self->count);
     free(self);
 }
