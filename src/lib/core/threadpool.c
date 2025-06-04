@@ -72,10 +72,11 @@ struct PSC_ThreadJob
 #ifdef THRP_NO_ATOMICS
     pthread_mutex_t lock;
     int hasCompleted;
+    int pthrno;
 #else
     atomic_int hasCompleted;
+    atomic_int pthrno;
 #endif
-    int pthrno;
     int thrno;
     unsigned timeoutMs;
 #ifdef HAVE_UCONTEXT
@@ -336,13 +337,15 @@ static void *worker(void *arg)
 	pthread_mutex_lock(&currentJob->lock);
 	if (currentJob->hasCompleted)
 	{
+	    currentJob->pthrno = t->pthrno;
 	    pthread_mutex_unlock(&currentJob->lock);
 #else
 	if (atomic_load_explicit(&currentJob->hasCompleted,
 		    memory_order_consume))
 	{
+	    atomic_store_explicit(&currentJob->pthrno, t->pthrno,
+		    memory_order_release);
 #endif
-	    currentJob->pthrno = t->pthrno;
 #ifdef HAVE_UCONTEXT
 	    if (!currentJob->async) currentJob->proc(currentJob->arg);
 	    else if (currentJob->task)
@@ -362,11 +365,18 @@ static void *worker(void *arg)
 #else
 	    currentJob->proc(currentJob->arg);
 #endif
+#ifdef THRP_NO_ATOMICS
+	    pthread_mutex_lock(&currentJob->lock);
+	    currentJob->pthrno = -1;
+	    pthread_mutex_unlock(&currentJob->lock);
+#else
+	    atomic_store_explicit(&currentJob->pthrno, -1,
+		    memory_order_release);
+#endif
 	}
 #ifdef THRP_NO_ATOMICS
 	else pthread_mutex_unlock(&currentJob->lock);
 #endif
-	currentJob->pthrno = -1;
 	PSC_Service_runOnThread(currentJob->thrno, threadJobDone, currentJob);
 	currentJob = 0;
     }
@@ -743,11 +753,17 @@ SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 #ifdef THRP_NO_ATOMICS
     pthread_mutex_lock(&job->lock);
     job->hasCompleted = 0;
+    if (job->pthrno >= 0) pthread_kill(threads[job->pthrno].handle, SIGUSR1);
     pthread_mutex_unlock(&job->lock);
 #else
     atomic_store_explicit(&job->hasCompleted, 0, memory_order_release);
+    int pthrno;
+    if ((pthrno = atomic_load_explicit(
+		    &job->pthrno, memory_order_consume)) >= 0)
+    {
+	pthread_kill(threads[pthrno].handle, SIGUSR1);
+    }
 #endif
-    if (job->pthrno >= 0) pthread_kill(threads[job->pthrno].handle, SIGUSR1);
 }
 
 SOEXPORT void PSC_ThreadPool_done(void)
