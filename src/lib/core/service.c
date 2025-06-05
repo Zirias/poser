@@ -1511,7 +1511,7 @@ static int initCommandQueue(SvcCommandQueue *q)
     q->first = 0;
     q->last = 0;
     q->mustwake = 1;
-    it (pthread_mutex_init(&q->lock, 0) != 0)
+    if (pthread_mutex_init(&q->lock, 0) != 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "service: error creating command lock");
 	q->commandpipe[0] = -1;
