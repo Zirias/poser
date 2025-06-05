@@ -1514,8 +1514,12 @@ static int initCommandQueue(SvcCommandQueue *q)
     if (pthread_mutex_init(&q->lock, 0) != 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "service: error creating command lock");
+#  ifdef HAVE_EVENTFD
+	q->efd = -1;
+#  elif !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE)
 	q->commandpipe[0] = -1;
 	q->commandpipe[1] = -1;
+#  endif
 	return -1;
     }
 #else
