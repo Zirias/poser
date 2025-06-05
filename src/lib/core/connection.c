@@ -233,10 +233,11 @@ static void dohandshake(PSC_Connection *self)
 	}
 	else
 	{
+	    char errstr[256];
+	    ERR_error_string_n(ERR_get_error(), errstr, sizeof errstr);
 	    PSC_Log_fmt(PSC_L_ERROR,
 		    "connection: TLS handshake failed with %s: %s",
-		    PSC_Connection_remoteAddr(self),
-		    ERR_error_string(ERR_get_error(), 0));
+		    PSC_Connection_remoteAddr(self), errstr);
 	    PSC_Timer_destroy(self->tlsConnectTimer);
 	    self->tlsConnectTimer = 0;
 	    PSC_Connection_close(self, 1);
