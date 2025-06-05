@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <setjmp.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
@@ -45,12 +46,21 @@
 #  define WITH_SELECT
 #endif
 
+#ifdef HAVE_EVPORTS
+#  undef HAVE_EVENTFD
+#endif
+
 #ifdef HAVE_KQUEUE
+#  undef HAVE_EVENTFD
 #  undef HAVE_SIGNALFD
 #endif
 
 #if !defined(HAVE_KQUEUE) && !defined(HAVE_SIGNALFD)
 #  define WITH_SIGHDL
+#endif
+
+#ifdef HAVE_EVENTFD
+#  include <sys/eventfd.h>
 #endif
 
 #ifdef HAVE_SIGNALFD
@@ -167,6 +177,8 @@ typedef struct SvcCommandQueue
     int *ep;
 #elif defined(HAVE_KQUEUE)
     int *kq;
+#elif defined(HAVE_EVENTFD)
+    int efd;
 #else
     int commandpipe[2];
 #endif
@@ -390,7 +402,14 @@ static void enqueueCommand(SvcCommandQueue *q,
 	    memory_order_release);
 #endif
 
-#ifdef HAVE_EVPORTS
+#ifdef HAVE_EVENTFD
+    static const uint64_t d = 1;
+    if (mustwake && write(q->efd, &d, sizeof d) != sizeof d)
+    {
+	PSC_Log_msg(PSC_L_WARNING,
+		"service: error notifying thread of new commands");
+    }
+#elif defined(HAVE_EVPORTS)
     if (mustwake && port_send(*q->ep, 1, 0) < 0)
     {
 	PSC_Log_msg(PSC_L_WARNING,
@@ -1504,7 +1523,17 @@ static int initCommandQueue(SvcCommandQueue *q)
     atomic_store_explicit(&q->last, 0, memory_order_release);
     atomic_store_explicit(&q->mustwake, 1, memory_order_release);
 #endif
-#ifdef HAVE_EVPORTS
+#ifdef HAVE_EVENTFD
+    if ((q->efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) < 0)
+    {
+#  ifdef SVC_NO_ATOMICS
+	pthread_mutex_destroy(&q->lock);
+#  endif
+	return -1;
+    }
+    PSC_Service_registerRead(q->efd);
+    PSC_Event_register(&svc->readyRead, 0, readCommandPipe, q->efd);
+#elif defined(HAVE_EVPORTS)
     q->ep = &svc->epfd;
 #elif defined(HAVE_KQUEUE)
     q->kq = &svc->kqfd;
@@ -1535,8 +1564,20 @@ static int initCommandQueue(SvcCommandQueue *q)
 
 static void destroyCommandQueue(SvcCommandQueue *q)
 {
-#if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
+#ifdef HAVE_EVENTFD
+    if (q->efd >= 0)
+    {
+#  ifdef SVC_NO_ATOMICS
+	pthread_mutex_destroy(&q->lock);
+#  endif
+	close(q->efd);
+    }
+#elif defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
+#  ifdef SVC_NO_ATOMICS
+    pthread_mutex_destroy(&q->lock);
+#  else
     (void)q;
+#  endif
 #else
     if (q->commandpipe[0] >= 0)
     {
@@ -1796,6 +1837,16 @@ static int serviceLoop(ServiceLoopFlags flags)
 		"timerfd"
 #else
 		"setitimer"
+#endif
+		", user events: "
+#ifdef HAVE_EVPORTS
+		"event ports"
+#elif defined(HAVE_KQUEUE)
+		"kqueue"
+#elif defined(HAVE_EVENTFD)
+		"eventfd"
+#else
+		"self-pipe"
 #endif
 		")", eventBackendInfo());
 

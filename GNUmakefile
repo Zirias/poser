@@ -14,6 +14,10 @@
 #			(default: off)
 # WITHOUT_KQUEUE	Disable using kqueue() over select() even if available
 #			(default: off)
+# WITH_EVENTFD		Force using eventfd() for waking up other worker
+#			threads, even if not detected (default: off)
+# WITHOUT_EVENTFD	Disable using eventfd() even if available
+#			(default: off)
 # WITH_SIGNALFD		Force using signalfd() for handling signals even if not
 # 			detected (default: off)
 # WITHOUT_SIGNALFD	Disable using signalfd() even if available
@@ -30,10 +34,10 @@
 # 			(default: empty)
 
 BOOLCONFVARS_ON=	WITH_ATOMICS WITH_TLS
-BOOLCONFVARS_OFF=	WITH_POLL WITH_EVPORTS WITH_EPOLL WITH_KQUEUE \
-			WITH_SIGNALFD WITH_TIMERFD \
-			WITHOUT_EVPORTS WITHOUT_EPOLL WITHOUT_KQUEUE \
-			WITHOUT_SIGNALFD WITHOUT_TIMERFD
+BOOLCONFVARS_OFF=	WITH_EVENTFD WITH_EVPORTS WITH_EPOLL WITH_KQUEUE \
+			WITH_POLL WITH_SIGNALFD WITH_TIMERFD \
+			WITHOUT_EVENTFD WITHOUT_EVPORTS WITHOUT_EPOLL \
+			WITHOUT_KQUEUE WITHOUT_SIGNALFD WITHOUT_TIMERFD
 SINGLECONFVARS=		FD_SETSIZE OPENSSLINC OPENSSLLIB
 
 DEFAULT_FD_SETSIZE=	4096

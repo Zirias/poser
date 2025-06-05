@@ -41,6 +41,9 @@ XXHX86_FUNC=			XXH_featureTest
 XXHX86_CFLAGS=			-I./$(posercore_SRCDIR)/contrib/xxHash
 XXHX86_HEADERS=			xxh_x86dispatch.c
 XXHX86_ARGS=			void
+EVENTFD_FUNC=			eventfd
+EVENTFD_HEADERS=		sys/eventfd.h
+EVENTFD_ARGS=			unsigned, int
 EVPORTS_FUNC=			port_create
 EVPORTS_HEADERS=		port.h
 EVPORTS_ARGS=			void
@@ -62,6 +65,10 @@ SIGNALFD_ARGS=			int, const sigset_t *, int
 TIMERFD_FUNC=			timerfd_create
 TIMERFD_HEADERS=		sys/timerfd.h
 TIMERFD_ARGS=			int, int
+
+ifneq ($(WITHOUT_EVENTFD),1)
+posercore_PRECHECK+=		EVENTFD
+endif
 
 ifneq ($(WITHOUT_EVPORTS),1)
 posercore_PRECHECK+=		EVPORTS
@@ -196,6 +203,15 @@ ifneq ($(WITH_POLL),1)
     ifneq ($(posercore_HAVE_KQUEUE),1)
 posercore_DEFINES+=		-DFD_SETSIZE=$(FD_SETSIZE)
     endif
+  endif
+endif
+
+ifeq ($(WITH_EVENTFD),1)
+  ifeq ($(WITHOUT_EVENTFD),1)
+    $(error Cannot set both WITH_EVENTFD and WITHOUT_EVENTFD)
+  endif
+  ifneq ($(posercore_HAVE_EVENTFD),1)
+    $(error Requested eventfd (WITH_EVENTFD), but not found)
   endif
 endif
 
