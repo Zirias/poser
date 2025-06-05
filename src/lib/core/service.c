@@ -25,7 +25,7 @@
 #include <unistd.h>
 
 #undef SVC_NO_ATOMICS
-#ifdef __STDC_NO_ATOMICS__
+#if defined(NO_ATOMICS) || defined(__STDC_NO_ATOMICS__)
 #  define SVC_NO_ATOMICS
 #else
 #  include <stdatomic.h>

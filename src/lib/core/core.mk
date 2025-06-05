@@ -154,6 +154,10 @@ posercore_PRECFLAGS+=		-D__EXTENSIONS__
 posercore_LIBS+=		socket
 endif
 
+ifneq ($(WITH_ATOMICS),1)
+posercore_DEFINES+=		-DNO_ATOMICS
+endif
+
 ifeq ($(WITH_POLL),1)
 posercore_DEFINES+=		-DWITH_POLL
 endif

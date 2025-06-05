@@ -1,5 +1,7 @@
+# WITH_ATOMICS		If possible, use atomic operations to avoid locks
+#			(default: on)
 # WITH_EVPORTS		Force using event ports over select() even if not
-# 			detected (default: off)
+#			detected (default: off)
 # WITH_EPOLL		Force using epoll() over select() even if not detected
 #			(default: off)
 # WITH_KQUEUE		Force using kqueue() over select() even if not detected
@@ -27,7 +29,7 @@
 # OPENSSLLIB		Path to OpenSSL libraries, overriding pkgconfig
 # 			(default: empty)
 
-BOOLCONFVARS_ON=	WITH_TLS
+BOOLCONFVARS_ON=	WITH_ATOMICS WITH_TLS
 BOOLCONFVARS_OFF=	WITH_POLL WITH_EVPORTS WITH_EPOLL WITH_KQUEUE \
 			WITH_SIGNALFD WITH_TIMERFD \
 			WITHOUT_EVPORTS WITHOUT_EPOLL WITHOUT_KQUEUE \

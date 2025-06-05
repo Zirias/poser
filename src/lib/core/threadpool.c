@@ -19,7 +19,7 @@
 
 #undef THRP_NO_ATOMICS
 #undef THRP_ATOMIC
-#ifdef __STDC_NO_ATOMICS__
+#if defined(NO_ATOMICS) || defined(__STDC_NO_ATOMICS__)
 #  define THRP_NO_ATOMICS
 #  define THRP_ATOMIC
 #else
