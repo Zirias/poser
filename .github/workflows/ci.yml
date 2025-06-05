@@ -29,7 +29,7 @@ jobs:
         make -j CFLAGS="${CI_CFLAGS}"
         ${{matrix.atomics}}
         ${{matrix.tls}}
-        ${{matrix.evfd}}
+        ${{matrix.no_evfd}}
         ${{matrix.no_epoll}}
         ${{matrix.no_sigfd}}
         ${{matrix.no_timfd}}
