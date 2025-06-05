@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <setjmp.h>
@@ -162,7 +163,9 @@ typedef struct SvcCommandQueue
     atomic_int mustwake;
     char _pad2[64 - sizeof (int)];
 #endif
-#ifdef HAVE_KQUEUE
+#ifdef HAVE_EVPORTS
+    int *ep;
+#elif defined(HAVE_KQUEUE)
     int *kq;
 #else
     int commandpipe[2];
@@ -387,7 +390,13 @@ static void enqueueCommand(SvcCommandQueue *q,
 	    memory_order_release);
 #endif
 
-#ifdef HAVE_KQUEUE
+#ifdef HAVE_EVPORTS
+    if (mustwake && port_send(*q->ep, 1, 0) < 0)
+    {
+	PSC_Log_msg(PSC_L_WARNING,
+		"service: error notifying thread of new commands");
+    }
+#elif defined(HAVE_KQUEUE)
     if (mustwake)
     {
 	struct kevent ev;
@@ -1150,6 +1159,7 @@ static int processEvents(void)
     clearMustWake();
     for (unsigned i = 0; i < nev; ++i)
     {
+	if (ev[i].portev_source == PORT_SOURCE_USER) continue;
 	if (ev[i].portev_source == PORT_SOURCE_TIMER)
 	{
 	    PSC_Timer_doexpire(ev[i].portev_user);
@@ -1464,7 +1474,7 @@ static void *runsecondary(void *arg)
     return (void *)rc;
 }
 
-#ifndef HAVE_KQUEUE
+#if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE)
 static void readCommandPipe(void *receiver, void *sender, void *args)
 {
     (void)receiver;
@@ -1494,7 +1504,9 @@ static int initCommandQueue(SvcCommandQueue *q)
     atomic_store_explicit(&q->last, 0, memory_order_release);
     atomic_store_explicit(&q->mustwake, 1, memory_order_release);
 #endif
-#ifdef HAVE_KQUEUE
+#ifdef HAVE_EVPORTS
+    q->ep = &svc->epfd;
+#elif defined(HAVE_KQUEUE)
     q->kq = &svc->kqfd;
     EV_SET(addChange(), 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
     flushChanges();
@@ -1523,7 +1535,7 @@ static int initCommandQueue(SvcCommandQueue *q)
 
 static void destroyCommandQueue(SvcCommandQueue *q)
 {
-#ifdef HAVE_KQUEUE
+#if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
     (void)q;
 #else
     if (q->commandpipe[0] >= 0)
