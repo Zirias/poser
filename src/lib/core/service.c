@@ -29,8 +29,9 @@
 #  define SVC_NO_ATOMICS
 #else
 #  include <stdatomic.h>
-#  if ATOMIC_INT_LOCK_FREE != 2
+#  if ATOMIC_POINTER_LOCK_FREE != 2
 #    define SVC_NO_ATOMICS
+#  else
 #  endif
 #endif
 
@@ -135,11 +136,43 @@ typedef struct SvcCommand
     void *arg;
 } SvcCommand;
 
+typedef struct SvcCommandNode SvcCommandNode;
+struct SvcCommandNode
+{
+#ifdef SVC_NO_ATOMICS
+    SvcCommandNode *next;
+#else
+    SvcCommandNode *_Atomic next;
+#endif
+    SvcCommand cmd;
+};
+
+typedef struct SvcCommandQueue
+{
+#ifdef SVC_NO_ATOMICS
+    pthread_mutex_t lock;
+    SvcCommandNode *first;
+    SvcCommandNode *last;
+    int mustwake;
+#else
+    SvcCommandNode *_Atomic first;
+    char _pad0[64 - sizeof (void *)];
+    SvcCommandNode *_Atomic last;
+    char _pad1[64 - sizeof (void *)];
+    atomic_int mustwake;
+    char _pad2[64 - sizeof (int)];
+#endif
+#ifdef HAVE_KQUEUE
+    int *kq;
+#else
+    int commandpipe[2];
+#endif
+} SvcCommandQueue;
+
 typedef struct SecondaryService
 {
     pthread_t handle;
-    sem_t cmdsem;
-    int commandpipe[2];
+    SvcCommandQueue cq;
     int threadno;
 } SecondaryService;
 
@@ -192,8 +225,7 @@ static Service *mainsvc;
 static SecondaryService *ssvc;
 static PSC_Timer *shutdownTimer;
 static int nssvc;
-static int commandpipe[2];
-static sem_t cmdsem;
+static SvcCommandQueue cq;
 #ifdef SVC_NO_ATOMICS
 sem_t shutdownrq;
 #endif
@@ -287,6 +319,94 @@ static void tryReduceNfds(int id)
     }
 }
 #endif
+
+static void clearMustWake(void)
+{
+    SvcCommandQueue *q = svc->svcid ? &svc->svcid->cq : &cq;
+#ifdef SVC_NO_ATOMICS
+    pthread_mutex_lock(&q->lock);
+    q->mustwake = 0;
+    pthread_mutex_unlock(&q->lock);
+#else
+    atomic_store_explicit(&q->mustwake, 0, memory_order_release);
+#endif
+}
+
+static void runCommands(void)
+{
+    SvcCommandQueue *q = svc->svcid ? &svc->svcid->cq : &cq;
+    SvcCommandNode *torun = 0;
+
+#ifdef SVC_NO_ATOMICS
+    pthread_mutex_lock(&q->lock);
+    torun = q->first;
+    q->first = 0;
+    q->last = 0;
+    q->mustwake = 1;
+    pthread_mutex_unlock(&q->lock);
+#else
+    atomic_store_explicit(&q->last, 0, memory_order_release);
+    atomic_store_explicit(&q->mustwake, 1, memory_order_release);
+    torun = atomic_exchange_explicit(&q->first, 0, memory_order_release);
+#endif
+
+    while (torun)
+    {
+	torun->cmd.func(torun->cmd.arg);
+	SvcCommandNode *next = torun->next;
+	free(torun);
+	torun = next;
+    }
+}
+
+static void enqueueCommand(SvcCommandQueue *q,
+	PSC_OnThreadExec func, void *arg)
+{
+    SvcCommandNode *cmd = PSC_malloc(sizeof *cmd);
+    cmd->next = 0;
+    cmd->cmd.func = func;
+    cmd->cmd.arg = arg;
+    int mustwake = 0;
+
+#ifdef SVC_NO_ATOMICS
+    pthread_mutex_lock(&q->lock);
+    if (q->last) q->last->next = cmd;
+    else q->first = cmd;
+    q->last = cmd;
+    mustwake = q->mustwake;
+    q->mustwake = 0;
+    pthread_mutex_unlock(&q->lock);
+#else
+    SvcCommandNode *last = atomic_exchange_explicit(&q->last, cmd,
+	    memory_order_release);
+    SvcCommandNode *first = 0;
+    if (last) atomic_store_explicit(&last->next, cmd, memory_order_release);
+    else while (!atomic_compare_exchange_weak_explicit(&q->first, &first,
+		cmd, memory_order_release, memory_order_consume)) first = 0;
+    mustwake = atomic_exchange_explicit(&q->mustwake, 0,
+	    memory_order_release);
+#endif
+
+#ifdef HAVE_KQUEUE
+    if (mustwake)
+    {
+	struct kevent ev;
+	EV_SET(&ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
+	if (kevent(*q->kq, &ev, 1, 0, 0, 0) < 0)
+	{
+	    PSC_Log_msg(PSC_L_WARNING,
+		    "service: error notifying thread of new commands");
+	}
+    }
+#else
+    static const char d = 1;
+    if (mustwake && write(q->commandpipe[1], &d, sizeof d) <= 0)
+    {
+	PSC_Log_msg(PSC_L_WARNING,
+		"service: error notifying thread of new commands");
+    }
+#endif
+}
 
 SOEXPORT PSC_Event *PSC_Service_readyRead(void)
 {
@@ -1027,6 +1147,7 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
 	return -1;
     }
+    clearMustWake();
     for (unsigned i = 0; i < nev; ++i)
     {
 	if (ev[i].portev_source == PORT_SOURCE_TIMER)
@@ -1082,6 +1203,7 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
 	return -1;
     }
+    clearMustWake();
     svc->nchanges = 0;
     PSC_Timer *timer;
     for (int i = 0; i <	qrc; ++i)
@@ -1168,6 +1290,7 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
 	return -1;
     }
+    clearMustWake();
     for (int i = 0; i < prc; ++i)
     {
 #ifdef SIGFD_RDFD
@@ -1223,6 +1346,7 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
 	return -1;
     }
+    clearMustWake();
     for (size_t i = 0; prc > 0 && i < svc->nfds; ++i)
     {
 	if (!svc->fds[i].revents) continue;
@@ -1295,6 +1419,7 @@ static int processEvents(void)
 	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
 	return -1;
     }
+    clearMustWake();
     if (w) for (int i = 0; src > 0 && i < svc->nfds; ++i)
     {
 	if (FD_ISSET(i, w))
@@ -1329,21 +1454,6 @@ static void shutdownWorker(void *arg)
     svc->shutdownRef = 0;
 }
 
-static void handleCommand(void *receiver, void *sender, void *args)
-{
-    (void)sender;
-
-    Service *s = receiver;
-    int fd = *((int *)args);
-    sem_t *sem = s ? &s->svcid->cmdsem : &cmdsem;
-    SvcCommand command;
-    while (read(fd, &command, sizeof command) == sizeof command)
-    {
-	sem_wait(sem);
-	command.func(command.arg);
-    }
-}
-
 static int serviceLoop(ServiceLoopFlags flags);
 
 static void *runsecondary(void *arg)
@@ -1352,6 +1462,79 @@ static void *runsecondary(void *arg)
     svc->svcid = arg;
     intptr_t rc = serviceLoop(0);
     return (void *)rc;
+}
+
+#ifndef HAVE_KQUEUE
+static void readCommandPipe(void *receiver, void *sender, void *args)
+{
+    (void)receiver;
+    (void)sender;
+
+    int *fd = args;
+    char dummy[16];
+    while (read(*fd, dummy, sizeof dummy) > 0) ;
+}
+#endif
+
+static int initCommandQueue(SvcCommandQueue *q)
+{
+#ifdef SVC_NO_ATOMICS
+    q->first = 0;
+    q->last = 0;
+    q->mustwake = 1;
+    it (pthread_mutex_init(&q->lock, 0) != 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "service: error creating command lock");
+	q->commandpipe[0] = -1;
+	q->commandpipe[1] = -1;
+	return -1;
+    }
+#else
+    atomic_store_explicit(&q->first, 0, memory_order_release);
+    atomic_store_explicit(&q->last, 0, memory_order_release);
+    atomic_store_explicit(&q->mustwake, 1, memory_order_release);
+#endif
+#ifdef HAVE_KQUEUE
+    q->kq = &svc->kqfd;
+    EV_SET(addChange(), 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, 0);
+    flushChanges();
+#else
+    if (pipe(q->commandpipe) < 0)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "service: error creating command pipe");
+	q->commandpipe[0] = -1;
+	q->commandpipe[1] = -1;
+#  ifdef SVC_NO_ATOMICS
+	pthread_mutex_destroy(&q->lock);
+#  endif
+	return -1;
+    }
+    fcntl(q->commandpipe[0], F_SETFD, FD_CLOEXEC);
+    fcntl(q->commandpipe[1], F_SETFD, FD_CLOEXEC);
+    fcntl(q->commandpipe[0], F_SETFL,
+	    fcntl(q->commandpipe[0], F_GETFL) | O_NONBLOCK);
+    fcntl(q->commandpipe[1], F_SETFL,
+	    fcntl(q->commandpipe[1], F_GETFL) | O_NONBLOCK);
+    PSC_Service_registerRead(q->commandpipe[0]);
+    PSC_Event_register(&svc->readyRead, 0, readCommandPipe, q->commandpipe[0]);
+#endif
+    return 0;
+}
+
+static void destroyCommandQueue(SvcCommandQueue *q)
+{
+#ifdef HAVE_KQUEUE
+    (void)q;
+#else
+    if (q->commandpipe[0] >= 0)
+    {
+#  ifdef SVC_NO_ATOMICS
+	pthread_mutex_destroy(&q->lock);
+#  endif
+	close(q->commandpipe[0]);
+	close(q->commandpipe[1]);
+    }
+#endif
 }
 
 static int serviceLoop(ServiceLoopFlags flags)
@@ -1560,21 +1743,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	PSC_Service_registerRead(SIGFD_RDFD);
 #endif
 
-	if (pipe(commandpipe) < 0)
-	{
-	    PSC_Log_msg(PSC_L_ERROR, "service: error creating command pipe");
-	    commandpipe[0] = -1;
-	    commandpipe[1] = -1;
-	    goto shutdown;
-	}
-	fcntl(commandpipe[0], F_SETFD, FD_CLOEXEC);
-	fcntl(commandpipe[1], F_SETFD, FD_CLOEXEC);
-	fcntl(commandpipe[0], F_SETFL,
-		fcntl(commandpipe[0], F_GETFL) | O_NONBLOCK);
-	fcntl(commandpipe[1], F_SETFL,
-		fcntl(commandpipe[1], F_GETFL) | O_NONBLOCK);
-	PSC_Service_registerRead(commandpipe[0]);
-	PSC_Event_register(&svc->readyRead, 0, handleCommand, commandpipe[0]);
+	if (initCommandQueue(&cq) < 0) goto shutdown;
 
 	if ((flags & SLF_SVCRUN) && opts->daemonize)
 	{
@@ -1594,7 +1763,6 @@ static int serviceLoop(ServiceLoopFlags flags)
 	svc->running = 1;
 	svc->shutdownRef = -1;
 	mainsvc = svc;
-	sem_init(&cmdsem, 0, 0);
 #ifdef SVC_NO_ATOMICS
 	sem_init(&shutdownrq, 0, 0);
 #endif
@@ -1647,29 +1815,12 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    memset(ssvc, 0, nssvc * sizeof *ssvc);
 	    for (int i = 0; i < nssvc; ++i)
 	    {
-		if (pipe(ssvc[i].commandpipe) < 0)
-		{
-		    PSC_Log_msg(PSC_L_ERROR,
-			    "service: error creating command pipe");
-		    ssvc[i].commandpipe[1] = -1;
-		    goto shutdown;
-		}
-		fcntl(ssvc[i].commandpipe[0], F_SETFD, FD_CLOEXEC);
-		fcntl(ssvc[i].commandpipe[1], F_SETFD, FD_CLOEXEC);
-		fcntl(ssvc[i].commandpipe[0], F_SETFL,
-			fcntl(ssvc[i].commandpipe[0], F_GETFL) | O_NONBLOCK);
-		fcntl(ssvc[i].commandpipe[1], F_SETFL,
-			fcntl(ssvc[i].commandpipe[1], F_GETFL) | O_NONBLOCK);
 		ssvc[i].threadno = i;
-		sem_init(&ssvc[i].cmdsem, 0, 0);
 		if (pthread_create(&ssvc[i].handle, 0,
 			    runsecondary, ssvc+i) != 0)
 		{
 		    PSC_Log_msg(PSC_L_ERROR,
 			    "service: error creating worker thread");
-		    close(ssvc[i].commandpipe[0]);
-		    close(ssvc[i].commandpipe[1]);
-		    ssvc[i].commandpipe[1] = -1;
 		    goto shutdown;
 		}
 	    }
@@ -1677,9 +1828,7 @@ static int serviceLoop(ServiceLoopFlags flags)
     }
     else
     {
-	PSC_Service_registerRead(svc->svcid->commandpipe[0]);
-	PSC_Event_register(&svc->readyRead, svc, handleCommand,
-		svc->svcid->commandpipe[0]);
+	if (initCommandQueue(&svc->svcid->cq) < 0) goto shutdown;
 	svc->running = 1;
 	svc->shutdownRef = -1;
     }
@@ -1691,6 +1840,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    rc = EXIT_FAILURE;
 	    break;
 	}
+	runCommands();
 	PSC_Event_raise(&svc->eventsDone, 0, 0);
 #ifdef SVC_NO_ATOMICS
 	if (flags & SLF_SVCMAIN)
@@ -1723,12 +1873,8 @@ done:
 	{
 	    for (int i = 0; i < nssvc; ++i)
 	    {
-		if (ssvc[i].commandpipe[1] < 0) break;
 		PSC_Service_runOnThread(i, shutdownWorker, 0);
 		pthread_join(ssvc[i].handle, 0);
-		sem_destroy(&ssvc[i].cmdsem);
-		close(ssvc[i].commandpipe[0]);
-		close(ssvc[i].commandpipe[1]);
 	    }
 	    free(ssvc);
 	    nssvc = 0;
@@ -1737,7 +1883,7 @@ done:
 #ifdef SVC_NO_ATOMICS
 	sem_destroy(&shutdownrq);
 #endif
-	sem_destroy(&cmdsem);
+	destroyCommandQueue(&cq);
 
 #if defined(WITH_SIGHDL) || defined(HAVE_KQUEUE)
 	handler.sa_handler = SIG_DFL;
@@ -1751,9 +1897,6 @@ done:
 	    PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
 	    rc = EXIT_FAILURE;
 	}
-
-	if (commandpipe[0] >= 0) close(commandpipe[0]);
-	if (commandpipe[1] >= 0) close(commandpipe[1]);
 
 #ifdef HAVE_SIGNALFD
 	if (sfd >= 0)
@@ -1794,6 +1937,7 @@ done:
 
 	mainsvc = 0;
     }
+    else destroyCommandQueue(&svc->svcid->cq);
 
 #ifdef WITH_POLL
     free(svc->fds);
@@ -1962,7 +2106,6 @@ SOEXPORT int PSC_Service_threadNo(void)
 SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	PSC_OnThreadExec func, void *arg)
 {
-    SvcCommand cmd = { .func = func, .arg = arg };
     if (threadNo < 0)
     {
 	if (svc && !svc->svcid)
@@ -1970,12 +2113,7 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	    func(arg);
 	    return;
 	}
-	if (write(commandpipe[1], &cmd, sizeof cmd) != sizeof cmd)
-	{
-	    PSC_Log_msg(PSC_L_WARNING,
-		    "service: cannot execute on main thread");
-	}
-	sem_post(&cmdsem);
+	enqueueCommand(&cq, func, arg);
 	return;
     }
     if (threadNo >= nssvc)
@@ -1989,11 +2127,7 @@ SOEXPORT void PSC_Service_runOnThread(int threadNo,
 	func(arg);
 	return;
     }
-    if (write(ssvc[threadNo].commandpipe[1], &cmd, sizeof cmd) != sizeof cmd)
-    {
-	PSC_Log_msg(PSC_L_WARNING, "service: cannot execute on worker thread");
-    }
-    sem_post(&ssvc[threadNo].cmdsem);
+    enqueueCommand(&ssvc[threadNo].cq, func, arg);
 }
 
 SOEXPORT void PSC_EAStartup_return(PSC_EAStartup *self, int rc)
