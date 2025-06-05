@@ -10,7 +10,9 @@ jobs:
   build:
     strategy:
       matrix:
+        atomics: [WITH_ATOMICS=on, WITH_ATOMICS=off]
         tls: [WITH_TLS=on, WITH_TLS=off]
+        no_evfd: [WITHOUT_EVENTFD=off, WITHOUT_EVENTFD=on]
         no_epoll: [WITHOUT_EPOLL=off, WITHOUT_EPOLL=on,
           WITHOUT_EPOLL=on WITH_POLL=on]
         no_sigfd: [WITHOUT_SIGNALFD=off, WITHOUT_SIGNALFD=on]
@@ -25,7 +27,9 @@ jobs:
     - name: make
       run: >-
         make -j CFLAGS="${CI_CFLAGS}"
+        ${{matrix.atomics}}
         ${{matrix.tls}}
+        ${{matrix.evfd}}
         ${{matrix.no_epoll}}
         ${{matrix.no_sigfd}}
         ${{matrix.no_timfd}}
