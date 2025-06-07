@@ -264,7 +264,7 @@ static PSC_ThreadJob *JobQueue_dequeue(JobQueue *self)
 		next, memory_order_release, memory_order_consume));
     PSC_ThreadJob *job;
     while (!(job = atomic_exchange_explicit(self->jobs + deqpos, 0,
-		    memory_order_relaxed))) ;
+		    memory_order_acq_rel))) ;
     atomic_fetch_add_explicit(&self->avail, 1, memory_order_release);
     return job;
 }
