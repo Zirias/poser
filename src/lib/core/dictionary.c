@@ -5,6 +5,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#undef DICT_NO_ATOMICS
+#if defined(NO_ATOMICS) || defined(__STDC_NO_ATOMICS__)
+#  define DICT_NO_ATOMICS
+#else
+#  include <stdatomic.h>
+#  if ATOMIC_POINTER_LOCK_FREE != 2
+#    define DICT_NO_ATOMICS
+#  endif
+#endif
+#ifdef DICT_NO_ATOMICS
+#  include <pthread.h>
+#endif
+
 #define HT8_SIZE 256
 #define HT4_SIZE 16
 #define MAXNEST 14
@@ -58,26 +71,55 @@ typedef struct HashTable8
     HashBucket buckets[HT8_SIZE];
 } HashTable8;
 
+typedef struct DictLockData
+{
+#ifdef DICT_NO_ATOMICS
+    pthread_mutex_t lock;
+    pthread_mutex_t bucklock[HT8_SIZE];
+#else
+    atomic_int reserved[HT8_SIZE];
+#endif
+} DictLockData;
+
 struct PSC_Dictionary
 {
     void (*deleter)(void *);
     PSC_Hash *hash;
+#ifdef DICT_NO_ATOMICS
     size_t count;
+#else
+    atomic_size_t count;
+#endif
+    int shared;
     HashBucket buckets[HT8_SIZE];
+    DictLockData l[];
 };
 
 SOEXPORT void (*PSC_DICT_NODELETE)(void *) =
     (void (*)(void *))PSC_Dictionary_destroy;
 
-SOEXPORT PSC_Dictionary *PSC_Dictionary_create(void (*deleter)(void *))
+SOEXPORT PSC_Dictionary *PSC_Dictionary_create(void (*deleter)(void *),
+	int shared)
 {
     PSC_Hash *hash = PSC_Hash_create(0, 1);
     if (!hash) return 0;
 
-    PSC_Dictionary *self = PSC_malloc(sizeof *self);
-    memset(self, 0, sizeof *self);
+    PSC_Dictionary *self = PSC_malloc(sizeof *self
+	    + (!!shared) * sizeof *self->l);
+    memset(self, 0, sizeof *self + (!!shared) * sizeof *self->l);
     self->deleter = deleter;
     self->hash = hash;
+    self->shared = shared;
+#ifdef DICT_NO_ATOMICS
+    if (shared)
+    {
+	pthread_mutex_init(&self->l->lock, 0);
+	for (size_t i = 0; i < HT8_SIZE; ++i)
+	{
+	    pthread_mutex_init(self->l->bucklock + i, 0);
+	}
+    }
+#endif
     return self;
 }
 
@@ -115,7 +157,13 @@ static Entry *createEntry(PSC_Dictionary *self, int depth, const void *key,
     entry->key = PSC_malloc(keysz);
     memcpy(entry->key, key, keysz);
     entry->obj = obj;
+#ifdef DICT_NO_ATOMICS
+    if (self->shared) pthread_mutex_lock(&self->l->lock);
     ++self->count;
+    if (self->shared) pthread_mutex_unlock(&self->l->lock);
+#else
+    atomic_fetch_add_explicit(&self->count, 1, memory_order_release);
+#endif
     return entry;
 }
 
@@ -181,7 +229,16 @@ static void set(PSC_Dictionary *self, HashBucket *bucket, int depth,
 			    }
 			    free(el->base.key);
 			    free(el);
+#ifdef DICT_NO_ATOMICS
+			    if (self->shared) pthread_mutex_lock(
+				    &self->l->lock);
 			    --self->count;
+			    if (self->shared) pthread_mutex_unlock(
+				    &self->l->lock);
+#else
+			    atomic_fetch_sub_explicit(&self->count, 1,
+				    memory_order_release);
+#endif
 			}
 			break;
 		    }
@@ -222,7 +279,16 @@ static void set(PSC_Dictionary *self, HashBucket *bucket, int depth,
 			bucket->type = BT_EMPTY;
 			free(e->key);
 			free(e);
+#ifdef DICT_NO_ATOMICS
+			if (self->shared) pthread_mutex_lock(
+				&self->l->lock);
 			--self->count;
+			if (self->shared) pthread_mutex_unlock(
+				&self->l->lock);
+#else
+			atomic_fetch_sub_explicit(&self->count, 1,
+				memory_order_release);
+#endif
 		    }
 		}
 		else
@@ -293,8 +359,28 @@ SOEXPORT void PSC_Dictionary_set(PSC_Dictionary *self,
 {
     uint64_t hash = PSC_Hash_bytes(self->hash, key, keysz);
     if (deleter == PSC_DICT_NODELETE) deleter = 0;
+    if (self->shared)
+    {
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_lock(self->l->bucklock + (hash & 0xff));
+#else
+	int res = 0;
+	while (!atomic_compare_exchange_weak_explicit(
+		    self->l->reserved + (hash & 0xff), &res, -1,
+		    memory_order_release, memory_order_acquire)) res = 0;
+#endif
+    }
     set(self, self->buckets + (hash & 0xff), 1, hash >> 8, key, keysz,
 	    obj, deleter);
+    if (self->shared)
+    {
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_unlock(self->l->bucklock + (hash & 0xff));
+#else
+	atomic_store_explicit(self->l->reserved + (hash & 0xff), 0,
+		memory_order_release);
+#endif
+    }
 }
 
 static void *get(const PSC_Dictionary *self, const HashBucket *bucket,
@@ -350,12 +436,50 @@ SOEXPORT void *PSC_Dictionary_get(const PSC_Dictionary *self,
 	const void *key, size_t keysz)
 {
     uint64_t hash = PSC_Hash_bytes(self->hash, key, keysz);
-    return get(self, self->buckets + (hash & 0xff), 1, hash >> 8, key, keysz);
+    if (self->shared)
+    {
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_lock(
+		((PSC_Dictionary *)self)->l->bucklock + (hash & 0xff));
+#else
+	int res;
+	do
+	{
+	    res = atomic_load_explicit(self->l->reserved + (hash & 0xff),
+		    memory_order_consume);
+	    if (res < 0) continue;
+	} while (!atomic_compare_exchange_strong_explicit(
+		    ((PSC_Dictionary *)self)->l->reserved + (hash & 0xff),
+		    &res, res + 1, memory_order_release,
+		    memory_order_consume));
+#endif
+    }
+    void *obj = get(self, self->buckets + (hash & 0xff), 1,
+	    hash >> 8, key, keysz);
+    if (self->shared)
+    {
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_unlock(
+		((PSC_Dictionary *)self)->l->bucklock + (hash & 0xff));
+#else
+	atomic_fetch_sub_explicit(
+		((PSC_Dictionary *)self)->l->reserved + (hash & 0xff), 1,
+		memory_order_release);
+#endif
+    }
+    return obj;
 }
 
 SOEXPORT size_t PSC_Dictionary_count(const PSC_Dictionary *self)
 {
-    return self->count;
+#ifdef DICT_NO_ATOMICS
+    if (self->shared) pthread_mutex_lock(&((PSC_Dictionary *)self)->l->lock);
+    size_t count = self->count;
+    if (self->shared) pthread_mutex_unlock(&((PSC_Dictionary *)self)->l->lock);
+    return count;
+#else
+    return atomic_load_explicit(&self->count, memory_order_consume);
+#endif
 }
 
 static void removeAll(PSC_Dictionary *self,
@@ -398,7 +522,14 @@ static void removeAll(PSC_Dictionary *self,
 			}
 			free(el->base.key);
 			free(el);
+#ifdef DICT_NO_ATOMICS
+			if (self->shared) pthread_mutex_lock(&self->l->lock);
 			--self->count;
+			if (self->shared) pthread_mutex_unlock(&self->l->lock);
+#else
+			atomic_fetch_sub_explicit(&self->count, 1,
+				memory_order_release);
+#endif
 			++*removed;
 			if (parent) el = (EntryL *)parent->next;
 			else if (bucket->type == BT_ITEM) el = bucket->content;
@@ -431,14 +562,20 @@ static void removeAll(PSC_Dictionary *self,
 		    free(e->key);
 		    free(e);
 		    bucket->type = BT_EMPTY;
+#ifdef DICT_NO_ATOMICS
+		    if (self->shared) pthread_mutex_lock(&self->l->lock);
 		    --self->count;
+		    if (self->shared) pthread_mutex_unlock(&self->l->lock);
+#else
+		    atomic_fetch_sub_explicit(&self->count, 1,
+			    memory_order_release);
+#endif
 		    ++*removed;
 		}
 	    }
 	    break;
 
 	case BT_HT8:
-	    if (!self->count) return;
 	    ht8 = bucket->content;
 	    for (size_t i = 0; i < HT8_SIZE; ++i)
 	    {
@@ -448,7 +585,6 @@ static void removeAll(PSC_Dictionary *self,
 	    break;
 
 	case BT_HT4:
-	    if (!self->count) return;
 	    ht4 = bucket->content;
 	    for (size_t i = 0; i < HT4_SIZE; ++i)
 	    {
@@ -466,9 +602,34 @@ SOEXPORT size_t PSC_Dictionary_removeAll(PSC_Dictionary *self,
 	int (*matcher)(const void *, size_t, void *, const void *),
 	const void *arg)
 {
-    if (!self->count) return 0;
+#ifdef DICT_NO_ATOMICS
+    if (self->shared) pthread_mutex_lock(&self->l->lock);
+    size_t count = self->count;
+    if (self->shared) pthread_mutex_unlock(&self->l->lock);
+    if (!count) return 0;
+#else
+    if (!atomic_load_explicit(&self->count, memory_order_consume)) return 0;
+#endif
     size_t removed = 0;
-    for (size_t i = 0; i < HT8_SIZE; ++i)
+    if (self->shared) for (size_t i = 0; i < HT8_SIZE; ++i)
+    {
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_lock(self->l->bucklock + i);
+#else
+	int res = 0;
+	while (!atomic_compare_exchange_weak_explicit(
+		    self->l->reserved + i, &res, -1,
+		    memory_order_release, memory_order_acquire)) res = 0;
+#endif
+	removeAll(self, self->buckets + i, 1, &removed, matcher, arg);
+#ifdef DICT_NO_ATOMICS
+	pthread_mutex_unlock(self->l->bucklock + i);
+#else
+	atomic_store_explicit(self->l->reserved + i, 0,
+		memory_order_release);
+#endif
+    }
+    else for (size_t i = 0; i < HT8_SIZE; ++i)
     {
 	removeAll(self, self->buckets + i, 1, &removed, matcher, arg);
     }
@@ -557,8 +718,14 @@ SOEXPORT void PSC_Dictionary_destroy(PSC_Dictionary *self)
     for (size_t i = 0; i < HT8_SIZE; ++i)
     {
 	destroy(self, self->buckets + i, 1);
+#ifdef DICT_NO_ATOMICS
+	if (self->shared) pthread_mutex_destroy(self->l->bucklock + i);
+#endif
     }
     PSC_Hash_destroy(self->hash);
+#ifdef DICT_NO_ATOMICS
+    if (self->shared) pthread_mutex_destroy(&self->l->lock);
+#endif
     free(self);
 }
 

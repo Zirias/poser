@@ -45,10 +45,12 @@ DECLDATA void (*PSC_DICT_NODELETE)(void *);
  *                ignored. Can be set to the special value PSC_DICT_NODELETE
  *                to completely disable deletion of stored objects for the
  *                whole PSC_Dictionary.
+ * @param shared If set non-zero, the dictionary is configured to be used from
+ *               multiple threads.
  * @returns a newly created PSC_Dictionary
  */
 DECLEXPORT PSC_Dictionary *
-PSC_Dictionary_create(void (*deleter)(void *));
+PSC_Dictionary_create(void (*deleter)(void *), int shared);
 
 /** Set a new object for a given key.
  * If the key already exists, the associated object is replaced.

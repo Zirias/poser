@@ -86,7 +86,7 @@ static int checkLimit(Limit *self, struct timespec *ts,
 	const void *key, size_t keysz, uint16_t cleanperiod)
 {
     uint16_t now = ts->tv_sec / self->res;
-    if (!self->entries) self->entries = PSC_Dictionary_create(free);
+    if (!self->entries) self->entries = PSC_Dictionary_create(free, 0);
     else
     {
 	if (!--self->cleancount)

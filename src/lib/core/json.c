@@ -160,7 +160,7 @@ SOEXPORT int PSC_Json_setProperty(PSC_Json *self,
     if (self->type != PSC_JVT_OBJECT) return -1;
     JsonObject *obj = (JsonObject *)self;
     JsonString *key = (JsonString *)PSC_Json_createString(name, namelen);
-    if (!obj->values) obj->values = PSC_Dictionary_create(jsonDeleter);
+    if (!obj->values) obj->values = PSC_Dictionary_create(jsonDeleter, 0);
     if (!PSC_Dictionary_get(obj->values, key->value, key->len))
     {
 	if (!obj->keys) obj->keys = PSC_List_create();

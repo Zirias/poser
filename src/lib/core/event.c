@@ -50,7 +50,8 @@ SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
     entry->prev = self->last;
     entry->next = 0;
     entry->handler = hdl;
-    if (!self->index) self->index = PSC_Dictionary_create(PSC_DICT_NODELETE);
+    if (!self->index) self->index = PSC_Dictionary_create(
+	    PSC_DICT_NODELETE, 0);
     PSC_Dictionary_set(self->index, &hdl, sizeof hdl, entry, 0);
     if (self->last) self->last->next = entry;
     else self->first = entry;
