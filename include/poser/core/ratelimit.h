@@ -66,12 +66,10 @@ PSC_RateLimit_destroy(PSC_RateLimit *self);
 /** PSC_RateLimitOpts default constructor.
  * Creates a new PSC_RateLimitOpts
  * @memberof PSC_RateLimitOpts
- * @param locked if set non-zero, the rate limiter will use locking to make it
- *               safe to use from multiple threads
  * @returns a newly created PSC_RateLimitOpts
  */
 PSC_RateLimitOpts *
-PSC_RateLimitOpts_create(int locked)
+PSC_RateLimitOpts_create(void)
     ATTR_RETNONNULL;
 
 /** Add an individual limit.

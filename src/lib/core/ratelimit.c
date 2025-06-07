@@ -10,118 +10,147 @@
 #include <string.h>
 #include <time.h>
 
+#undef RLIM_NO_ATOMICS
+#if defined(NO_ATOMICS) || defined(__STDC_NO_ATOMICS__)
+#  define RLIM_NO_ATOMICS
+#  include <pthread.h>
+#else
+#  include <stdatomic.h>
+#endif
+
 #define MAXCOUNTS 512
 
 typedef struct Entry
 {
+#ifndef RLIM_NO_ATOMICS
+    atomic_flag lock;
+#endif
     uint16_t last;
     uint16_t total;
     uint16_t countpos;
-    uint16_t counts[];
+    uint16_t counts[MAXCOUNTS];
 } Entry;
+
+#ifdef RLIM_NO_ATOMICS
+typedef struct EntryList
+{
+    pthread_mutex_t lock;
+    size_t nlimits;
+    Entry entries[];
+} EntryList;
+#endif
 
 typedef struct Limit
 {
-    PSC_Dictionary *entries;
     uint16_t seconds;
     uint16_t limit;
     uint16_t res;
     uint16_t ncounts;
-    uint16_t cleancount;
 } Limit;
 
 struct PSC_RateLimit
 {
     size_t nlimits;
-    pthread_mutex_t lock;
-    int locked;
-    uint16_t cleanperiod;
+    PSC_Dictionary *entries;
+    uint16_t cleancount;
     Limit limits[];
 };
 
 struct PSC_RateLimitOpts
 {
-    int locked;
     size_t limits_count;
     size_t limits_capa;
     Limit *limits;
 };
+
+#ifdef RLIM_NO_ATOMICS
+#  define entries(e) ((e)->entries)
+static void freeentries(void *obj)
+{
+    if (!obj) return;
+    EntryList *el = obj;
+    pthread_mutex_destroy(&el->lock);
+    free(el);
+}
+#else
+#  define entries(e) (e)
+#  define freeentries free
+#endif
 
 PSC_RateLimit *PSC_RateLimit_create(const PSC_RateLimitOpts *opts)
 {
     PSC_RateLimit *self = PSC_malloc(sizeof *self
 	    + opts->limits_count * sizeof *self->limits);
     self->nlimits = opts->limits_count;
-    if (opts->locked) pthread_mutex_init(&self->lock, 0);
-    self->locked = opts->locked;
+    self->entries = PSC_Dictionary_create(freeentries, 1);
     memcpy(self->limits, opts->limits, self->nlimits * sizeof *self->limits);
-    self->cleanperiod = self->nlimits > 20 ? 1000 : 50 * self->nlimits;
-    for (size_t i = 0; i < self->nlimits; ++i)
-    {
-	self->limits[i].cleancount = (i+1) *
-	    (self->cleanperiod / self->nlimits);
-    }
+    self->cleancount = 2000;
     return self;
 }
 
 struct expiredarg
 {
-    const void *key;
-    size_t keysz;
-    uint16_t now;
-    uint16_t ncounts;
+    Limit *limits;
+    size_t nlimits;
+    uint16_t now[];
 };
 
 static int expired(const void *key, size_t keysz, void *obj, const void *arg)
 {
-    const struct expiredarg *ea = arg;
+    (void)key;
+    (void)keysz;
+
+#ifdef RLIM_NO_ATOMICS
+    EntryList *e = obj;
+#else
     Entry *e = obj;
+#endif
+    const struct expiredarg *ea = arg;
 
-    if ((ea->keysz != keysz || memcmp(key, ea->key, keysz))
-	    && ea->now - e->last >= ea->ncounts) return 1;
-    return 0;
-}
-
-static int checkLimit(Limit *self, struct timespec *ts,
-	const void *key, size_t keysz, uint16_t cleanperiod)
-{
-    uint16_t now = ts->tv_sec / self->res;
-    if (!self->entries) self->entries = PSC_Dictionary_create(free, 0);
-    else
+    int isexpired = 1;
+    for (size_t i = 0; i < ea->nlimits; ++i)
     {
-	if (!--self->cleancount)
+	if (ea->now[i] - entries(e)[i].last < ea->limits[i].ncounts)
 	{
-	    struct expiredarg ea = {
-		.key = key,
-		.keysz = keysz,
-		.now = now,
-		.ncounts = self->ncounts
-	    };
-	    PSC_Dictionary_removeAll(self->entries, expired, &ea);
-	    self->cleancount = cleanperiod;
+	    isexpired = 0;
+	    break;
 	}
     }
-    Entry *e = PSC_Dictionary_get(self->entries, key, keysz);
-    if (!e)
+    return isexpired;
+}
+
+static int checkLimit(Limit *self, Entry *e, struct timespec *ts)
+{
+    uint16_t now = ts->tv_sec / self->res;
+#ifndef RLIM_NO_ATOMICS
+    while (atomic_flag_test_and_set_explicit(&e->lock, memory_order_acq_rel)) ;
+#endif
+    if (e->total)
     {
-	e = PSC_malloc(sizeof *e + self->ncounts * sizeof *e->counts);
-	memset(e, 0, sizeof *e + self->ncounts * sizeof *e->counts);
-	e->last = now;
-	PSC_Dictionary_set(self->entries, key, keysz, e, 0);
+	if (now - e->last >= self->ncounts)
+	{
+	    memset(e, 0, sizeof *e);
+	    e->last = now;
+	}
+	else for (; e->last != now; ++e->last)
+	{
+	    if (++e->countpos == self->ncounts) e->countpos = 0;
+	    e->total -= e->counts[e->countpos];
+	    e->counts[e->countpos] = 0;
+	}
     }
-    for (; e->last != now; ++e->last)
-    {
-	if (++e->countpos == self->ncounts) e->countpos = 0;
-	e->total -= e->counts[e->countpos];
-	e->counts[e->countpos] = 0;
-    }
+    else e->last = now;
+    int ok = 0;
     if (e->total < self->limit)
     {
 	++e->counts[e->countpos];
 	++e->total;
-	return 1;
+	ok = 1;
     }
-    return 0;
+#ifndef RLIM_NO_ATOMICS
+    atomic_flag_clear_explicit(&e->lock, memory_order_release);
+#endif
+    return ok;
 }
 
 int PSC_RateLimit_check(PSC_RateLimit *self, const void *key, size_t keysz)
@@ -129,32 +158,67 @@ int PSC_RateLimit_check(PSC_RateLimit *self, const void *key, size_t keysz)
     int ok = 1;
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) return 0;
-    if (self->locked) pthread_mutex_lock(&self->lock);
+    if (!--self->cleancount)
+    {
+	struct expiredarg *ea = PSC_malloc(sizeof *ea
+		+ self->nlimits * sizeof *ea->now);
+	ea->limits = self->limits;
+	ea->nlimits = self->nlimits;
+	for (size_t i = 0; i < self->nlimits; ++i)
+	{
+	    ea->now[i] = ts.tv_sec / self->limits[i].res;
+	}
+	PSC_Dictionary_removeAll(self->entries, expired, ea);
+	free(ea);
+	self->cleancount = 2000;
+    }
+#ifdef RLIM_NO_ATOMICS
+    EntryList *e = PSC_Dictionary_get(self->entries, key, keysz);
+#else
+    Entry *e = PSC_Dictionary_get(self->entries, key, keysz);
+#endif
+    while (!e)
+    {
+#ifdef RLIM_NO_ATOMICS
+	EntryList *ne = PSC_malloc(sizeof *ne +
+		self->nlimits * sizeof *ne->entries);
+	pthread_mutex_init(&ne->lock, 0);
+	ne->nlimits = self->nlimits;
+#else
+	Entry *ne = PSC_malloc(self->nlimits * sizeof *ne);
+#endif
+	memset(entries(ne), 0, self->nlimits * sizeof *entries(ne));
+	for (size_t i = 0; i < self->nlimits; ++i)
+	{
+	    entries(ne)[i].last = ts.tv_sec / self->limits[i].res;
+	}
+	PSC_Dictionary_set(self->entries, key, keysz, ne, 0);
+	e = PSC_Dictionary_get(self->entries, key, keysz);
+    }
+#ifdef RLIM_NO_ATOMICS
+    pthread_mutex_lock(&e->lock);
+#endif
     for (size_t i = 0; i < self->nlimits; ++i)
     {
-	if (!checkLimit(self->limits + i, &ts, key, keysz,
-		    self->cleanperiod)) ok = 0;
+	if (!checkLimit(self->limits + i, entries(e) + i, &ts)) ok = 0;
     }
-    if (self->locked) pthread_mutex_unlock(&self->lock);
+#ifdef RLIM_NO_ATOMICS
+    pthread_mutex_unlock(&e->lock);
+#endif
     return ok;
 }
 
 void PSC_RateLimit_destroy(PSC_RateLimit *self)
 {
     if (!self) return;
-    for (size_t i = 0; i < self->nlimits; ++i)
-    {
-	PSC_Dictionary_destroy(self->limits[i].entries);
-    }
-    if (self->locked) pthread_mutex_destroy(&self->lock);
+    PSC_Dictionary_destroy(self->entries);
     free(self);
 }
 
-PSC_RateLimitOpts *PSC_RateLimitOpts_create(int locked)
+PSC_RateLimitOpts *PSC_RateLimitOpts_create(void)
 {
     PSC_RateLimitOpts *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
-    self->locked = locked;
     return self;
 }
 
@@ -169,7 +233,6 @@ int PSC_RateLimitOpts_addLimit(PSC_RateLimitOpts *self, int seconds, int limit)
 		self->limits_capa * sizeof *self->limits);
     }
     Limit *l = self->limits + self->limits_count++;
-    l->entries = 0;
     l->seconds = seconds;
     l->limit = limit;
     l->res = (seconds + MAXCOUNTS - 1) / MAXCOUNTS;
@@ -180,7 +243,6 @@ int PSC_RateLimitOpts_addLimit(PSC_RateLimitOpts *self, int seconds, int limit)
 int PSC_RateLimitOpts_equals(const PSC_RateLimitOpts *self,
 	const PSC_RateLimitOpts *other)
 {
-    if (self->locked != other->locked) return 0;
     if (self->limits_count != other->limits_count) return 0;
     for (size_t i = 0; i < self->limits_count; ++i)
     {
