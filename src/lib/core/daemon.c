@@ -31,7 +31,7 @@ static FILE *openpidfile(const char *pidfile)
 	pflock.l_whence = SEEK_SET;
 	if (fcntl(fileno(pf), F_GETLK, &pflock) < 0)
 	{
-	    PSC_Log_fmt(PSC_L_ERROR, "error getting lock info on `%s'",
+	    PSC_Log_errfmt(PSC_L_ERROR, "error getting lock info on `%s'",
 		    pidfile);
 	    return 0;
 	}
@@ -56,7 +56,7 @@ static FILE *openpidfile(const char *pidfile)
 			pidfile);
 		if (unlink(pidfile) < 0)
 		{
-		    PSC_Log_fmt(PSC_L_ERROR, "cannot remove `%s'", pidfile);
+		    PSC_Log_errfmt(PSC_L_ERROR, "cannot remove `%s'", pidfile);
 		    return 0;
 		}
 		fclose(pf);
@@ -84,7 +84,7 @@ static FILE *openpidfile(const char *pidfile)
     pf = fopen(pidfile, "w");
     if (!pf)
     {
-	PSC_Log_fmt(PSC_L_ERROR, "cannot open pidfile `%s' for writing",
+	PSC_Log_errfmt(PSC_L_ERROR, "cannot open pidfile `%s' for writing",
 		pidfile);
 	return 0;
     }
@@ -94,7 +94,8 @@ static FILE *openpidfile(const char *pidfile)
     if (fcntl(fileno(pf), F_SETLK, &pflock) < 0)
     {
 	fclose(pf);
-	PSC_Log_fmt(PSC_L_ERROR, "locking own pidfile `%s' failed", pidfile);
+	PSC_Log_errfmt(PSC_L_ERROR,
+		"locking own pidfile `%s' failed", pidfile);
 	return 0;
     }
 
@@ -116,7 +117,8 @@ static int waitpflock(FILE *pf, const char *pidfile)
     } while (lrc < 0 && errno == EINTR);
     if (lrc < 0)
     {
-	PSC_Log_fmt(PSC_L_ERROR, "locking own pidfile `%s' failed", pidfile);
+	PSC_Log_errfmt(PSC_L_ERROR,
+		"locking own pidfile `%s' failed", pidfile);
 	return -1;
     }
     return 0;
@@ -146,7 +148,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
     {
 	if (pfd[0] >= 0) close(pfd[0]);
 	if (pfd[1] >= 0) close(pfd[1]);
-	PSC_Log_msg(PSC_L_ERROR, "failed to fork (1)");
+	PSC_Log_err(PSC_L_ERROR, "failed to fork (1)");
 	goto done;
     }
 
@@ -190,7 +192,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
     sid = setsid();
     if (sid < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "setsid() failed");
+	PSC_Log_err(PSC_L_ERROR, "setsid() failed");
 	goto done;
     }
 
@@ -208,7 +210,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 
     if (pid < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "failed to fork (2)");
+	PSC_Log_err(PSC_L_ERROR, "failed to fork (2)");
 	goto done;
     }
 
@@ -226,7 +228,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
 
     if (chdir("/") < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "chdir(\"/\") failed");
+	PSC_Log_err(PSC_L_ERROR, "chdir(\"/\") failed");
 	goto done;
     }
 
@@ -255,7 +257,7 @@ SOEXPORT int PSC_Daemon_run(PSC_Daemon_main dmain, void *data)
     rc = dmain(data);
     if (rc != EXIT_SUCCESS && write(STDERR_FILENO, "\0", 1) < 1)
     {
-	PSC_Log_msg(PSC_L_WARNING, "daemon: cannot notify parent process");
+	PSC_Log_err(PSC_L_WARNING, "daemon: cannot notify parent process");
     }
     if (pf)
     {

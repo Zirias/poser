@@ -470,7 +470,7 @@ SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(
 #endif
     if (fd < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "client: cannot create socket");
+	PSC_Log_err(PSC_L_ERROR, "client: cannot create socket");
 	return 0;
     }
 #ifndef HAVE_ACCEPT4
@@ -487,7 +487,7 @@ SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(
     if (connect(fd, (struct sockaddr *)&addr, sizeof addr) < 0
 	    && errno != EINPROGRESS)
     {
-	PSC_Log_fmt(PSC_L_ERROR, "client: error connecting to `%s'",
+	PSC_Log_errfmt(PSC_L_ERROR, "client: error connecting to `%s'",
 		addr.sun_path);
 	close(fd);
 	return 0;

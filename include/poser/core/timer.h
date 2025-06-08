@@ -19,11 +19,10 @@ C_CLASS_DECL(PSC_Event);
 /** PSC_Timer default constructor.
  * Creates a new PSC_Timer
  * @memberof PSC_Timer
- * @returns a newly created PSC_Timer
+ * @returns a newly created PSC_Timer, or NULL on error
  */
 DECLEXPORT PSC_Timer *
-PSC_Timer_create(void)
-    ATTR_RETNONNULL;
+PSC_Timer_create(void);
 
 /** The timer expired.
  * This event is fired on each expiry of the timer.

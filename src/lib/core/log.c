@@ -1,8 +1,11 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include "log.h"
 
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -145,6 +148,38 @@ SOEXPORT void PSC_Log_fmt(PSC_LogLevel level, const char *format, ...)
     va_end(ap);
     PSC_Log_msg(level, buf);
 }
+
+SOEXPORT void PSC_Log_err(PSC_LogLevel level, const char *message)
+{
+    if (!currentwriter) return;
+    if (logsilent && level > PSC_L_ERROR) return;
+    if (level > maxlevel) return;
+    char errstr[128];
+    strerror_r(errno, errstr, sizeof errstr);
+    PSC_Log_fmt(level, "%s: %s", message, errstr);
+}
+
+SOEXPORT void PSC_Log_errfmt(PSC_LogLevel level, const char *format, ...)
+{
+    if (!currentwriter) return;
+    if (logsilent && level > PSC_L_ERROR) return;
+    if (level > maxlevel) return;
+    char fmt[PSC_MAXLOGLINE];
+    char errstr[128];
+    if (strlen(format) < PSC_MAXLOGLINE - 4)
+    {
+	strerror_r(errno, errstr, sizeof errstr);
+	snprintf(fmt, sizeof fmt, "%s: %s", format, errstr);
+	format = fmt;
+    }
+    char buf[PSC_MAXLOGLINE];
+    va_list ap;
+    va_start(ap, format);
+    vsnprintf(buf, PSC_MAXLOGLINE, format, ap);
+    va_end(ap);
+    PSC_Log_msg(level, buf);
+}
+
 
 SOLOCAL void PSC_Log_setPanic(void)
 {

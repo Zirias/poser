@@ -138,7 +138,7 @@ DECLEXPORT void
 PSC_Log_msg(PSC_LogLevel level, const char *message)
     ATTR_NONNULL((2));
 
-/** Log a message using a prinft-like format string.
+/** Log a message using a printf-like format string.
  * @memberof PSC_Log
  * @static
  * @param level the log level
@@ -147,6 +147,31 @@ PSC_Log_msg(PSC_LogLevel level, const char *message)
  */
 DECLEXPORT void
 PSC_Log_fmt(PSC_LogLevel level, const char *format, ...)
+    ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));
+
+/** Log an error message based on 'errno' (like perror())
+ * @memberof PSC_Log
+ * @static
+ * @param level the log level
+ * @param message the message to prepend to the error string, separated by
+ *                a colon
+ */
+DECLEXPORT void
+PSC_Log_err(PSC_LogLevel level, const char *message)
+    ATTR_NONNULL((2));
+
+/** Log an error message based on 'errno', with extra formatting
+ * This combines PSC_Log_fmt() and PSC_Log_err(): The message is formatted
+ * like printf() does, then the error string from the current 'errno' value
+ * is appended like perror() does.
+ * @memberof PSC_Log
+ * @static
+ * @param level the log level
+ * @param format the printf-like format string
+ * @param ... optional arguments for conversions in the format string
+ */
+DECLEXPORT void
+PSC_Log_errfmt(PSC_LogLevel level, const char *format, ...)
     ATTR_NONNULL((2)) ATTR_FORMAT((printf, 2, 3));
 
 #endif

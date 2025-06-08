@@ -82,7 +82,8 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 #  endif
     if (tfd < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "timer: cannot create timerfd");
+	PSC_Log_err(PSC_L_ERROR, "timer: cannot create timerfd");
+	return 0;
     }
 #endif
 #if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
@@ -98,11 +99,8 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
     self->expired = PSC_Event_create(self);
 #ifdef HAVE_TIMERFD
     self->tfd = tfd;
-    if (tfd >= 0)
-    {
-	PSC_Event_register(PSC_Service_readyRead(), self, expired, tfd);
-	PSC_Service_registerRead(tfd);
-    }
+    PSC_Event_register(PSC_Service_readyRead(), self, expired, tfd);
+    PSC_Service_registerRead(tfd);
 #endif
     self->job = 0;
     self->ms = 1000;
@@ -120,8 +118,9 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
     };
     if (timer_create(CLOCK_HIGHRES, &sev, &self->timerid) < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "timer: cannot create timer");
-	self->job = -1;
+	PSC_Log_err(PSC_L_ERROR, "timer: cannot create timer");
+	free(self);
+	return 0;
     }
 #endif
 #if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)

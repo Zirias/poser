@@ -267,7 +267,7 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 #endif
     if (connfd < 0)
     {
-	PSC_Log_msg(PSC_L_WARNING, "server: failed to accept connection");
+	PSC_Log_err(PSC_L_WARNING, "server: failed to accept connection");
 	return;
     }
 #ifndef HAVE_ACCEPT4
@@ -376,19 +376,19 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
 	if ((fd = open(opts->certfile, O_RDONLY|O_CLOEXEC)) < 0 ||
 		!(certfile = fdopen(fd, "r")))
 	{
-	    if (fd >= 0) close(fd);
-	    PSC_Log_fmt(PSC_L_ERROR,
+	    PSC_Log_errfmt(PSC_L_ERROR,
 		    "server: cannot open certificate file `%s' for reading",
 		    opts->certfile);
+	    if (fd >= 0) close(fd);
 	    goto error;
 	}
 	if ((fd = open(opts->keyfile, O_RDONLY|O_CLOEXEC)) < 0 ||
 		!(keyfile = fdopen(fd, "r")))
 	{
-	    if (fd >= 0) close(fd);
-	    PSC_Log_fmt(PSC_L_ERROR,
+	    PSC_Log_errfmt(PSC_L_ERROR,
 		    "server: cannot open private key file `%s' for reading",
 		    opts->keyfile);
+	    if (fd >= 0) close(fd);
 	    goto error;
 	}
 	if (!(cert = PEM_read_X509(certfile, 0, 0, 0)))
@@ -665,7 +665,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 	if (getaddrinfo(opts->bh_count ? opts->bindhosts[bi] : 0,
 		    portstr, &hints, &res0) < 0 || !res0)
 	{
-	    PSC_Log_fmt(PSC_L_ERROR,
+	    PSC_Log_errfmt(PSC_L_ERROR,
 		    "server: cannot get address info for `%s'",
 		    opts->bindhosts[bi]);
 	    continue;
@@ -689,7 +689,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 #endif
 	    if (socks[nsocks].fd < 0)
 	    {
-		PSC_Log_msg(PSC_L_ERROR, "server: cannot create socket");
+		PSC_Log_err(PSC_L_ERROR, "server: cannot create socket");
 		continue;
 	    }
 #ifndef HAVE_ACCEPT4
@@ -706,7 +706,7 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 	    if (setsockopt(socks[nsocks].fd, SOL_SOCKET, SO_REUSEADDR,
 			&opt_true, sizeof opt_true) < 0)
 	    {
-		PSC_Log_msg(PSC_L_ERROR, "server: cannot set socket option");
+		PSC_Log_err(PSC_L_ERROR, "server: cannot set socket option");
 		close(socks[nsocks].fd);
 		continue;
 	    }
@@ -719,14 +719,14 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 #endif
 	    if (bind(socks[nsocks].fd, res->ai_addr, res->ai_addrlen) < 0)
 	    {
-		PSC_Log_msg(PSC_L_ERROR,
+		PSC_Log_err(PSC_L_ERROR,
 			"server: cannot bind to specified address");
 		close(socks[nsocks].fd);
 		continue;
 	    }
 	    if (listen(socks[nsocks].fd, 128) < 0)
 	    {   
-		PSC_Log_msg(PSC_L_ERROR, "server: cannot listen on socket");
+		PSC_Log_err(PSC_L_ERROR, "server: cannot listen on socket");
 		close(socks[nsocks].fd);
 		continue;
 	    }
@@ -796,7 +796,7 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
     };
     if (sock.fd < 0)
     {
-        PSC_Log_msg(PSC_L_ERROR, "server: cannot create socket");
+        PSC_Log_err(PSC_L_ERROR, "server: cannot create socket");
         return 0;
     }
 #ifndef HAVE_ACCEPT4
@@ -852,8 +852,8 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 
         if (unlink(addr.sun_path) < 0)
         {
-            PSC_Log_fmt(PSC_L_ERROR, "server: cannot remove stale socket `%s'",
-                    addr.sun_path);
+            PSC_Log_errfmt(PSC_L_ERROR,
+		    "server: cannot remove stale socket `%s'", addr.sun_path);
             return 0;
         }
 
@@ -870,21 +870,23 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
     }
     else if (errno != ENOENT)
     {
-        PSC_Log_fmt(PSC_L_ERROR, "server: cannot access `%s'", addr.sun_path);
+        PSC_Log_errfmt(PSC_L_ERROR, "server: cannot access `%s'",
+		addr.sun_path);
         close(sock.fd);
         return 0;
     }
 
     if (bind(sock.fd, (struct sockaddr *)&addr, sizeof addr) < 0)
     {
-        PSC_Log_fmt(PSC_L_ERROR, "server: cannot bind to `%s'", addr.sun_path);
+        PSC_Log_errfmt(PSC_L_ERROR, "server: cannot bind to `%s'",
+		addr.sun_path);
         close(sock.fd);
         return 0;
     }
 
     if (listen(sock.fd, 8) < 0)
     {
-        PSC_Log_fmt(PSC_L_ERROR, "server: cannot listen on `%s'",
+        PSC_Log_errfmt(PSC_L_ERROR, "server: cannot listen on `%s'",
 		addr.sun_path);
         close(sock.fd);
 	unlink(addr.sun_path);
@@ -894,14 +896,14 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 
     if (chmod(addr.sun_path, opts->mode) < 0)
     {
-	PSC_Log_fmt(PSC_L_ERROR,
+	PSC_Log_err(PSC_L_ERROR,
 		"server: cannot set desired socket permissions");
     }
     if (opts->uid != -1 || opts->gid != -1)
     {
 	if (chown(addr.sun_path, opts->uid, opts->gid) < 0)
 	{
-	    PSC_Log_fmt(PSC_L_ERROR,
+	    PSC_Log_err(PSC_L_ERROR,
 		    "server: cannot set desired socket ownership");
 	}
     }

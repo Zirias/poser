@@ -380,7 +380,7 @@ static void dowrite(PSC_Connection *self)
 	}
 	else
 	{
-	    PSC_Log_fmt(PSC_L_WARNING, "connection: error writing to %s",
+	    PSC_Log_errfmt(PSC_L_WARNING, "connection: error writing to %s",
 		    PSC_Connection_remoteAddr(self));
 	    self->nrecs = 0;
 	    self->wrbuflen = 0;
@@ -630,7 +630,8 @@ static void doread(PSC_Connection *self)
 	{
 	    if (rc < 0)
 	    {
-		PSC_Log_fmt(PSC_L_WARNING, "connection: error reading from %s",
+		PSC_Log_errfmt(PSC_L_WARNING,
+			"connection: error reading from %s",
 			PSC_Connection_remoteAddr(self));
 	    }
 doclose:

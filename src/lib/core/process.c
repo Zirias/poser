@@ -134,7 +134,7 @@ static int createPipe(int *fds, int check)
 {
     if (pipe(fds) < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "process: Error creating pipe");
+	PSC_Log_err(PSC_L_ERROR, "process: Error creating pipe");
 	return -1;
     }
     if (!PSC_Service_isValidFd(fds[check], "process")) return -1;
@@ -288,6 +288,7 @@ static int runprocess(PSC_Process *self,
     pid_t pid = fork();
     if (pid < 0)
     {
+	PSC_Log_err(PSC_L_ERROR, "process: cannot fork()");
 	PSC_Service_unlockChildren();
 	goto done;
     }

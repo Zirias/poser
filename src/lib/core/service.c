@@ -441,13 +441,13 @@ static void enqueueCommand(SvcCommandQueue *q,
     static const uint64_t d = 1;
     if (mustwake && write(q->efd, &d, sizeof d) != sizeof d)
     {
-	PSC_Log_msg(PSC_L_WARNING,
+	PSC_Log_err(PSC_L_WARNING,
 		"service: error notifying thread of new commands");
     }
 #elif defined(HAVE_EVPORTS)
     if (mustwake && port_send(*q->ep, 1, 0) < 0)
     {
-	PSC_Log_msg(PSC_L_WARNING,
+	PSC_Log_err(PSC_L_WARNING,
 		"service: error notifying thread of new commands");
     }
 #elif defined(HAVE_KQUEUE)
@@ -457,7 +457,7 @@ static void enqueueCommand(SvcCommandQueue *q,
 	EV_SET(&ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, 0);
 	if (kevent(*q->kq, &ev, 1, 0, 0, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_WARNING,
+	    PSC_Log_err(PSC_L_WARNING,
 		    "service: error notifying thread of new commands");
 	}
     }
@@ -465,7 +465,7 @@ static void enqueueCommand(SvcCommandQueue *q,
     static const char d = 1;
     if (mustwake && write(q->commandpipe[1], &d, sizeof d) <= 0)
     {
-	PSC_Log_msg(PSC_L_WARNING,
+	PSC_Log_err(PSC_L_WARNING,
 		"service: error notifying thread of new commands");
     }
 #endif
@@ -1207,7 +1207,7 @@ static int processEvents(void)
     }
     if (pgrc < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "port_getn() failed");
+	PSC_Log_err(PSC_L_ERROR, "port_getn() failed");
 	return -1;
     }
     clearMustWake();
@@ -1264,7 +1264,7 @@ static int processEvents(void)
     } while (qrc < 0 && errno == EINTR);
     if (qrc < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "kevent() failed");
+	PSC_Log_err(PSC_L_ERROR, "kevent() failed");
 	return -1;
     }
     clearMustWake();
@@ -1351,7 +1351,7 @@ static int processEvents(void)
     }
     if (prc < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "epoll_pwait2() failed");
+	PSC_Log_err(PSC_L_ERROR, "epoll_pwait2() failed");
 	return -1;
     }
     clearMustWake();
@@ -1407,7 +1407,7 @@ static int processEvents(void)
     }
     if (prc < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "poll() failed");
+	PSC_Log_err(PSC_L_ERROR, "poll() failed");
 	return -1;
     }
     clearMustWake();
@@ -1480,7 +1480,7 @@ static int processEvents(void)
     }
     if (src < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "pselect() failed");
+	PSC_Log_err(PSC_L_ERROR, "pselect() failed");
 	return -1;
     }
     clearMustWake();
@@ -1584,7 +1584,7 @@ static int initCommandQueue(SvcCommandQueue *q)
 #else
     if (pipe(q->commandpipe) < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "service: error creating command pipe");
+	PSC_Log_err(PSC_L_ERROR, "service: error creating command pipe");
 	q->commandpipe[0] = -1;
 	q->commandpipe[1] = -1;
 #  ifdef SVC_NO_ATOMICS
@@ -1668,14 +1668,14 @@ static int serviceLoop(ServiceLoopFlags flags)
 	sigaddset(&sigblockmask, SIGPIPE);
 	if (sigprocmask(SIG_SETMASK, &sigblockmask, &sigorigmask) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal mask");
 	    return rc;
 	}
 
 #ifdef WITH_SIGHDL
 	if (pipe(sfd) < 0)
 	{
-	    PSC_Log_msg(PSC_L_FATAL, "service: cannot create signal pipe");
+	    PSC_Log_err(PSC_L_FATAL, "service: cannot create signal pipe");
 	    goto done;
 	}
 	fcntl(sfd[0], F_SETFD, FD_CLOEXEC);
@@ -1688,27 +1688,27 @@ static int serviceLoop(ServiceLoopFlags flags)
 
 	if (sigaction(SIGTERM, &handler, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal handler for SIGTERM");
 	    goto done;
 	}
 
 	if (sigaction(SIGINT, &handler, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGINT");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal handler for SIGINT");
 	    goto done;
 	}
 
 #ifndef HAVE_TIMERFD
 	if (sigaction(SIGALRM, &handler, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal handler for SIGALRM");
 	    goto done;
 	}
 #endif
 
 	if (sigaction(SIGCHLD, &handler, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal handler for SIGCHLD");
 	    goto done;
 	}
 #endif
@@ -1716,7 +1716,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 #ifdef HAVE_SIGNALFD
 	if (initSigfd() < 0)
 	{
-	    PSC_Log_msg(PSC_L_FATAL, "service: cannot open signalfd");
+	    PSC_Log_err(PSC_L_FATAL, "service: cannot open signalfd");
 	    goto done;
 	}
 #endif
@@ -1728,7 +1728,7 @@ static int serviceLoop(ServiceLoopFlags flags)
     svc->epfd = port_create();
     if (svc->epfd < 0)
     {
-	PSC_Log_msg(PSC_L_FATAL, "service: cannot create event port");
+	PSC_Log_err(PSC_L_FATAL, "service: cannot create event port");
 	goto done;
     }
     fcntl(svc->epfd, F_SETFD, O_CLOEXEC);
@@ -1737,7 +1737,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 #ifdef HAVE_KQUEUE
     if (initKqueue() < 0)
     {
-	PSC_Log_msg(PSC_L_FATAL, "service: cannot open kqueue");
+	PSC_Log_err(PSC_L_FATAL, "service: cannot open kqueue");
 	goto done;
     }
     if (svc->nchanges) flushChanges();
@@ -1747,7 +1747,7 @@ static int serviceLoop(ServiceLoopFlags flags)
     svc->epfd = epoll_create1(EPOLL_CLOEXEC);
     if (svc->epfd < 0)
     {
-	PSC_Log_msg(PSC_L_FATAL, "service: cannot open epoll");
+	PSC_Log_err(PSC_L_FATAL, "service: cannot open epoll");
 	goto done;
     }
 #endif
@@ -1768,7 +1768,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    {
 		if (chown(opts->pidfile, opts->uid, opts->gid) < 0)
 		{
-		    PSC_Log_msg(PSC_L_WARNING,
+		    PSC_Log_err(PSC_L_WARNING,
 			    "service: cannot change owner of pidfile");
 		}
 	    }
@@ -1777,14 +1777,14 @@ static int serviceLoop(ServiceLoopFlags flags)
 		gid_t gid = opts->gid;
 		if (setgroups(1, &gid) < 0 || setgid(gid) < 0)
 		{
-		    PSC_Log_msg(PSC_L_ERROR,
+		    PSC_Log_err(PSC_L_ERROR,
 			    "service: cannot set specified group");
 		    return rc;
 		}
 	    }
 	    if (setuid(opts->uid) < 0)
 	    {
-		PSC_Log_msg(PSC_L_ERROR,
+		PSC_Log_err(PSC_L_ERROR,
 			"service: cannot set specified user");
 		return rc;
 	    }
@@ -1804,7 +1804,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	}
 	if (sigprocmask(SIG_SETMASK, &sigblockmask, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot set signal mask");
+	    PSC_Log_err(PSC_L_ERROR, "cannot set signal mask");
 	    return rc;
 	}
 #endif
@@ -1831,7 +1831,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 		    default:
 			if (sigaction(r->signo, &handler, 0) < 0)
 			{
-			    PSC_Log_fmt(PSC_L_ERROR,
+			    PSC_Log_errfmt(PSC_L_ERROR,
 				    "cannot set signal handler for signal %d",
 				    r->signo);
 			}
@@ -2005,7 +2005,7 @@ done:
 #endif
 	if (sigprocmask(SIG_SETMASK, &sigorigmask, 0) < 0)
 	{
-	    PSC_Log_msg(PSC_L_ERROR, "cannot restore original signal mask");
+	    PSC_Log_err(PSC_L_ERROR, "cannot restore original signal mask");
 	    rc = EXIT_FAILURE;
 	}
 

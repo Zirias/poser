@@ -631,7 +631,7 @@ SOEXPORT int PSC_ThreadPool_init(void)
 
     if (sigprocmask(SIG_BLOCK, &blockmask, &mask) < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot set signal mask");
+	PSC_Log_err(PSC_L_ERROR, "threadpool: cannot set signal mask");
 	return rc;
     }
 
@@ -704,7 +704,7 @@ rollback:
 done:
     if (sigprocmask(SIG_SETMASK, &mask, 0) < 0)
     {
-	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot restore signal mask");
+	PSC_Log_err(PSC_L_ERROR, "threadpool: cannot restore signal mask");
 	if (rc == 0) stopThreads(nthreads);
 	rc = -1;
     }
