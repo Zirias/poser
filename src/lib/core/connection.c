@@ -818,6 +818,13 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     if (opts->createmode == CCM_CONNECTING)
     {
 	self->connectTimer = PSC_Timer_create();
+	if (!self->connectTimer)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "connection: cannot create timer for "
+		    "connect timeout, aborting");
+	    PSC_Connection_close(self, 0);
+	    return 0;
+	}
 	PSC_Timer_setMs(self->connectTimer, CONNTIMEOUT);
 	PSC_Event_register(PSC_Timer_expired(self->connectTimer), self,
 		connectionTimeout, 0);
@@ -829,6 +836,13 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     else if (self->tls && !self->tls_is_client)
     {
 	self->tlsConnectTimer = PSC_Timer_create();
+	if (!self->tlsConnectTimer)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "connection: cannot create timer for "
+		    "TLS handshake timeout, aborting");
+	    PSC_Connection_close(self, 0);
+	    return 0;
+	}
 	PSC_Timer_setMs(self->tlsConnectTimer, CONNTIMEOUT);
 	PSC_Event_register(PSC_Timer_expired(self->tlsConnectTimer), self,
 		tlsHandshakeTimeout, 0);

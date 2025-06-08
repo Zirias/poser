@@ -733,19 +733,20 @@ SOEXPORT int PSC_ThreadPool_active(void)
 SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 {
     job->thrno = PSC_Service_threadNo();
-    int rc = JobQueue_enqueue(jobQueue, job);
-    if (rc == 0 && job->timeoutMs)
+    if (job->timeoutMs && !job->timeout)
     {
-	if (!job->timeout)
-	{
-	    job->timeout = PSC_Timer_create();
-	    PSC_Event_register(PSC_Timer_expired(job->timeout), job,
-		    jobTimeout, 0);
-	}
+	job->timeout = PSC_Timer_create();
+	if (!job->timeout) return -1;
+	PSC_Event_register(PSC_Timer_expired(job->timeout), job,
+		jobTimeout, 0);
+    }
+    if (JobQueue_enqueue(jobQueue, job) < 0) return -1;
+    if (job->timeout)
+    {
 	PSC_Timer_setMs(job->timeout, job->timeoutMs);
 	PSC_Timer_start(job->timeout, 0);
     }
-    return rc;
+    return 0;
 }
 
 SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)

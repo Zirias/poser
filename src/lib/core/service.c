@@ -2172,6 +2172,13 @@ SOEXPORT void PSC_Service_shutdownLock(void)
     if (!shutdownTimer)
     {
 	shutdownTimer = PSC_Timer_create();
+	if (!shutdownTimer)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "service: cannot create shutdown "
+		    "timer, exiting immediately");
+	    svc->shutdownRef = 0;
+	    return;
+	}
 	PSC_Event_register(PSC_Timer_expired(shutdownTimer), 0,
 		shutdownTimeout, 0);
 	PSC_Timer_setMs(shutdownTimer, 5000);

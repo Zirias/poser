@@ -210,6 +210,7 @@ static void doaccept(void *arg)
 	.createmode = CCM_NORMAL
     };
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
+    if (!newconn) goto done;
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
     PSC_Event_register(rec->srv->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
@@ -225,6 +226,7 @@ static void doaccept(void *arg)
     PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
 	    PSC_Connection_remoteAddr(newconn));
     PSC_Event_raise(rec->srv->clientConnected, 0, newconn);
+done:
     pthread_mutex_unlock(&rec->srv->lock);
     free(rec);
 }
@@ -975,6 +977,13 @@ SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
     if (timeout)
     {
 	self->shutdownTimer = PSC_Timer_create();
+	if (!self->shutdownTimer)
+	{
+	    PSC_Log_msg(PSC_L_WARNING, "server: cannot create timer for "
+		    "shutdown, closing all connections now.");
+	    PSC_Server_destroy(self);
+	    return;
+	}
 	PSC_Timer_setMs(self->shutdownTimer, timeout);
 	PSC_Event_register(PSC_Timer_expired(self->shutdownTimer), self,
 		forceDestroy, 0);

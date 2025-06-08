@@ -49,8 +49,7 @@ typedef struct ConnOpts
 } ConnOpts;
 
 PSC_Connection *
-PSC_Connection_create(int fd, const ConnOpts *opts)
-    ATTR_RETNONNULL ATTR_NONNULL((2));
+PSC_Connection_create(int fd, const ConnOpts *opts) ATTR_NONNULL((2));
 
 void
 PSC_Connection_setRemoteAddr(PSC_Connection *self, PSC_IpAddr *addr)

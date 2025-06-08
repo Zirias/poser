@@ -370,6 +370,12 @@ SOEXPORT int PSC_Process_stop(PSC_Process *self, unsigned forceMs)
     if (forceMs)
     {
 	self->killtimer = PSC_Timer_create();
+	if (!self->killtimer)
+	{
+	    PSC_Log_msg(PSC_L_ERROR, "process: cannot create timer for "
+		    "force-stopping the child process");
+	    return -1;
+	}
 	PSC_Timer_setMs(self->killtimer, forceMs);
 	PSC_Event_register(PSC_Timer_expired(self->killtimer), self,
 		forcekill, 0);
