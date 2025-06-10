@@ -74,7 +74,7 @@ static void EvHandlerPool_done(EvHandlerPool *self)
     }
 }
 
-EvHandlerEntry *EvHandlerPool_get(EvHandlerPool *self)
+static EvHandlerEntry *EvHandlerPool_get(EvHandlerPool *self)
 {
     assert(self->thr == (void *)pthread_self());
     EvHandlerEntry *e = self->first;
@@ -86,7 +86,7 @@ EvHandlerEntry *EvHandlerPool_get(EvHandlerPool *self)
     return e;
 }
 
-void EvHandlerPool_return(EvHandlerPool *self, EvHandlerEntry *e)
+static void EvHandlerPool_return(EvHandlerPool *self, EvHandlerEntry *e)
 {
     assert(self->thr == (void *)pthread_self());
     e->next = 0;
