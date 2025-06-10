@@ -143,6 +143,7 @@ struct PSC_Server
     PSC_Proto proto;
     int port;
     int disabled;
+    int nthr;
     int nextthr;
 #ifdef WITH_TLS
     enum tlslevel tls;
@@ -291,14 +292,12 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     rec->addr = PSC_IpAddr_fromSockAddr(sa);
     rec->fd = connfd;
 
-    int thr = -1;
-    int nthr = PSC_Service_workers();
-    if (nthr)
+    if (self->nthr < 0)
     {
-	thr = self->nextthr++;
-	if (self->nextthr == nthr) self->nextthr = 0;
+	if ((self->nthr = PSC_Service_workers())) self->nextthr = 0;
     }
-    PSC_Service_runOnThread(thr, doaccept, rec);
+    PSC_Service_runOnThread(self->nextthr, doaccept, rec);
+    if (self->nthr) self->nextthr = (self->nextthr + 1) % self->nthr;
 }
 
 static int bindcmp(const void *a, const void *b)
@@ -475,7 +474,8 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->proto = opts->proto;
     self->port = opts->port;
     self->disabled = 0;
-    self->nextthr = 0;
+    self->nthr = -1;
+    self->nextthr = -1;
 #ifdef WITH_TLS
     self->tls = props.tls;
     self->tls_ctx = props.tls_ctx;
