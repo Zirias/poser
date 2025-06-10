@@ -58,11 +58,11 @@ typedef enum ConnectionType
 
 struct PSC_Connection
 {
+    PSC_Event connected;
+    PSC_Event closed;
+    PSC_Event dataReceived;
+    PSC_Event dataSent;
     PSC_MessageEndLocator rdlocator;
-    PSC_Event *connected;
-    PSC_Event *closed;
-    PSC_Event *dataReceived;
-    PSC_Event *dataSent;
     PSC_Timer *connectTimer;
 #ifdef WITH_TLS
     PSC_Timer *tlsConnectTimer;
@@ -221,7 +221,7 @@ static void dohandshake(PSC_Connection *self)
 	    }
 	    PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
 		    PSC_Connection_remoteAddr(self));
-	    PSC_Event_raise(self->connected, 0, 0);
+	    PSC_Event_raise(&self->connected, 0, 0);
 	}
     }
     else
@@ -313,7 +313,7 @@ static void dowrite(PSC_Connection *self)
 		    && self->writenotify[notno].wrbufpos <= self->wrbufpos;
 		    ++notno)
 	    {
-		PSC_Event_raise(self->dataSent, 0,
+		PSC_Event_raise(&self->dataSent, 0,
 			self->writenotify[notno].id);
 		self->writenotify[notno].id = 0;
 	    }
@@ -361,7 +361,7 @@ static void dowrite(PSC_Connection *self)
 		    && self->writenotify[notno].wrbufpos <= self->wrbufpos;
 		    ++notno)
 	    {
-		PSC_Event_raise(self->dataSent, 0,
+		PSC_Event_raise(&self->dataSent, 0,
 			self->writenotify[notno].id);
 	    }
 	    if (self->wrbufpos < self->wrbuflen) return;
@@ -429,7 +429,7 @@ static void writeConnection(void *receiver, void *sender, void *args)
 	wantreadwrite(self);
 	PSC_Log_fmt(PSC_L_DEBUG, "connection: connected to %s",
 		PSC_Connection_remoteAddr(self));
-	PSC_Event_raise(self->connected, 0, 0);
+	PSC_Event_raise(&self->connected, 0, 0);
 	return;
     }
     PSC_Log_fmt(PSC_L_DEBUG, "connection: ready to write to %s",
@@ -531,7 +531,7 @@ static void raisereceivedevents(PSC_Connection *self)
 	    self->args.buf = rdbuf + self->rdbufpos;
 	    self->args.text = 0;
 	}
-	PSC_Event_raise(self->dataReceived, 0, &self->args);
+	PSC_Event_raise(&self->dataReceived, 0, &self->args);
 	self->rdbufpos += len;
 	if (self->rdbufpos == self->rdbufused)
 	{
@@ -729,10 +729,10 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 
     self = PSC_malloc(connsz);
     self->rdlocator = 0;
-    self->connected = PSC_Event_create(self);
-    self->closed = PSC_Event_create(self);
-    self->dataReceived = PSC_Event_create(self);
-    self->dataSent = PSC_Event_create(self);
+    PSC_Event_initStatic(&self->connected, self);
+    PSC_Event_initStatic(&self->closed, self);
+    PSC_Event_initStatic(&self->dataReceived, self);
+    PSC_Event_initStatic(&self->dataSent, self);
     self->connectTimer = 0;
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
@@ -860,22 +860,22 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 
 SOEXPORT PSC_Event *PSC_Connection_connected(PSC_Connection *self)
 {
-    return self->connected;
+    return &self->connected;
 }
 
 SOEXPORT PSC_Event *PSC_Connection_closed(PSC_Connection *self)
 {
-    return self->closed;
+    return &self->closed;
 }
 
 SOEXPORT PSC_Event *PSC_Connection_dataReceived(PSC_Connection *self)
 {
-    return self->dataReceived;
+    return &self->dataReceived;
 }
 
 SOEXPORT PSC_Event *PSC_Connection_dataSent(PSC_Connection *self)
 {
-    return self->dataSent;
+    return &self->dataSent;
 }
 
 SOEXPORT const PSC_IpAddr *PSC_Connection_remoteIpAddr(
@@ -1039,7 +1039,7 @@ static void doclose(PSC_Connection *self, int blacklist)
     {
 	PSC_Connection_blacklistAddress(self->blacklisthits, self->ipAddr);
     }
-    PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
+    PSC_Event_raise(&self->closed, 0, self->connectTimer ? 0 : self);
     deleteLater(self);
 }
 
@@ -1093,14 +1093,14 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     {
 	if (self->writenotify[notno].id)
 	{
-	    PSC_Event_raise(self->dataSent, 0, self->writenotify[notno].id);
+	    PSC_Event_raise(&self->dataSent, 0, self->writenotify[notno].id);
 	}
     }
     for (uint8_t recno = 0; recno < self->nrecs; ++recno)
     {
 	if (self->writerecs[recno].id)
 	{
-	    PSC_Event_raise(self->dataSent, 0, self->writerecs[recno].id);
+	    PSC_Event_raise(&self->dataSent, 0, self->writerecs[recno].id);
 	}
     }
 
@@ -1118,7 +1118,7 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
 #ifdef WITH_TLS
 	if (self->tls) SSL_shutdown(self->tls);
 #endif
-	PSC_Event_raise(self->closed, 0, self->connectTimer ? 0 : self);
+	PSC_Event_raise(&self->closed, 0, self->connectTimer ? 0 : self);
 	if (self->rdreg) PSC_Service_unregisterRead(self->fd);
 	if (self->wrreg) PSC_Service_unregisterWrite(self->fd);
 	self->rdreg = 0;
@@ -1142,10 +1142,10 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     free(self->addr);
     free(self->name);
     PSC_Timer_destroy(self->connectTimer);
-    PSC_Event_destroy(self->dataSent);
-    PSC_Event_destroy(self->dataReceived);
-    PSC_Event_destroy(self->closed);
-    PSC_Event_destroy(self->connected);
+    PSC_Event_destroyStatic(&self->dataSent);
+    PSC_Event_destroyStatic(&self->dataReceived);
+    PSC_Event_destroyStatic(&self->closed);
+    PSC_Event_destroyStatic(&self->connected);
     free(self);
 }
 

@@ -2,11 +2,11 @@
 
 #include <poser/core/resolver.h>
 
+#include "event.h"
 #include "ipaddr.h"
 
 #include <netdb.h>
 #include <netinet/in.h>
-#include <poser/core/event.h>
 #include <poser/core/list.h>
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
@@ -16,7 +16,7 @@
 
 struct PSC_Resolver
 {
-    PSC_Event *done;
+    PSC_Event done;
     PSC_ThreadJob *job;
     PSC_List *entries;
     int handling;
@@ -40,7 +40,7 @@ static void deleteEntry(void *obj)
 SOEXPORT PSC_Resolver *PSC_Resolver_create(void)
 {
     PSC_Resolver *self = PSC_malloc(sizeof *self);
-    self->done = PSC_Event_create(self);
+    PSC_Event_initStatic(&self->done, self);
     self->job = 0;
     self->entries = PSC_List_create();
     self->handling = 0;
@@ -95,12 +95,12 @@ static void resolveDone(void *receiver, void *sender, void *args)
     (void)args;
 
     PSC_Resolver *self = receiver;
-    if (self->done)
+    if (self->done.pool)
     {
 	if (PSC_ThreadJob_hasCompleted(self->job))
 	{
 	    self->handling = 1;
-	    PSC_Event_raise(self->done, 0, 0);
+	    PSC_Event_raise(&self->done, 0, 0);
 	    if (self->handling < 0)
 	    {
 		self->job = 0;
@@ -137,14 +137,14 @@ SOEXPORT int PSC_Resolver_resolve(PSC_Resolver *self, int forceAsync)
     {
 	if (forceAsync) return -1;
 	resolveProc(self);
-	PSC_Event_raise(self->done, 0, 0);
+	PSC_Event_raise(&self->done, 0, 0);
     }
     return 0;
 }
 
 SOEXPORT PSC_Event *PSC_Resolver_done(PSC_Resolver *self)
 {
-    return self->done;
+    return &self->done;
 }
 
 SOEXPORT const PSC_List *PSC_Resolver_entries(const PSC_Resolver *self)
@@ -160,10 +160,9 @@ SOEXPORT void PSC_Resolver_destroy(PSC_Resolver *self)
 	self->handling = -1;
 	return;
     }
-    PSC_Event_destroy(self->done);
+    PSC_Event_destroyStatic(&self->done);
     if (self->job)
     {
-	self->done = 0;
 	PSC_ThreadPool_cancel(self->job);
 	return;
     }

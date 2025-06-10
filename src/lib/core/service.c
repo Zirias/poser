@@ -301,6 +301,9 @@ static void svcinit(void)
     if (svc) return;
     svc = PSC_malloc(sizeof *svc);
     memset(svc, 0, sizeof *svc);
+    PSC_Event_initStatic(&svc->readyRead, 0);
+    PSC_Event_initStatic(&svc->readyWrite, 0);
+    PSC_Event_initStatic(&svc->eventsDone, 0);
 #ifdef HAVE_KQUEUE
     svc->kqfd = -1;
 #endif
@@ -501,16 +504,19 @@ SOEXPORT PSC_Event *PSC_Service_readyWrite(void)
 
 SOEXPORT PSC_Event *PSC_Service_prestartup(void)
 {
+    if (!prestartup.pool) PSC_Event_initStatic(&prestartup, 0);
     return &prestartup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_startup(void)
 {
+    if (!startup.pool) PSC_Event_initStatic(&startup, 0);
     return &startup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_shutdown(void)
 {
+    if (!shutdown.pool) PSC_Event_initStatic(&shutdown, 0);
     return &shutdown;
 }
 
@@ -522,6 +528,7 @@ SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 
 SOEXPORT PSC_Event *PSC_Service_childExited(void)
 {
+    if (!childExited.pool) PSC_Event_initStatic(&childExited, 0);
     return &childExited;
 }
 
@@ -2120,21 +2127,21 @@ done:
     free(svc);
     svc = 0;
 
+    if (flags & SLF_SVCMAIN)
+    {
+	if (prestartup.pool) PSC_Event_destroyStatic(&prestartup);
+	if (startup.pool) PSC_Event_destroyStatic(&startup);
+	if (shutdown.pool) PSC_Event_destroyStatic(&shutdown);
+	if (childExited.pool) PSC_Event_destroyStatic(&childExited);
+    }
+
     return rc;
 }
 
 static int serviceMain(void *data)
 {
     (void)data;
-
-    int rc = serviceLoop(SLF_SVCRUN | SLF_SVCMAIN);
-
-    PSC_Event_destroyStatic(&prestartup);
-    PSC_Event_destroyStatic(&startup);
-    PSC_Event_destroyStatic(&shutdown);
-    PSC_Event_destroyStatic(&childExited);
-
-    return rc;
+    return serviceLoop(SLF_SVCRUN | SLF_SVCMAIN);
 }
 
 SOEXPORT int PSC_Service_loop(void)

@@ -2,9 +2,9 @@
 
 #include "certinfo.h"
 #include "connection.h"
+#include "event.h"
 #include "ipaddr.h"
 
-#include <poser/core/event.h>
 #include <poser/core/hash.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
@@ -124,9 +124,9 @@ typedef struct AcceptRecord
 
 struct PSC_Server
 {
-    PSC_Event *clientConnected;
-    PSC_Event *shutdownComplete;
-    PSC_Event *closeAll;
+    PSC_Event clientConnected;
+    PSC_Event shutdownComplete;
+    PSC_Event closeAll;
     PSC_Timer *shutdownTimer;
     char *path;
 #ifdef WITH_TLS
@@ -183,7 +183,7 @@ static void removeConnection(void *receiver, void *sender, void *args)
     PSC_Connection *conn = sender;
 
     pthread_mutex_lock(&self->lock);
-    PSC_Event_unregister(self->closeAll, conn, closeConnection, 0);
+    PSC_Event_unregister(&self->closeAll, conn, closeConnection, 0);
     if (!--self->nconn) sem_post(&self->allclosed);
     pthread_mutex_unlock(&self->lock);
 }
@@ -213,7 +213,7 @@ static void doaccept(void *arg)
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
     if (!newconn) goto done;
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
-    PSC_Event_register(rec->srv->closeAll, newconn, closeConnection, 0);
+    PSC_Event_register(&rec->srv->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
 	    removeConnection, 0);
     if (rec->srv->path)
@@ -226,7 +226,7 @@ static void doaccept(void *arg)
     }
     PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
 	    PSC_Connection_remoteAddr(newconn));
-    PSC_Event_raise(rec->srv->clientConnected, 0, newconn);
+    PSC_Event_raise(&rec->srv->clientConnected, 0, newconn);
 done:
     pthread_mutex_unlock(&rec->srv->lock);
     free(rec);
@@ -461,9 +461,10 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     if (initTls(&props, opts) < 0) goto error;
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
-    self->clientConnected = PSC_Event_create(self);
-    self->shutdownComplete = PSC_Event_create(self);
-    self->closeAll = PSC_Event_create(self);
+    memset(&self->clientConnected, 0, sizeof self->clientConnected);
+    self->clientConnected.sender = self;
+    PSC_Event_initStatic(&self->shutdownComplete, self);
+    memset(&self->closeAll, 0, sizeof self->closeAll);
     self->shutdownTimer = 0;
     self->path = path;
     pthread_mutex_init(&self->lock, 0);
@@ -919,12 +920,12 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 
 SOEXPORT PSC_Event *PSC_Server_clientConnected(PSC_Server *self)
 {
-    return self->clientConnected;
+    return &self->clientConnected;
 }
 
 SOEXPORT PSC_Event *PSC_Server_shutdownComplete(PSC_Server *self)
 {
-    return self->shutdownComplete;
+    return &self->shutdownComplete;
 }
 
 SOEXPORT void PSC_Server_disable(PSC_Server *self)
@@ -998,7 +999,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     PSC_Timer_destroy(self->shutdownTimer);
     if (self->nconn)
     {
-	PSC_Event_raise(self->closeAll, 0, 0);
+	PSC_Event_raise(&self->closeAll, 0, 0);
 	sem_wait(&self->allclosed);
     }
     if (!self->nsocks)
@@ -1014,10 +1015,10 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     }
     sem_destroy(&self->allclosed);
     pthread_mutex_destroy(&self->lock);
-    PSC_Event_destroy(self->closeAll);
-    PSC_Event_destroy(self->clientConnected);
-    PSC_Event_raise(self->shutdownComplete, 0, 0);
-    PSC_Event_destroy(self->shutdownComplete);
+    PSC_Event_destroyStatic(&self->closeAll);
+    PSC_Event_destroyStatic(&self->clientConnected);
+    PSC_Event_raise(&self->shutdownComplete, 0, 0);
+    PSC_Event_destroyStatic(&self->shutdownComplete);
     if (self->path)
     {
 	unlink(self->path);

@@ -3,8 +3,8 @@
 #include <poser/core/process.h>
 
 #include "connection.h"
+#include "event.h"
 
-#include <poser/core/event.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
 #include <poser/core/timer.h>
@@ -42,7 +42,7 @@ struct PSC_ProcessOpts
 
 struct PSC_Process
 {
-    PSC_Event *done;
+    PSC_Event done;
     PSC_Timer *killtimer;
     PSC_Connection *streams[3];
     int execError;
@@ -117,7 +117,7 @@ SOEXPORT PSC_Process *PSC_Process_create(const PSC_ProcessOpts *opts)
     PSC_Process *self = PSC_malloc(sizeof *self +
 	    (argc + 1) * sizeof *self->args);
     memset(self, 0, sizeof *self);
-    self->done = PSC_Event_create(self);
+    PSC_Event_initStatic(&self->done, self);
     self->execError = opts->execError;
     self->argc = argc;
     memcpy(self->actions, opts->actions, sizeof self->actions);
@@ -194,10 +194,10 @@ static void tryDestroy(PSC_Process *self)
     if (self->streams[PSC_ST_STDOUT]) return;
     if (self->streams[PSC_ST_STDERR]) return;
 
-    PSC_Event_raise(self->done, 0, &self->doneArgs);
+    PSC_Event_raise(&self->done, 0, &self->doneArgs);
 
     for (int i = 0; i < self->argc; ++i) free(self->args[i]);
-    PSC_Event_destroy(self->done);
+    PSC_Event_destroyStatic(&self->done);
     free(self);
 }
 
@@ -386,7 +386,7 @@ SOEXPORT int PSC_Process_stop(PSC_Process *self, unsigned forceMs)
 
 SOEXPORT PSC_Event *PSC_Process_done(PSC_Process *self)
 {
-    return self->done;
+    return &self->done;
 }
 
 SOEXPORT pid_t PSC_Process_pid(const PSC_Process *self)

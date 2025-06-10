@@ -1,6 +1,7 @@
 #define _DEFAULT_SOURCE
 
-#include <poser/core/event.h>
+#include "event.h"
+
 #include <poser/core/log.h>
 #include <poser/core/service.h>
 #include <poser/core/threadpool.h>
@@ -63,9 +64,9 @@
 
 struct PSC_ThreadJob
 {
+    PSC_Event finished;
     PSC_ThreadProc proc;
     void *arg;
-    PSC_Event *finished;
     PSC_Timer *timeout;
     PSC_AsyncTask *task;
     const char *panicmsg;
@@ -400,7 +401,7 @@ SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
 #endif
     self->proc = proc;
     self->arg = arg;
-    self->finished = PSC_Event_create(self);
+    PSC_Event_initStatic(&self->finished, self);
     self->timeoutMs = timeoutMs;
     self->hasCompleted = 1;
     self->pthrno = -1;
@@ -418,7 +419,7 @@ SOEXPORT void PSC_ThreadJob_setAsync(PSC_ThreadJob *self)
 
 SOEXPORT PSC_Event *PSC_ThreadJob_finished(PSC_ThreadJob *self)
 {
-    return self->finished;
+    return &self->finished;
 }
 
 SOEXPORT int PSC_ThreadJob_hasCompleted(const PSC_ThreadJob *self)
@@ -436,7 +437,7 @@ SOEXPORT void PSC_ThreadJob_destroy(PSC_ThreadJob *self)
     pthread_mutex_destroy(&self->lock);
 #endif
     PSC_Timer_destroy(self->timeout);
-    PSC_Event_destroy(self->finished);
+    PSC_Event_destroyStatic(&self->finished);
     free(self);
 }
 
@@ -561,7 +562,7 @@ static void threadJobDone(void *arg)
     }
     else
     {
-	PSC_Event_raise(job->finished, 0, job->arg);
+	PSC_Event_raise(&job->finished, 0, job->arg);
 	PSC_ThreadJob_destroy(job);
     }
 }

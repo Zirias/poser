@@ -6,17 +6,18 @@
 #include <stddef.h>
 
 C_CLASS_DECL(EvHandlerEntry);
-C_CLASS_DECL(PSC_Dictionary);
+C_CLASS_DECL(EvHandlerPool);
 
 struct PSC_Event
 {
     void *sender;
+    EvHandlerPool *pool;
     EvHandlerEntry *first;
     EvHandlerEntry *last;
     EvHandlerEntry *handling;
-    PSC_Dictionary *index;
 };
 
+void PSC_Event_initStatic(PSC_Event *self, void *sender) CMETHOD;
 void PSC_Event_destroyStatic(PSC_Event *self);
 
 #endif

@@ -50,7 +50,7 @@ static const struct itimerval itvzero;
 
 struct PSC_Timer
 {
-    PSC_Event *expired;
+    PSC_Event expired;
 #if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE) || defined(HAVE_TIMERFD)
 #  ifdef HAVE_EVPORTS
     timer_t timerid;
@@ -96,7 +96,7 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
     pthread_mutex_unlock(&lock);
 #endif
     PSC_Timer *self = PSC_malloc(sizeof *self);
-    self->expired = PSC_Event_create(self);
+    PSC_Event_initStatic(&self->expired, self);
 #ifdef HAVE_TIMERFD
     self->tfd = tfd;
     PSC_Event_register(PSC_Service_readyRead(), self, expired, tfd);
@@ -131,7 +131,7 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 
 SOEXPORT PSC_Event *PSC_Timer_expired(PSC_Timer *self)
 {
-    return self->expired;
+    return &self->expired;
 }
 
 #if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE) || defined(HAVE_TIMERFD)
@@ -150,13 +150,13 @@ SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
 
 SOLOCAL void PSC_Timer_doexpire(PSC_Timer *self)
 {
-    PSC_Event_raise(self->expired, 0, 0);
+    PSC_Event_raise(&self->expired, 0, 0);
     if (self->periodic)
     {
 	int overruns = timer_getoverrun(self->timerid);
 	for (int i = 0; i < overruns; ++i)
 	{
-	    PSC_Event_raise(self->expired, 0, 0);
+	    PSC_Event_raise(&self->expired, 0, 0);
 	}
     }
     else self->job = 0;
@@ -189,7 +189,7 @@ SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
 
 SOLOCAL void PSC_Timer_doexpire(PSC_Timer *self)
 {
-    PSC_Event_raise(self->expired, 0, 0);
+    PSC_Event_raise(&self->expired, 0, 0);
     if (!self->periodic) self->job = 0;
 }
 
@@ -227,7 +227,7 @@ void expired(void *receiver, void *sender, void *args)
     }
     for (uint64_t i = 0; i < times; ++i)
     {
-	PSC_Event_raise(self->expired, 0, 0);
+	PSC_Event_raise(&self->expired, 0, 0);
     }
     if (!self->periodic) self->job = 0;
 }
@@ -398,7 +398,7 @@ static void dostart(void *arg)
 static void doraise(void *arg)
 {
     PSC_Timer *self = arg;
-    PSC_Event_raise(self->expired, 0, 0);
+    PSC_Event_raise(&self->expired, 0, 0);
 }
 
 SOEXPORT void PSC_Timer_setMs(PSC_Timer *self, unsigned ms)
@@ -469,7 +469,7 @@ SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
 #ifdef HAVE_KQUEUE
     PSC_Service_killTimer(self);
 #endif
-    PSC_Event_destroy(self->expired);
+    PSC_Event_destroyStatic(&self->expired);
     free(self);
 }
 
