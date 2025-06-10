@@ -346,6 +346,7 @@ static void clearMustWake(void)
 #ifndef SVC_NO_ATOMICS
 static void enqueueLockfree(SvcCommandQueue *q, SvcCommandNode *cmd)
 {
+    SvcCommandNode *chklast;
     SvcCommandNode *last = atomic_load_explicit(&q->last,
 	    memory_order_acquire);
     for (;;)
@@ -354,6 +355,12 @@ static void enqueueLockfree(SvcCommandQueue *q, SvcCommandNode *cmd)
 		memory_order_acquire);
 	if (!next)
 	{
+	    if ((chklast = atomic_load_explicit(&q->last,
+			    memory_order_acquire)) != last)
+	    {
+		last = chklast;
+		continue;
+	    }
 	    if (atomic_compare_exchange_strong_explicit(&last->next,
 			&next, cmd, memory_order_release,
 			memory_order_acquire)) break;
@@ -368,7 +375,9 @@ static void enqueueLockfree(SvcCommandQueue *q, SvcCommandNode *cmd)
 static void enqueueLockfreeDummy(SvcCommandQueue *q)
 {
     SvcCommandNode *cmd = PSC_malloc(sizeof *cmd);
-    memset(cmd, 0, sizeof *cmd);
+    atomic_store_explicit(&cmd->next, 0, memory_order_release);
+    cmd->cmd.func = 0;
+    cmd->cmd.arg = 0;
     enqueueLockfree(q, cmd);
 }
 #endif
@@ -390,6 +399,7 @@ static void runCommands(void)
     atomic_store_explicit(&q->mustwake, 1, memory_order_release);
     if (!torun) return;
     enqueueLockfreeDummy(q);
+    while (q->first == atomic_load_explicit(&q->last, memory_order_consume)) ;
 #endif
 
 #ifdef SVC_NO_ATOMICS
@@ -402,14 +412,16 @@ static void runCommands(void)
 #ifdef SVC_NO_ATOMICS
 	SvcCommandNode *next = torun->next;
 #else
-	SvcCommandNode *next = atomic_load_explicit(
-		&torun->next, memory_order_consume);
+	SvcCommandNode *next;
+	do next = atomic_load_explicit(&torun->next, memory_order_consume);
+	while (!next);
 #endif
 	free(torun);
 	torun = next;
     }
 
 #ifndef SVC_NO_ATOMICS
+    free(q->first);
     q->first = torun;
 #endif
 }
@@ -418,7 +430,11 @@ static void enqueueCommand(SvcCommandQueue *q,
 	PSC_OnThreadExec func, void *arg)
 {
     SvcCommandNode *cmd = PSC_malloc(sizeof *cmd);
+#ifdef SVC_NO_ATOMICS
     cmd->next = 0;
+#else
+    atomic_store_explicit(&cmd->next, 0, memory_order_release);
+#endif
     cmd->cmd.func = func;
     cmd->cmd.arg = arg;
     int mustwake = 0;
@@ -1542,10 +1558,8 @@ static void readCommandPipe(void *receiver, void *sender, void *args)
 
 static int initCommandQueue(SvcCommandQueue *q)
 {
+    memset(q, 0, sizeof *q);
 #ifdef SVC_NO_ATOMICS
-    q->first = 0;
-    q->last = 0;
-    q->mustwake = 1;
     if (pthread_mutex_init(&q->lock, 0) != 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "service: error creating command lock");
@@ -1557,19 +1571,14 @@ static int initCommandQueue(SvcCommandQueue *q)
 #  endif
 	return -1;
     }
-#else
-    q->first = PSC_malloc(sizeof *q->first);
-    memset(q->first, 0, sizeof *q->first);
-    atomic_store_explicit(&q->last, q->first, memory_order_release);
-    atomic_store_explicit(&q->mustwake, 1, memory_order_release);
+    pthread_mutex_lock(&q->lock);
 #endif
 #ifdef HAVE_EVENTFD
     if ((q->efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) < 0)
     {
 #  ifdef SVC_NO_ATOMICS
+	pthread_mutex_unlock(&q->lock);
 	pthread_mutex_destroy(&q->lock);
-#  else
-	free(q->first);
 #  endif
 	return -1;
     }
@@ -1588,9 +1597,8 @@ static int initCommandQueue(SvcCommandQueue *q)
 	q->commandpipe[0] = -1;
 	q->commandpipe[1] = -1;
 #  ifdef SVC_NO_ATOMICS
+	pthread_mutex_unlock(&q->lock);
 	pthread_mutex_destroy(&q->lock);
-#  else
-	free(q->first);
 #  endif
 	return -1;
     }
@@ -1602,6 +1610,15 @@ static int initCommandQueue(SvcCommandQueue *q)
 	    fcntl(q->commandpipe[1], F_GETFL) | O_NONBLOCK);
     PSC_Service_registerRead(q->commandpipe[0]);
     PSC_Event_register(&svc->readyRead, 0, readCommandPipe, q->commandpipe[0]);
+#endif
+#ifdef SVC_NO_ATOMICS
+    q->mustwake = 1;
+    pthread_mutex_unlock(&q->lock);
+#else
+    q->first = PSC_malloc(sizeof *q->first);
+    memset(q->first, 0, sizeof *q->first);
+    atomic_store_explicit(&q->last, q->first, memory_order_release);
+    atomic_store_explicit(&q->mustwake, 1, memory_order_release);
 #endif
     return 0;
 }
