@@ -5,7 +5,10 @@
 
 #include <poser/core/util.h>
 
+#include <assert.h>
+#include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
 #  undef HAVE_TIMERFD
@@ -30,7 +33,6 @@ void expired(void *receiver, void *sender, void *args);
 #else
 #  include <poser/core/log.h>
 #  include <poser/core/service.h>
-#  include <pthread.h>
 #  include <sys/time.h>
 
 C_CLASS_DECL(PSC_TimerJob);
@@ -48,8 +50,20 @@ static int initialized;
 static const struct itimerval itvzero;
 #endif
 
+typedef struct TimerPool
+{
+    PSC_Timer *first;
+    PSC_Timer *last;
+#ifndef NDEBUG
+    void *thr;
+#endif
+    size_t refcnt;
+} TimerPool;
+
 struct PSC_Timer
 {
+    PSC_Timer *next;
+    TimerPool *pool;
     PSC_Event expired;
 #if defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE) || defined(HAVE_TIMERFD)
 #  ifdef HAVE_EVPORTS
@@ -67,7 +81,17 @@ struct PSC_Timer
     int periodic;
 };
 
-SOEXPORT PSC_Timer *PSC_Timer_create(void)
+static THREADLOCAL TimerPool *pool;
+
+static void enableTimer(PSC_Timer *self)
+{
+    PSC_Event_initStatic(&self->expired, self);
+    self->job = 0;
+    self->ms = 1000;
+    self->periodic = 0;
+}
+
+static PSC_Timer *createTimer(TimerPool *p)
 {
 #ifdef HAVE_TIMERFD
 #  if defined(TFD_NONBLOCK) && defined(TFD_CLOEXEC)
@@ -96,15 +120,12 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
     pthread_mutex_unlock(&lock);
 #endif
     PSC_Timer *self = PSC_malloc(sizeof *self);
-    PSC_Event_initStatic(&self->expired, self);
+    self->pool = p;
 #ifdef HAVE_TIMERFD
     self->tfd = tfd;
     PSC_Event_register(PSC_Service_readyRead(), self, expired, tfd);
     PSC_Service_registerRead(tfd);
 #endif
-    self->job = 0;
-    self->ms = 1000;
-    self->periodic = 0;
 #ifdef HAVE_EVPORTS
     port_notify_t pnot = {
 	.portnfy_port = PSC_Service_epfd(),
@@ -126,6 +147,90 @@ SOEXPORT PSC_Timer *PSC_Timer_create(void)
 #if !defined(HAVE_EVPORTS) && !defined(HAVE_KQUEUE) && !defined(HAVE_TIMERFD)
     self->thrno = PSC_Service_threadNo();
 #endif
+    enableTimer(self);
+    return self;
+}
+
+static void disableTimer(PSC_Timer *self)
+{
+#if !defined(HAVE_EVPORTS) && !defined(HAVE_TIMERFD)
+    if (self->job) PSC_Timer_stop(self);
+#endif
+    PSC_Event_destroyStatic(&self->expired);
+}
+
+static void destroyTimer(PSC_Timer *self)
+{
+#ifdef HAVE_EVPORTS
+    if (self->job >= 0) timer_delete(self->timerid);
+#elif defined(HAVE_TIMERFD)
+    if (self->tfd >= 0)
+    {
+	PSC_Service_unregisterRead(self->tfd);
+	PSC_Event_unregister(PSC_Service_readyRead(), self,
+		expired, self->tfd);
+	close(self->tfd);
+    }
+#endif
+    free(self);
+}
+
+static TimerPool *TimerPool_init(void)
+{
+    if (!pool)
+    {
+	pool = PSC_malloc(sizeof *pool);
+	memset(pool, 0, sizeof *pool);
+#ifndef NDEBUG
+	pool->thr = (void *)pthread_self();
+#endif
+    }
+    ++pool->refcnt;
+    return pool;
+}
+
+static void TimerPool_done(TimerPool *self)
+{
+    if (!--self->refcnt)
+    {
+	pool = 0;
+	for (PSC_Timer *t = self->first, *n = 0; t; t = n)
+	{
+	    n = t->next;
+	    destroyTimer(t);
+	}
+	free(self);
+    }
+}
+
+static PSC_Timer *TimerPool_get(TimerPool *self)
+{
+    assert(self->thr == (void *)pthread_self());
+    PSC_Timer *timer = self->first;
+    if (timer)
+    {
+	if (!(self->first = timer->next)) self->last = 0;
+	enableTimer(timer);
+    }
+    else timer = createTimer(self);
+    return timer;
+}
+
+static void TimerPool_return(TimerPool *self, PSC_Timer *timer)
+{
+    assert(self->thr = (void *)pthread_self());
+    disableTimer(timer);
+    timer->next = 0;
+    if (self->last) self->last->next = timer;
+    else self->first = timer;
+    self->last = timer;
+}
+
+SOEXPORT PSC_Timer *PSC_Timer_create(void)
+{
+    TimerPool *p = TimerPool_init();
+    PSC_Timer *self = TimerPool_get(p);
+    if (!self) TimerPool_done(p);
     return self;
 }
 
@@ -189,6 +294,7 @@ SOEXPORT void PSC_Timer_stop(PSC_Timer *self)
 
 SOLOCAL void PSC_Timer_doexpire(PSC_Timer *self)
 {
+    if (!self->job) return;
     PSC_Event_raise(&self->expired, 0, 0);
     if (!self->periodic) self->job = 0;
 }
@@ -453,23 +559,7 @@ SOLOCAL void PSC_Timer_underrun(void)
 SOEXPORT void PSC_Timer_destroy(PSC_Timer *self)
 {
     if (!self) return;
-#ifdef HAVE_EVPORTS
-    if (self->job >= 0) timer_delete(self->timerid);
-#elif defined(HAVE_TIMERFD)
-    if (self->tfd >= 0)
-    {
-	PSC_Service_unregisterRead(self->tfd);
-	PSC_Event_unregister(PSC_Service_readyRead(), self,
-		expired, self->tfd);
-	close(self->tfd);
-    }
-#else
-    if (self->job) PSC_Timer_stop(self);
-#endif
-#ifdef HAVE_KQUEUE
-    PSC_Service_killTimer(self);
-#endif
-    PSC_Event_destroyStatic(&self->expired);
-    free(self);
+    TimerPool_return(self->pool, self);
+    TimerPool_done(self->pool);
 }
 

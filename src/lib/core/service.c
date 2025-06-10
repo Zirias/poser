@@ -210,10 +210,8 @@ typedef struct Service
 #endif
 #ifdef HAVE_KQUEUE
     struct kevent changes[KQ_MAX_CHANGES];
-    uintptr_t deadtimers[KQ_MAX_CHANGES];
     int kqfd;
     int nchanges;
-    int ndeadtimers;
 #endif
     int running;
 #if defined(HAVE_EVPORTS) || defined(HAVE_EPOLL)
@@ -1021,14 +1019,6 @@ SOEXPORT void PSC_Service_registerSignal(int signo, PSC_SignalHandler handler)
 SOLOCAL void PSC_Service_armTimer(void *timer, unsigned ms, int periodic)
 {
     if (initKqueue() < 0) return;
-    for (int i = 0; i < svc->ndeadtimers; ++i)
-    {
-	if ((uintptr_t)timer == svc->deadtimers[i])
-	{
-	    svc->deadtimers[i] = 0;
-	    break;
-	}
-    }
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_ADD|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
     flushChanges();
@@ -1040,14 +1030,6 @@ SOLOCAL void PSC_Service_unarmTimer(void *timer, unsigned ms, int periodic)
     EV_SET(addChange(), (uintptr_t)timer, EVFILT_TIMER,
 	    EV_DELETE|(!periodic * EV_ONESHOT), NOTE_MSECONDS, ms, 0);
     flushChanges();
-}
-
-SOLOCAL void PSC_Service_killTimer(void *timer)
-{
-    if (svc->ndeadtimers < KQ_MAX_CHANGES)
-    {
-	svc->deadtimers[svc->ndeadtimers++] = (uintptr_t)timer;
-    }
 }
 #endif
 
@@ -1321,15 +1303,7 @@ static int processEvents(void)
 
 	    case EVFILT_TIMER:
 		timer = (PSC_Timer *)ev[i].ident;
-		for (int j = 0; j < svc->ndeadtimers; ++j)
-		{
-		    if (svc->deadtimers[j] == ev[i].ident)
-		    {
-			timer = 0;
-			break;
-		    }
-		}
-		if (timer) PSC_Timer_doexpire(timer);
+		PSC_Timer_doexpire(timer);
 		break;
 
 	    case EVFILT_WRITE:
@@ -1344,7 +1318,6 @@ static int processEvents(void)
 		break;
 	}
     }
-    svc->ndeadtimers = 0;
     return 0;
 }
 #endif
