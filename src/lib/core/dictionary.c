@@ -447,11 +447,17 @@ SOEXPORT void *PSC_Dictionary_get(const PSC_Dictionary *self,
 	{
 	    res = atomic_load_explicit(self->l->reserved + (hash & 0xff),
 		    memory_order_consume);
-	    if (res < 0) continue;
-	} while (!atomic_compare_exchange_strong_explicit(
-		    ((PSC_Dictionary *)self)->l->reserved + (hash & 0xff),
-		    &res, res + 1, memory_order_release,
-		    memory_order_consume));
+	    while (res >= 0)
+	    {
+		if (atomic_compare_exchange_strong_explicit(
+			    ((PSC_Dictionary *)self)->l->reserved
+			    + (hash & 0xff), &res, res + 1,
+			    memory_order_release, memory_order_consume))
+		{
+		    break;
+		}
+	    }
+	} while (res < 0);
 #endif
     }
     void *obj = get(self, self->buckets + (hash & 0xff), 1,
