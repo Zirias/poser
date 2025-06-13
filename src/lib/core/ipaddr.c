@@ -5,7 +5,6 @@
 #include <errno.h>
 #include <poser/core/proto.h>
 #include <poser/core/util.h>
-#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +14,6 @@
 
 struct PSC_IpAddr
 {
-    pthread_mutex_t strlock;
     PSC_Proto proto;
     unsigned prefixlen;
     int port;
@@ -83,186 +81,6 @@ static int parsev6(uint8_t *data, const char *buf)
     return 0;
 }
 
-SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
-{
-    uint8_t data[16] = {0};
-    PSC_Proto proto = PSC_P_ANY;
-    unsigned prefixlen = 0;
-    int port = -1;
-    const struct sockaddr_in *sain;
-    const struct sockaddr_in6 *sain6;
-
-    switch (addr->sa_family)
-    {
-	case AF_INET:
-	    sain = (const struct sockaddr_in *)addr;
-	    memcpy(data+12, &sain->sin_addr.s_addr, 4);
-	    proto = PSC_P_IPv4;
-	    prefixlen = 32;
-	    port = sain->sin_port;
-	    break;
-
-	case AF_INET6:
-	    sain6 = (const struct sockaddr_in6 *)addr;
-	    memcpy(data, sain6->sin6_addr.s6_addr, 16);
-	    proto = PSC_P_IPv6;
-	    prefixlen = 128;
-	    port = sain6->sin6_port;
-	    break;
-
-	default:
-	    return 0;
-    }
-
-    PSC_IpAddr *self = PSC_malloc(sizeof *self);
-    pthread_mutex_init(&self->strlock, 0);
-    self->proto = proto;
-    self->prefixlen = prefixlen;
-    self->port = port;
-    memcpy(self->data, data, 16);
-    self->str[0] = 0;
-
-    return self;
-}
-
-SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
-{
-    uint8_t data[16] = { 0 };
-    char buf[44];
-    size_t inlen = strlen(str);
-    if (inlen < 2 || inlen > 43) return 0;
-    strcpy(buf, str);
-
-    unsigned prefixlen = (unsigned)-1;
-    char *prstr = strchr(buf, '/');
-    if (prstr)
-    {
-	*prstr++ = 0;
-	errno = 0;
-	char *endp = 0;
-	long prefixval = strtol(prstr, &endp, 10);
-	if (!endp || endp == prstr || *endp || errno == ERANGE
-		|| prefixval < 0 || prefixval > 128) return 0;
-	prefixlen = prefixval;
-    }
-
-    PSC_Proto proto = PSC_P_ANY;
-    if (parsev4(data, buf) == 0)
-    {
-	if (prefixlen == (unsigned)-1) prefixlen = 32;
-	else if (prefixlen > 32) return 0;
-	proto = PSC_P_IPv4;
-    }
-    else if (parsev6(data, buf) == 0)
-    {
-	if (prefixlen == (unsigned)-1) prefixlen = 128;
-	proto = PSC_P_IPv6;
-    }
-    else return 0;
-
-    PSC_IpAddr *self = PSC_malloc(sizeof *self);
-    pthread_mutex_init(&self->strlock, 0);
-    self->proto = proto;
-    self->prefixlen = prefixlen;
-    self->port = -1;
-    memcpy(self->data, data, 16);
-    self->str[0] = 0;
-
-    return self;
-}
-
-SOEXPORT PSC_IpAddr *PSC_IpAddr_clone(const PSC_IpAddr *other)
-{
-    PSC_IpAddr *self = PSC_malloc(sizeof *self);
-    pthread_mutex_init(&self->strlock, 0);
-    memcpy(((char *)self) + IPADDR_CLONEOFFSET,
-	    ((const char *)other) + IPADDR_CLONEOFFSET,
-	    sizeof *self - IPADDR_CLONEOFFSET);
-    return self;
-}
-
-SOEXPORT PSC_IpAddr *PSC_IpAddr_tov4(const PSC_IpAddr *self,
-	const PSC_IpAddr **prefixes)
-{
-    if (self->prefixlen < 96) return 0;
-
-    int matches = 0;
-    for (const PSC_IpAddr **prefix = prefixes; *prefix; ++prefix)
-    {
-	if (PSC_IpAddr_prefixlen(*prefix) == 96 &&
-		PSC_IpAddr_matches(self, *prefix))
-	{
-	    matches = 1;
-	    break;
-	}
-    }
-    if (!matches) return 0;
-
-    PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
-    pthread_mutex_init(&mapped->strlock, 0);
-    mapped->proto = PSC_P_IPv4;
-    mapped->prefixlen = self->prefixlen - 96;
-    mapped->port = -1;
-    memset(mapped->data, 0, 12);
-    memcpy(mapped->data+12, self->data+12, 4);
-    mapped->str[0] = 0;
-
-    return mapped;
-}
-
-SOEXPORT PSC_IpAddr *PSC_IpAddr_tov6(const PSC_IpAddr *self,
-	const PSC_IpAddr *prefix)
-{
-    if (self->proto != PSC_P_IPv4 || prefix->prefixlen != 96) return 0;
-
-    PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
-    pthread_mutex_init(&mapped->strlock, 0);
-    mapped->proto = PSC_P_IPv6;
-    mapped->prefixlen = self->prefixlen + 96;
-    memcpy(mapped->data, prefix->data, 12);
-    memcpy(mapped->data+12, self->data+12, 4);
-    mapped->str[0] = 0;
-
-    return mapped;
-}
-
-SOEXPORT PSC_Proto PSC_IpAddr_proto(const PSC_IpAddr *self)
-{
-    return self->proto;
-}
-
-SOEXPORT unsigned PSC_IpAddr_prefixlen(const PSC_IpAddr *self)
-{
-    return self->prefixlen;
-}
-
-SOLOCAL int PSC_IpAddr_port(const PSC_IpAddr *self)
-{
-    return self->port;
-}
-
-SOLOCAL int PSC_IpAddr_sockAddr(const PSC_IpAddr *self,
-	struct sockaddr *addr)
-{
-    if (self->proto == PSC_P_IPv4)
-    {
-	struct sockaddr_in *sain = (struct sockaddr_in *)addr;
-	memset(sain, 0, sizeof *sain);
-	sain->sin_family = AF_INET;
-	memcpy(&sain->sin_addr.s_addr, self->data+12, 4);
-	return 0;
-    }
-    if (self->proto == PSC_P_IPv6)
-    {
-	struct sockaddr_in6 *sain6 = (struct sockaddr_in6 *)addr;
-	memset(sain6, 0, sizeof *sain6);
-	sain6->sin6_family = AF_INET6;
-	memcpy(sain6->sin6_addr.s6_addr, self->data, 16);
-	return 0;
-    }
-    return -1;
-}
-
 static void toString(PSC_IpAddr *self)
 {
     int len = 0;
@@ -316,12 +134,183 @@ static void toString(PSC_IpAddr *self)
     }
 }
 
+SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
+{
+    uint8_t data[16] = {0};
+    PSC_Proto proto = PSC_P_ANY;
+    unsigned prefixlen = 0;
+    int port = -1;
+    const struct sockaddr_in *sain;
+    const struct sockaddr_in6 *sain6;
+
+    switch (addr->sa_family)
+    {
+	case AF_INET:
+	    sain = (const struct sockaddr_in *)addr;
+	    memcpy(data+12, &sain->sin_addr.s_addr, 4);
+	    proto = PSC_P_IPv4;
+	    prefixlen = 32;
+	    port = sain->sin_port;
+	    break;
+
+	case AF_INET6:
+	    sain6 = (const struct sockaddr_in6 *)addr;
+	    memcpy(data, sain6->sin6_addr.s6_addr, 16);
+	    proto = PSC_P_IPv6;
+	    prefixlen = 128;
+	    port = sain6->sin6_port;
+	    break;
+
+	default:
+	    return 0;
+    }
+
+    PSC_IpAddr *self = PSC_malloc(sizeof *self);
+    self->proto = proto;
+    self->prefixlen = prefixlen;
+    self->port = port;
+    memcpy(self->data, data, 16);
+    toString(self);
+
+    return self;
+}
+
+SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
+{
+    uint8_t data[16] = { 0 };
+    char buf[44];
+    size_t inlen = strlen(str);
+    if (inlen < 2 || inlen > 43) return 0;
+    strcpy(buf, str);
+
+    unsigned prefixlen = (unsigned)-1;
+    char *prstr = strchr(buf, '/');
+    if (prstr)
+    {
+	*prstr++ = 0;
+	errno = 0;
+	char *endp = 0;
+	long prefixval = strtol(prstr, &endp, 10);
+	if (!endp || endp == prstr || *endp || errno == ERANGE
+		|| prefixval < 0 || prefixval > 128) return 0;
+	prefixlen = prefixval;
+    }
+
+    PSC_Proto proto = PSC_P_ANY;
+    if (parsev4(data, buf) == 0)
+    {
+	if (prefixlen == (unsigned)-1) prefixlen = 32;
+	else if (prefixlen > 32) return 0;
+	proto = PSC_P_IPv4;
+    }
+    else if (parsev6(data, buf) == 0)
+    {
+	if (prefixlen == (unsigned)-1) prefixlen = 128;
+	proto = PSC_P_IPv6;
+    }
+    else return 0;
+
+    PSC_IpAddr *self = PSC_malloc(sizeof *self);
+    self->proto = proto;
+    self->prefixlen = prefixlen;
+    self->port = -1;
+    memcpy(self->data, data, 16);
+    toString(self);
+
+    return self;
+}
+
+SOEXPORT PSC_IpAddr *PSC_IpAddr_clone(const PSC_IpAddr *other)
+{
+    PSC_IpAddr *self = PSC_malloc(sizeof *self);
+    memcpy(((char *)self) + IPADDR_CLONEOFFSET,
+	    ((const char *)other) + IPADDR_CLONEOFFSET,
+	    sizeof *self - IPADDR_CLONEOFFSET);
+    return self;
+}
+
+SOEXPORT PSC_IpAddr *PSC_IpAddr_tov4(const PSC_IpAddr *self,
+	const PSC_IpAddr **prefixes)
+{
+    if (self->prefixlen < 96) return 0;
+
+    int matches = 0;
+    for (const PSC_IpAddr **prefix = prefixes; *prefix; ++prefix)
+    {
+	if (PSC_IpAddr_prefixlen(*prefix) == 96 &&
+		PSC_IpAddr_matches(self, *prefix))
+	{
+	    matches = 1;
+	    break;
+	}
+    }
+    if (!matches) return 0;
+
+    PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
+    mapped->proto = PSC_P_IPv4;
+    mapped->prefixlen = self->prefixlen - 96;
+    mapped->port = -1;
+    memset(mapped->data, 0, 12);
+    memcpy(mapped->data+12, self->data+12, 4);
+    toString(mapped);
+
+    return mapped;
+}
+
+SOEXPORT PSC_IpAddr *PSC_IpAddr_tov6(const PSC_IpAddr *self,
+	const PSC_IpAddr *prefix)
+{
+    if (self->proto != PSC_P_IPv4 || prefix->prefixlen != 96) return 0;
+
+    PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
+    mapped->proto = PSC_P_IPv6;
+    mapped->prefixlen = self->prefixlen + 96;
+    memcpy(mapped->data, prefix->data, 12);
+    memcpy(mapped->data+12, self->data+12, 4);
+    toString(mapped);
+
+    return mapped;
+}
+
+SOEXPORT PSC_Proto PSC_IpAddr_proto(const PSC_IpAddr *self)
+{
+    return self->proto;
+}
+
+SOEXPORT unsigned PSC_IpAddr_prefixlen(const PSC_IpAddr *self)
+{
+    return self->prefixlen;
+}
+
+SOLOCAL int PSC_IpAddr_port(const PSC_IpAddr *self)
+{
+    return self->port;
+}
+
+SOLOCAL int PSC_IpAddr_sockAddr(const PSC_IpAddr *self,
+	struct sockaddr *addr)
+{
+    if (self->proto == PSC_P_IPv4)
+    {
+	struct sockaddr_in *sain = (struct sockaddr_in *)addr;
+	memset(sain, 0, sizeof *sain);
+	sain->sin_family = AF_INET;
+	memcpy(&sain->sin_addr.s_addr, self->data+12, 4);
+	return 0;
+    }
+    if (self->proto == PSC_P_IPv6)
+    {
+	struct sockaddr_in6 *sain6 = (struct sockaddr_in6 *)addr;
+	memset(sain6, 0, sizeof *sain6);
+	sain6->sin6_family = AF_INET6;
+	memcpy(sain6->sin6_addr.s6_addr, self->data, 16);
+	return 0;
+    }
+    return -1;
+}
+
 SOEXPORT const char *PSC_IpAddr_string(const PSC_IpAddr *self)
 {
-    PSC_IpAddr *mutself = (PSC_IpAddr *)self;
-    pthread_mutex_lock(&mutself->strlock);
-    if (!*mutself->str) toString(mutself);
-    pthread_mutex_unlock(&mutself->strlock);
     return self->str;
 }
 
@@ -348,8 +337,6 @@ SOEXPORT int PSC_IpAddr_matches(const PSC_IpAddr *self,
 
 SOEXPORT void PSC_IpAddr_destroy(PSC_IpAddr *self)
 {
-    if (!self) return;
-    pthread_mutex_destroy(&self->strlock);
     free(self);
 }
 
