@@ -1,6 +1,7 @@
 #define _DEFAULT_SOURCE
 
 #include "event.h"
+#include "sharedobj.h"
 
 #include <poser/core/log.h>
 #include <poser/core/service.h>
@@ -318,6 +319,7 @@ static void *worker(void *arg)
 {
     Thread *t = arg;
     currentThread = t;
+    SOM_registerThread();
 
     struct sigaction handler;
     memset(&handler, 0, sizeof handler);
@@ -766,6 +768,11 @@ SOEXPORT void PSC_ThreadPool_cancel(PSC_ThreadJob *job)
 	pthread_kill(threads[pthrno].handle, SIGUSR1);
     }
 #endif
+}
+
+SOLOCAL int PSC_ThreadPool_nthreads(void)
+{
+    return nthreads;
 }
 
 SOEXPORT void PSC_ThreadPool_done(void)

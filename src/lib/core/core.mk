@@ -111,6 +111,7 @@ posercore_MODULES=		base64 \
 				runopts \
 				server \
 				service \
+				sharedobj \
 				$(if $(filter 1,$(posercore_HAVE_UCONTEXT)), \
 					stackmgr) \
 				stringbuilder \

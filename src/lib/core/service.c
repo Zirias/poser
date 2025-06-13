@@ -4,10 +4,11 @@
 #include "log.h"
 #include "runopts.h"
 #include "service.h"
+#include "sharedobj.h"
+#include "threadpool.h"
 #include "timer.h"
 
 #include <poser/core/daemon.h>
-#include <poser/core/threadpool.h>
 #include <poser/core/util.h>
 
 #include <errno.h>
@@ -25,17 +26,6 @@
 #include <sys/wait.h>
 #include <syslog.h>
 #include <unistd.h>
-
-#undef SVC_NO_ATOMICS
-#if defined(NO_ATOMICS) || defined(__STDC_NO_ATOMICS__)
-#  define SVC_NO_ATOMICS
-#else
-#  include <stdatomic.h>
-#  if ATOMIC_POINTER_LOCK_FREE != 2
-#    define SVC_NO_ATOMICS
-#  else
-#  endif
-#endif
 
 #ifndef NSIG
 #  define NSIG 64
@@ -150,10 +140,10 @@ typedef struct SvcCommand
 typedef struct SvcCommandNode SvcCommandNode;
 struct SvcCommandNode
 {
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     SvcCommandNode *next;
 #else
-    SvcCommandNode *_Atomic next;
+    SharedObj base;
 #endif
     SvcCommand cmd;
 };
@@ -161,7 +151,7 @@ struct SvcCommandNode
 typedef struct SvcCommandQueue
 {
     SvcCommandNode *first;
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     SvcCommandNode *last;
     int mustwake;
     pthread_mutex_t lock;
@@ -222,7 +212,7 @@ typedef struct Service
     int nwrite;
     int nfds;
 #endif
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     int shutdownRef;
 #else
     atomic_int shutdownRef;
@@ -235,7 +225,7 @@ static SecondaryService *ssvc;
 static PSC_Timer *shutdownTimer;
 static int nssvc;
 static SvcCommandQueue cq;
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
 sem_t shutdownrq;
 #endif
 
@@ -335,7 +325,7 @@ static void tryReduceNfds(int id)
 static void clearMustWake(void)
 {
     SvcCommandQueue *q = svc->svcid ? &svc->svcid->cq : &cq;
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&q->lock);
     q->mustwake = 0;
     pthread_mutex_unlock(&q->lock);
@@ -344,42 +334,28 @@ static void clearMustWake(void)
 #endif
 }
 
-#ifndef SVC_NO_ATOMICS
-static void enqueueLockfree(SvcCommandQueue *q, SvcCommandNode *cmd)
+#ifndef NO_SHAREDOBJ
+static void enqueueLockfree(SvcCommandQueue *q, SvcCommandNode *node)
 {
-    SvcCommandNode *chklast;
-    SvcCommandNode *last = atomic_load_explicit(&q->last,
-	    memory_order_acquire);
+    SvcCommandNode *last;
     for (;;)
     {
-	SvcCommandNode *next = atomic_load_explicit(&last->next,
+	last = SOM_reserve((void *_Atomic *)&q->last);
+	SharedObj *next = atomic_load_explicit(&last->base.next,
 		memory_order_acquire);
 	if (!next)
 	{
-	    if ((chklast = atomic_load_explicit(&q->last,
-			    memory_order_acquire)) != last)
-	    {
-		last = chklast;
-		continue;
-	    }
-	    if (atomic_compare_exchange_strong_explicit(&last->next,
-			&next, cmd, memory_order_release,
+	    if (atomic_compare_exchange_strong_explicit(&last->base.next,
+			&next, (SharedObj *)node, memory_order_release,
 			memory_order_acquire)) break;
 	}
 	else atomic_compare_exchange_strong_explicit(&q->last, &last,
-		next, memory_order_release, memory_order_acquire);
+		(SvcCommandNode *)next,
+		memory_order_release, memory_order_relaxed);
     }
-    atomic_compare_exchange_strong_explicit(&q->last, &last, cmd,
+    atomic_compare_exchange_strong_explicit(&q->last, &last, node,
 	    memory_order_release, memory_order_relaxed);
-}
-
-static void enqueueLockfreeDummy(SvcCommandQueue *q)
-{
-    SvcCommandNode *cmd = PSC_malloc(sizeof *cmd);
-    atomic_store_explicit(&cmd->next, 0, memory_order_release);
-    cmd->cmd.func = 0;
-    cmd->cmd.arg = 0;
-    enqueueLockfree(q, cmd);
+    SOM_release();
 }
 #endif
 
@@ -388,7 +364,7 @@ static void runCommands(void)
     SvcCommandQueue *q = svc->svcid ? &svc->svcid->cq : &cq;
     SvcCommandNode *torun = 0;
 
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&q->lock);
     torun = q->first;
     q->first = 0;
@@ -396,51 +372,51 @@ static void runCommands(void)
     q->mustwake = 1;
     pthread_mutex_unlock(&q->lock);
 #else
-    torun = atomic_load_explicit(&q->first->next, memory_order_acquire);
+    torun = (SvcCommandNode *)atomic_load_explicit(&q->first->base.next,
+	    memory_order_consume);
     atomic_store_explicit(&q->mustwake, 1, memory_order_release);
     if (!torun) return;
-    enqueueLockfreeDummy(q);
-    while (q->first == atomic_load_explicit(&q->last, memory_order_consume)) ;
+    SvcCommandNode *dummy = SharedObj_create(sizeof *dummy, 0);
+    dummy->cmd.func = 0;
+    dummy->cmd.arg = 0;
+    enqueueLockfree(q, dummy);
+    SharedObj_retire(q->first);
+    q->first = dummy;
 #endif
 
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     while (torun)
 #else
-    while (torun->cmd.func)
+    while (torun != dummy)
 #endif
     {
 	torun->cmd.func(torun->cmd.arg);
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
 	SvcCommandNode *next = torun->next;
-#else
-	SvcCommandNode *next;
-	do next = atomic_load_explicit(&torun->next, memory_order_consume);
-	while (!next);
-#endif
 	free(torun);
+#else
+	SvcCommandNode *next = (SvcCommandNode *)atomic_load_explicit(
+		&torun->base.next, memory_order_consume);
+	SharedObj_retire(torun);
+#endif
 	torun = next;
     }
-
-#ifndef SVC_NO_ATOMICS
-    free(q->first);
-    q->first = torun;
-#endif
 }
 
 static void enqueueCommand(SvcCommandQueue *q,
 	PSC_OnThreadExec func, void *arg)
 {
+#ifdef NO_SHAREDOBJ
     SvcCommandNode *cmd = PSC_malloc(sizeof *cmd);
-#ifdef SVC_NO_ATOMICS
     cmd->next = 0;
 #else
-    atomic_store_explicit(&cmd->next, 0, memory_order_release);
+    SvcCommandNode *cmd = SharedObj_create(sizeof *cmd, 0);
 #endif
     cmd->cmd.func = func;
     cmd->cmd.arg = arg;
     int mustwake = 0;
 
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&q->lock);
     if (q->last) q->last->next = cmd;
     else q->first = cmd;
@@ -1539,7 +1515,7 @@ static void readCommandPipe(void *receiver, void *sender, void *args)
 static int initCommandQueue(SvcCommandQueue *q)
 {
     memset(q, 0, sizeof *q);
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     if (pthread_mutex_init(&q->lock, 0) != 0)
     {
 	PSC_Log_msg(PSC_L_ERROR, "service: error creating command lock");
@@ -1556,7 +1532,7 @@ static int initCommandQueue(SvcCommandQueue *q)
 #ifdef HAVE_EVENTFD
     if ((q->efd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) < 0)
     {
-#  ifdef SVC_NO_ATOMICS
+#  ifdef NO_SHAREDOBJ
 	pthread_mutex_unlock(&q->lock);
 	pthread_mutex_destroy(&q->lock);
 #  endif
@@ -1576,7 +1552,7 @@ static int initCommandQueue(SvcCommandQueue *q)
 	PSC_Log_err(PSC_L_ERROR, "service: error creating command pipe");
 	q->commandpipe[0] = -1;
 	q->commandpipe[1] = -1;
-#  ifdef SVC_NO_ATOMICS
+#  ifdef NO_SHAREDOBJ
 	pthread_mutex_unlock(&q->lock);
 	pthread_mutex_destroy(&q->lock);
 #  endif
@@ -1591,7 +1567,7 @@ static int initCommandQueue(SvcCommandQueue *q)
     PSC_Service_registerRead(q->commandpipe[0]);
     PSC_Event_register(&svc->readyRead, 0, readCommandPipe, q->commandpipe[0]);
 #endif
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     q->mustwake = 1;
     pthread_mutex_unlock(&q->lock);
 #else
@@ -1608,7 +1584,7 @@ static void destroyCommandQueue(SvcCommandQueue *q)
 #ifdef HAVE_EVENTFD
     if (q->efd >= 0)
     {
-#  ifdef SVC_NO_ATOMICS
+#  ifdef NO_SHAREDOBJ
 	pthread_mutex_destroy(&q->lock);
 #  else
 	free(q->first);
@@ -1616,7 +1592,7 @@ static void destroyCommandQueue(SvcCommandQueue *q)
 	close(q->efd);
     }
 #elif defined(HAVE_EVPORTS) || defined(HAVE_KQUEUE)
-#  ifdef SVC_NO_ATOMICS
+#  ifdef NO_SHAREDOBJ
     pthread_mutex_destroy(&q->lock);
 #  else
     free(q->first);
@@ -1624,7 +1600,7 @@ static void destroyCommandQueue(SvcCommandQueue *q)
 #else
     if (q->commandpipe[0] >= 0)
     {
-#  ifdef SVC_NO_ATOMICS
+#  ifdef NO_SHAREDOBJ
 	pthread_mutex_destroy(&q->lock);
 #  else
 	free(q->first);
@@ -1861,7 +1837,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	svc->running = 1;
 	svc->shutdownRef = -1;
 	mainsvc = svc;
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
 	sem_init(&shutdownrq, 0, 0);
 #endif
 	PSC_Log_fmt(PSC_L_DEBUG, "service started with event backend: "
@@ -1917,6 +1893,14 @@ static int serviceLoop(ServiceLoopFlags flags)
 	}
 	else nssvc = 0;
 
+#ifndef NO_SHAREDOBJ
+	int nthreads = nssvc + PSC_ThreadPool_nthreads();
+	if (nthreads)
+	{
+	    SOM_init(nthreads+1, 128, 1024);
+	}
+#endif
+
 	if (nssvc)
 	{
 	    ssvc = PSC_malloc(nssvc * sizeof *ssvc);
@@ -1941,6 +1925,8 @@ static int serviceLoop(ServiceLoopFlags flags)
 	svc->shutdownRef = -1;
     }
 
+    SOM_registerThread();
+
     while (svc->shutdownRef != 0)
     {
 	if (processEvents() < 0)
@@ -1950,7 +1936,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	}
 	runCommands();
 	PSC_Event_raise(&svc->eventsDone, 0, 0);
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
 	if (flags & SLF_SVCMAIN)
 	{
 	    int sr;
@@ -1988,7 +1974,7 @@ done:
 	    nssvc = 0;
 	}
 
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
 	sem_destroy(&shutdownrq);
 #endif
 	destroyCommandQueue(&cq);
@@ -2141,7 +2127,7 @@ SOEXPORT int PSC_Service_run(void)
 SOEXPORT void PSC_Service_quit(void)
 {
     if (!mainsvc) return;
-#ifdef SVC_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     if (mainsvc == svc)
     {
 	if (mainsvc->shutdownRef == -1) mainsvc->shutdownRef = 0;
