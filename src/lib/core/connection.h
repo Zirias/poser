@@ -18,6 +18,8 @@
 #define DEFRDBUFSZ WRBUFSZ
 #endif
 
+C_CLASS_DECL(ConnectionPool);
+
 typedef enum ConnectionCreateMode
 {
     CCM_NORMAL,
@@ -35,6 +37,7 @@ typedef enum TlsMode
 
 typedef struct ConnOpts
 {
+    ConnectionPool *pool;
     size_t rdbufsz;
 #ifdef WITH_TLS
     SSL_CTX *tls_ctx;
@@ -47,6 +50,12 @@ typedef struct ConnOpts
     ConnectionCreateMode createmode;
     int blacklisthits;
 } ConnOpts;
+
+ConnectionPool *
+ConnectionPool_create(void);
+
+void
+ConnectionPool_destroy(ConnectionPool *self);
 
 PSC_Connection *
 PSC_Connection_create(int fd, const ConnOpts *opts) ATTR_NONNULL((2));

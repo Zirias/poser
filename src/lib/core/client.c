@@ -191,6 +191,7 @@ static PSC_Connection *createFromAddrinfo(
 	return 0;
     }
     ConnOpts copts = {
+	.pool = 0,
 	.rdbufsz = opts->rdbufsz,
 #ifdef WITH_TLS
 	.tls_ctx = opts->tls ? gettlsctx() : 0,
@@ -493,6 +494,7 @@ SOEXPORT PSC_Connection *PSC_Connection_createUnixClient(
 	return 0;
     }
     ConnOpts copts = {
+	.pool = 0,
 	.rdbufsz = opts->rdbufsz,
 	.createmode = CCM_CONNECTING
     };

@@ -119,6 +119,7 @@ typedef struct AcceptRecord
 {
     PSC_Server *srv;
     PSC_IpAddr *addr;
+    ConnectionPool *pool;
     int fd;
 } AcceptRecord;
 
@@ -126,8 +127,8 @@ struct PSC_Server
 {
     PSC_Event clientConnected;
     PSC_Event shutdownComplete;
-    PSC_Event closeAll;
     PSC_Timer *shutdownTimer;
+    ConnectionPool **clients;
     char *path;
 #ifdef WITH_TLS
     SSL_CTX *tls_ctx;
@@ -153,7 +154,6 @@ struct PSC_Server
 
 static void acceptConnection(void *receiver, void *sender, void *args);
 static void removeConnection(void *receiver, void *sender, void *args);
-static void closeConnection(void *recever, void *sender, void *args);
 
 #ifdef WITH_TLS
 static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
@@ -177,23 +177,14 @@ static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
 
 static void removeConnection(void *receiver, void *sender, void *args)
 {
-    (void)args;
-
-    PSC_Server *self = receiver;
-    PSC_Connection *conn = sender;
-
-    pthread_mutex_lock(&self->lock);
-    PSC_Event_unregister(&self->closeAll, conn, closeConnection, 0);
-    if (!--self->nconn) sem_post(&self->allclosed);
-    pthread_mutex_unlock(&self->lock);
-}
-
-static void closeConnection(void *receiver, void *sender, void *args)
-{
     (void)sender;
     (void)args;
 
-    PSC_Connection_close(receiver, 0);
+    PSC_Server *self = receiver;
+
+    pthread_mutex_lock(&self->lock);
+    if (!--self->nconn) sem_post(&self->allclosed);
+    pthread_mutex_unlock(&self->lock);
 }
 
 static void doaccept(void *arg)
@@ -201,6 +192,7 @@ static void doaccept(void *arg)
     AcceptRecord *rec = arg;
     pthread_mutex_lock(&rec->srv->lock);
     ConnOpts co = {
+	.pool = rec->pool,
 	.rdbufsz = rec->srv->rdbufsz,
 #ifdef WITH_TLS
 	.tls_ctx = rec->srv->tls_ctx,
@@ -213,7 +205,6 @@ static void doaccept(void *arg)
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
     if (!newconn) goto done;
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
-    PSC_Event_register(&rec->srv->closeAll, newconn, closeConnection, 0);
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
 	    removeConnection, 0);
     if (rec->srv->path)
@@ -287,15 +278,26 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	return;
     }
 
-    AcceptRecord *rec = PSC_malloc(sizeof *rec);
-    rec->srv = self;
-    rec->addr = PSC_IpAddr_fromSockAddr(sa);
-    rec->fd = connfd;
-
     if (self->nthr < 0)
     {
 	if ((self->nthr = PSC_Service_workers())) self->nextthr = 0;
+	int npools = self->nthr;
+	if (npools < 1) npools = 1;
+	self->clients = PSC_malloc(npools * sizeof *self->clients);
+	for (int i = 0; i < npools; ++i)
+	{
+	    self->clients[i] = ConnectionPool_create();
+	}
     }
+    int poolno = self->nextthr;
+    if (poolno < 0) poolno = 0;
+
+    AcceptRecord *rec = PSC_malloc(sizeof *rec);
+    rec->srv = self;
+    rec->addr = PSC_IpAddr_fromSockAddr(sa);
+    rec->pool = self->clients[poolno];
+    rec->fd = connfd;
+
     PSC_Service_runOnThread(self->nextthr, doaccept, rec);
     if (self->nthr) self->nextthr = (self->nextthr + 1) % self->nthr;
 }
@@ -464,8 +466,8 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     memset(&self->clientConnected, 0, sizeof self->clientConnected);
     self->clientConnected.sender = self;
     PSC_Event_initStatic(&self->shutdownComplete, self);
-    memset(&self->closeAll, 0, sizeof self->closeAll);
     self->shutdownTimer = 0;
+    self->clients = 0;
     self->path = path;
     pthread_mutex_init(&self->lock, 0);
     sem_init(&self->allclosed, 0, 1);
@@ -992,6 +994,11 @@ SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
     }
 }
 
+static void destroyPool(void *arg)
+{
+    ConnectionPool_destroy(arg);
+}
+
 SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 {
     if (!self) return;
@@ -999,7 +1006,12 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     PSC_Timer_destroy(self->shutdownTimer);
     if (self->nconn)
     {
-	PSC_Event_raise(&self->closeAll, 0, 0);
+	if (self->nthr) for (int thr = 0; thr < self->nthr; ++thr)
+	{
+	    PSC_Service_runOnThread(thr, destroyPool, self->clients + thr);
+	}
+	else ConnectionPool_destroy(*self->clients);
+	free(self->clients);
 	sem_wait(&self->allclosed);
     }
     if (!self->nsocks)
@@ -1015,7 +1027,6 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     }
     sem_destroy(&self->allclosed);
     pthread_mutex_destroy(&self->lock);
-    PSC_Event_destroyStatic(&self->closeAll);
     PSC_Event_destroyStatic(&self->clientConnected);
     PSC_Event_raise(&self->shutdownComplete, 0, 0);
     PSC_Event_destroyStatic(&self->shutdownComplete);

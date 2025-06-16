@@ -58,6 +58,9 @@ typedef enum ConnectionType
 
 struct PSC_Connection
 {
+    ConnectionPool *pool;
+    PSC_Connection *next;
+    PSC_Connection *prev;
     PSC_Event connected;
     PSC_Event closed;
     PSC_Event dataReceived;
@@ -81,7 +84,6 @@ struct PSC_Connection
     WriteNotifyRecord writenotify[NWRITERECS];
     PSC_EADataReceived args;
     int fd;
-    int thrno;
     int paused;
     int port;
     int rdreg;
@@ -106,6 +108,37 @@ struct PSC_Connection
     uint8_t wrbuf[WRBUFSZ];
     uint8_t rdbuf[];
 };
+
+struct ConnectionPool
+{
+    PSC_Connection *active;
+    PSC_Connection *available;
+};
+
+SOLOCAL ConnectionPool *ConnectionPool_create(void)
+{
+    ConnectionPool *self = PSC_malloc(sizeof *self);
+    self->active = 0;
+    self->available = 0;
+    return self;
+}
+
+SOLOCAL void ConnectionPool_destroy(ConnectionPool *self)
+{
+    if (!self) return;
+    for (PSC_Connection *c = self->active, *n = 0; c; c = n)
+    {
+	n = c->next;
+	c->pool = 0;
+	PSC_Connection_close(c, 0);
+    }
+    for (PSC_Connection *c = self->available, *n = 0; c; c = n)
+    {
+	n = c->next;
+	free(c);
+    }
+    free(self);
+}
 
 static void connectionTimeout(void *receiver, void *sender, void *args);
 static void wantreadwrite(PSC_Connection *self) CMETHOD;
@@ -727,7 +760,21 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	    break;
     }
 
-    self = PSC_malloc(connsz);
+    if (opts->pool && opts->pool->available)
+    {
+	self = opts->pool->available;
+	opts->pool->available = self->next;
+    }
+    else self = PSC_malloc(connsz);
+    if (opts->pool)
+    {
+	if (opts->pool->active) opts->pool->active->prev = self;
+	self->next = opts->pool->active;
+	opts->pool->active = self;
+    }
+    else self->next = 0;
+    self->prev = 0;
+    self->pool = opts->pool;
     self->rdlocator = 0;
     PSC_Event_initStatic(&self->connected, self);
     PSC_Event_initStatic(&self->closed, self);
@@ -739,7 +786,6 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->rdbufpos = 0;
     self->rdexpect = 0;
     self->fd = fd;
-    self->thrno = PSC_Service_threadNo();
     self->paused = 0;
     self->port = 0;
     self->rdreg = 0;
@@ -1032,7 +1078,7 @@ SOEXPORT int PSC_Connection_confirmDataReceived(PSC_Connection *self)
     return 1;
 }
 
-static void doclose(PSC_Connection *self, int blacklist)
+SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
 {
     if (self->deleteScheduled) return;
     if (blacklist && self->blacklisthits && self->ipAddr)
@@ -1041,22 +1087,6 @@ static void doclose(PSC_Connection *self, int blacklist)
     }
     PSC_Event_raise(&self->closed, 0, self->connectTimer ? 0 : self);
     deleteLater(self);
-}
-
-static void docloseblist(void *arg)
-{
-    doclose(arg, 1);
-}
-
-static void doclosenorm(void *arg)
-{
-    doclose(arg, 0);
-}
-
-SOEXPORT void PSC_Connection_close(PSC_Connection *self, int blacklist)
-{
-    PSC_Service_runOnThread(self->thrno,
-	    blacklist ? docloseblist : doclosenorm, self);
 }
 
 SOEXPORT void PSC_Connection_setData(PSC_Connection *self,
@@ -1146,7 +1176,16 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_Event_destroyStatic(&self->dataReceived);
     PSC_Event_destroyStatic(&self->closed);
     PSC_Event_destroyStatic(&self->connected);
-    free(self);
+
+    if (self->pool)
+    {
+	if (self->prev) self->prev->next = self->next;
+	else self->pool->active = self->next;
+	if (self->next) self->next->prev = self->prev;
+	self->next = self->pool->available;
+	self->pool->available = self;
+    }
+    else free(self);
 }
 
 SOEXPORT const uint8_t *PSC_EADataReceived_buf(const PSC_EADataReceived *self)
