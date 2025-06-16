@@ -16,7 +16,6 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <semaphore.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,6 +37,20 @@
 #endif
 
 #define BINDCHUNK 8
+
+#undef SRV_NO_ATOMICS
+#if defined(NO_ATOMICS) || defined(__STD_NO_ATOMICS__)
+#  define SRV_NO_ATOMICS
+#else
+#  include <stdatomic.h>
+#  if ATOMIC_POINTER_LOCK_FREE != 2
+#    define SRV_NO_ATOMICS
+#  endif
+#endif
+
+#ifdef SRV_NO_ATOMICS
+#  include <pthread.h>
+#endif
 
 #ifdef WITH_TLS
 enum ccertmode
@@ -119,7 +132,8 @@ typedef struct AcceptRecord
 {
     PSC_Server *srv;
     PSC_IpAddr *addr;
-    ConnectionPool *pool;
+    const char *path;
+    ConnOpts opts;
     int fd;
 } AcceptRecord;
 
@@ -135,10 +149,16 @@ struct PSC_Server
     void *validatorObj;
     PSC_CertValidator validator;
 #endif
+#ifdef SRV_NO_ATOMICS
     pthread_mutex_t lock;
+#endif
     sem_t allclosed;
     uint64_t bhash;
+#ifdef SRV_NO_ATOMICS
     size_t nconn;
+#else
+    atomic_size_t nconn;
+#endif
     size_t nsocks;
     size_t rdbufsz;
     PSC_Proto proto;
@@ -182,34 +202,39 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     PSC_Server *self = receiver;
 
+#ifdef SRV_NO_ATOMICS
     pthread_mutex_lock(&self->lock);
     if (!--self->nconn) sem_post(&self->allclosed);
     pthread_mutex_unlock(&self->lock);
+#else
+    if (atomic_fetch_sub_explicit(&self->nconn, 1, memory_order_acq_rel) == 1)
+    {
+	sem_post(&self->allclosed);
+    }
+#endif
 }
 
 static void doaccept(void *arg)
 {
     AcceptRecord *rec = arg;
-    pthread_mutex_lock(&rec->srv->lock);
-    ConnOpts co = {
-	.pool = rec->pool,
-	.rdbufsz = rec->srv->rdbufsz,
-#ifdef WITH_TLS
-	.tls_ctx = rec->srv->tls_ctx,
-	.tls_cert = 0,
-	.tls_key = 0,
-	.tls_mode = rec->srv->tls != TL_NONE ? TM_SERVER : TM_NONE,
-#endif
-	.createmode = CCM_NORMAL
-    };
-    PSC_Connection *newconn = PSC_Connection_create(rec->fd, &co);
+    PSC_Connection *newconn = PSC_Connection_create(rec->fd, &rec->opts);
     if (!newconn) goto done;
+#ifdef SRV_NO_ATOMICS
+    pthread_mutex_lock(&rec->srv->lock);
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
+    pthread_mutex_unlock(&rec->srv->lock);
+#else
+    if (atomic_fetch_add_explicit(&rec->srv->nconn, 1,
+		memory_order_acq_rel) == 0)
+    {
+	sem_wait(&rec->srv->allclosed);
+    }
+#endif
     PSC_Event_register(PSC_Connection_closed(newconn), rec->srv,
 	    removeConnection, 0);
-    if (rec->srv->path)
+    if (rec->path)
     {
-	PSC_Connection_setRemoteAddrStr(newconn, rec->srv->path);
+	PSC_Connection_setRemoteAddrStr(newconn, rec->path);
     }
     else
     {
@@ -219,7 +244,6 @@ static void doaccept(void *arg)
 	    PSC_Connection_remoteAddr(newconn));
     PSC_Event_raise(&rec->srv->clientConnected, 0, newconn);
 done:
-    pthread_mutex_unlock(&rec->srv->lock);
     free(rec);
 }
 
@@ -293,9 +317,17 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     if (poolno < 0) poolno = 0;
 
     AcceptRecord *rec = PSC_malloc(sizeof *rec);
+    memset(rec, 0, sizeof *rec);
     rec->srv = self;
     rec->addr = PSC_IpAddr_fromSockAddr(sa);
-    rec->pool = self->clients[poolno];
+    rec->path = self->path;
+    rec->opts.pool = self->clients[poolno];
+    rec->opts.rdbufsz = self->rdbufsz;
+#ifdef WITH_TLS
+    rec->opts.tls_ctx = self->tls_ctx;
+    rec->opts.tls_mode = self->tls != TL_NONE ? TM_SERVER : TM_NONE;
+#endif
+    rec->opts.createmode = CCM_NORMAL;
     rec->fd = connfd;
 
     PSC_Service_runOnThread(self->nextthr, doaccept, rec);
@@ -469,10 +501,16 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->shutdownTimer = 0;
     self->clients = 0;
     self->path = path;
+#ifdef SRV_NO_ATOMICS
     pthread_mutex_init(&self->lock, 0);
+#endif
     sem_init(&self->allclosed, 0, 1);
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
+#ifdef SRV_NO_ATOMICS
     self->nconn = 0;
+#else
+    atomic_store_explicit(&self->nconn, 0, memory_order_release);
+#endif
     self->rdbufsz = opts->rdbufsz;
     self->proto = opts->proto;
     self->port = opts->port;
@@ -950,11 +988,15 @@ static void forceDestroy(void *receiver, void *sender, void *args)
 
 SOEXPORT size_t PSC_Server_connections(const PSC_Server *self)
 {
+#ifdef SRV_NO_ATOMICS
     size_t n;
     pthread_mutex_lock(&((PSC_Server *)self)->lock);
     n = self->nconn;
     pthread_mutex_unlock(&((PSC_Server *)self)->lock);
     return n;
+#else
+    return atomic_load_explicit(&self->nconn, memory_order_acquire);
+#endif
 }
 
 SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
@@ -1026,7 +1068,9 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	close(self->socks[i].fd);
     }
     sem_destroy(&self->allclosed);
+#ifdef SRV_NO_ATOMICS
     pthread_mutex_destroy(&self->lock);
+#endif
     PSC_Event_destroyStatic(&self->clientConnected);
     PSC_Event_raise(&self->shutdownComplete, 0, 0);
     PSC_Event_destroyStatic(&self->shutdownComplete);
