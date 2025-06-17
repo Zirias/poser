@@ -1948,6 +1948,11 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    }
 	}
 #endif
+	if ((flags & (SLF_SVCMAIN|SLF_SVCRUN)) == (SLF_SVCMAIN|SLF_SVCRUN)
+		&& svc->shutdownRef == 0)
+	{
+	    PSC_ThreadPool_done();
+	}
     }
 
 shutdown:
@@ -1957,7 +1962,6 @@ shutdown:
 	PSC_Timer_destroy(shutdownTimer);
 	shutdownTimer = 0;
 	PSC_Log_msg(PSC_L_DEBUG, "service shutting down");
-	if (flags & SLF_SVCRUN) PSC_ThreadPool_done();
     }
 
 done:
