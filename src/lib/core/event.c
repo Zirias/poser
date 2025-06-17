@@ -148,15 +148,12 @@ SOEXPORT void PSC_Event_unregister(
     else self->first = entry->next;
     if (entry->next) entry->next->prev = entry->prev;
     else self->last = entry->prev;
-    if (self->pool) EvHandlerPool_return(self->pool, entry);
-    else free(entry);
+    EvHandlerPool_return(self->pool, entry);
 }
 
 SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
-#ifndef NDEBUG
-    if (self->pool) assert(pool->thr == (void *)pthread_self());
-#endif
+    assert(pool->thr == (void *)pthread_self());
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	self->handling = entry->next;
@@ -174,11 +171,10 @@ SOLOCAL void PSC_Event_destroyStatic(PSC_Event *self)
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	EvHandlerEntry *next = entry->next;
-	if (self->pool) EvHandlerPool_return(self->pool, entry);
-	else free(entry);
+	EvHandlerPool_return(self->pool, entry);
 	entry = next;
     }
-    if (self->pool) EvHandlerPool_done(self->pool);
+    EvHandlerPool_done(self->pool);
     memset(self, 0, sizeof *self);
 }
 
