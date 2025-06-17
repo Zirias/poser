@@ -27,7 +27,13 @@ C_CLASS_DECL(PSC_TcpServerOpts);
  */
 C_CLASS_DECL(PSC_UnixServerOpts);
 
-C_CLASS_DECL(PSC_Event);
+C_CLASS_DECL(PSC_Connection);
+
+/** A callback executed for each accepted client connection
+ * @param obj optional object reference for the "owner" object of the callback
+ * @param conn the newly created client connection
+ */
+typedef void (*PSC_ClientConnectedCallback)(void *obj, PSC_Connection *conn);
 
 /** PSC_TcpServerOpts constructor.
  * Creates an options object initialized to default values.
@@ -203,11 +209,18 @@ PSC_UnixServerOpts_destroy(PSC_UnixServerOpts *self);
 /** Create a TCP server.
  * @memberof PSC_Server
  * @param opts TCP server options
+ * @param owner optional owner reference passed to the callbacks for newly
+ *              created clients and completed shutdown
+ * @param clientConnected callback executed for each connected client
+ * @param shutdownComplete callback executed when a PSC_Server_shutdown() call
+ *                         completed
  * @returns a newly created server, or NULL on error
  */
 DECLEXPORT PSC_Server *
-PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
-    ATTR_NONNULL((1));
+PSC_Server_createTcp(const PSC_TcpServerOpts *opts, void *owner,
+	PSC_ClientConnectedCallback clientConnected,
+	void (*shutdownComplete)(void *))
+    ATTR_NONNULL((1)) ATTR_NONNULL((3));
 
 /** Reconfigure a running TCP server.
  * Try to apply a new configuration to an already running server. The port,
@@ -227,34 +240,18 @@ PSC_Server_configureTcp(PSC_Server *self, const PSC_TcpServerOpts *opts)
 /** Create a local UNIX server.
  * @memberof PSC_Server
  * @param opts UNIX server options
+ * @param owner optional owner reference passed to the callbacks for newly
+ *              created clients and completed shutdown
+ * @param clientConnected callback executed for each connected client
+ * @param shutdownComplete callback executed when a PSC_Server_shutdown() call
+ *                         completed
  * @returns a newly created server, or NULL on error
  */
 DECLEXPORT PSC_Server *
-PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
-    ATTR_NONNULL((1));
-
-/** New client connected.
- * This event fires when a new client connected and the connection was
- * accepted. The PSC_Connection object for the new client is passed as the
- * event arguments.
- * @memberof PSC_Server
- * @param self the PSC_Server
- * @returns the client connected event
- */
-DECLEXPORT PSC_Event *
-PSC_Server_clientConnected(PSC_Server *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
-
-/** Server shutdown complete.
- * This event fires just before destruction of the server, after all client
- * connections were closed.
- * @memberof PSC_Server
- * @param self the PSC_Server
- * @returns the shutdown complete event
- */
-DECLEXPORT PSC_Event *
-PSC_Server_shutdownComplete(PSC_Server *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+PSC_Server_createUnix(const PSC_UnixServerOpts *opts, void *owner,
+	PSC_ClientConnectedCallback clientConnected,
+	void (*shutdownComplete)(void *))
+    ATTR_NONNULL((1)) ATTR_NONNULL((3));
 
 /** Disable the server.
  * This disables accepting new connections while still listening. It's

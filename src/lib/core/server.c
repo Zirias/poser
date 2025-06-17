@@ -2,9 +2,9 @@
 
 #include "certinfo.h"
 #include "connection.h"
-#include "event.h"
 #include "ipaddr.h"
 
+#include <poser/core/event.h>
 #include <poser/core/hash.h>
 #include <poser/core/log.h>
 #include <poser/core/service.h>
@@ -139,8 +139,9 @@ typedef struct AcceptRecord
 
 struct PSC_Server
 {
-    PSC_Event clientConnected;
-    PSC_Event shutdownComplete;
+    void *owner;
+    PSC_ClientConnectedCallback clientConnected;
+    void (*shutdownComplete)(void *);
     PSC_Timer *shutdownTimer;
     ConnectionPool **clients;
     char *path;
@@ -242,7 +243,7 @@ static void doaccept(void *arg)
     }
     PSC_Log_fmt(PSC_L_DEBUG, "server: client connected from %s",
 	    PSC_Connection_remoteAddr(newconn));
-    PSC_Event_raise(&rec->srv->clientConnected, 0, newconn);
+    rec->srv->clientConnected(rec->srv->owner, newconn);
 done:
     free(rec);
 }
@@ -487,7 +488,9 @@ error:
 #endif
 
 static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
-	size_t nsocks, SockInfo *socks, char *path)
+	size_t nsocks, SockInfo *socks, char *path, void *owner,
+	PSC_ClientConnectedCallback clientConnected,
+	void (*shutdownComplete)(void *))
 {
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
@@ -495,9 +498,9 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     if (initTls(&props, opts) < 0) goto error;
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
-    memset(&self->clientConnected, 0, sizeof self->clientConnected);
-    self->clientConnected.sender = self;
-    PSC_Event_initStatic(&self->shutdownComplete, self);
+    self->owner = owner;
+    self->clientConnected = clientConnected;
+    self->shutdownComplete = shutdownComplete;
     self->shutdownTimer = 0;
     self->clients = 0;
     self->path = path;
@@ -686,7 +689,9 @@ SOEXPORT void PSC_UnixServerOpts_destroy(PSC_UnixServerOpts *self)
     free(self);
 }
 
-SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
+SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts,
+	void *owner, PSC_ClientConnectedCallback clientConnected,
+	void (*shutdownComplete)(void *))
 {
     SockInfo socks[MAXSOCKS];
 
@@ -795,7 +800,8 @@ SOEXPORT PSC_Server *PSC_Server_createTcp(const PSC_TcpServerOpts *opts)
 	return 0;
     }
     
-    PSC_Server *self = PSC_Server_create(opts, nsocks, socks, 0);
+    PSC_Server *self = PSC_Server_create(opts, nsocks, socks, 0, owner,
+	    clientConnected, shutdownComplete);
     if (!self) for (size_t i = 0; i < nsocks; ++i)
     {
 	close(socks[i].fd);
@@ -827,7 +833,9 @@ SOEXPORT int PSC_Server_configureTcp(PSC_Server *self,
     return 0;
 }
 
-SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
+SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts,
+	void *owner, PSC_ClientConnectedCallback clientConnected,
+	void (*shutdownComplete)(void *))
 {
     SockInfo sock = {
 #ifdef HAVE_ACCEPT4
@@ -954,18 +962,9 @@ SOEXPORT PSC_Server *PSC_Server_createUnix(const PSC_UnixServerOpts *opts)
 	.rdbufsz = opts->rdbufsz
     };
     PSC_Server *self = PSC_Server_create(&tcpopts, 1, &sock,
-	    PSC_copystr(addr.sun_path));
+	    PSC_copystr(addr.sun_path), owner,
+	    clientConnected, shutdownComplete);
     return self;
-}
-
-SOEXPORT PSC_Event *PSC_Server_clientConnected(PSC_Server *self)
-{
-    return &self->clientConnected;
-}
-
-SOEXPORT PSC_Event *PSC_Server_shutdownComplete(PSC_Server *self)
-{
-    return &self->shutdownComplete;
 }
 
 SOEXPORT void PSC_Server_disable(PSC_Server *self)
@@ -1071,9 +1070,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 #ifdef SRV_NO_ATOMICS
     pthread_mutex_destroy(&self->lock);
 #endif
-    PSC_Event_destroyStatic(&self->clientConnected);
-    PSC_Event_raise(&self->shutdownComplete, 0, 0);
-    PSC_Event_destroyStatic(&self->shutdownComplete);
+    if (self->shutdownComplete) self->shutdownComplete(self->owner);
     if (self->path)
     {
 	unlink(self->path);
