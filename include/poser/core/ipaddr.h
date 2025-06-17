@@ -27,14 +27,14 @@ DECLEXPORT PSC_IpAddr *
 PSC_IpAddr_create(const char *str)
     ATTR_NONNULL((1));
 
-/** PSC_IpAddr copy constructor.
- * Creates a clone of a PSC_IpAddr.
+/** Get another reference to a PSC_IpAddr.
+ * Increments the internal reference counter by one.
  * @memberof PSC_IpAddr
- * @param other the PSC_IpAddr to copy
- * @returns a newly created PSC_IpAddr
+ * @param self the PSC_IpAddr
+ * @returns the PSC_IpAddr with incremented reference counter
  */
 DECLEXPORT PSC_IpAddr *
-PSC_IpAddr_clone(const PSC_IpAddr *other)
+PSC_IpAddr_ref(const PSC_IpAddr *self)
     CMETHOD ATTR_RETNONNULL;
 
 /** Create IPv4 equivalent of a given IPv6 address.
@@ -127,6 +127,8 @@ PSC_IpAddr_matches(const PSC_IpAddr *self, const PSC_IpAddr *prefix)
     CMETHOD ATTR_NONNULL((2)) ATTR_PURE;
 
 /** PSC_IpAddr destructor.
+ * If the internal reference counter is greater than one, the object is not
+ * immediately destroyed, instead the counter is decremented.
  * @memberof PSC_IpAddr
  * @param self the PSC_IpAddr
  */

@@ -12,8 +12,28 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#undef IPA_NO_ATOMICS
+#if defined(NO_ATOMICS) || defined (__STDC_NO_ATOMICS__)
+#  define IPA_NO_ATOMICS
+#else
+#  include <stdatomic.h>
+#  if ATOMIC_INT_LOCK_FREE != 2
+#    define IPA_NO_ATOMICS
+#  endif
+#endif
+
+#ifdef IPA_NO_ATOMICS
+#  include <pthread.h>
+#endif
+
 struct PSC_IpAddr
 {
+#ifdef IPA_NO_ATOMICS
+    pthread_mutex_t reflock;
+    unsigned refcnt;
+#else
+    atomic_uint refcnt;
+#endif
     PSC_Proto proto;
     unsigned prefixlen;
     int port;
@@ -166,6 +186,16 @@ SOLOCAL PSC_IpAddr *PSC_IpAddr_fromSockAddr(const struct sockaddr *addr)
     }
 
     PSC_IpAddr *self = PSC_malloc(sizeof *self);
+#ifdef IPA_NO_ATOMICS
+    if (pthread_mutex_init(&self->reflock, 0) != 0)
+    {
+	free(self);
+	return 0;
+    }
+    self->refcnt = 1;
+#else
+    atomic_store_explicit(&self->refcnt, 1, memory_order_release);
+#endif
     self->proto = proto;
     self->prefixlen = prefixlen;
     self->port = port;
@@ -211,6 +241,16 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
     else return 0;
 
     PSC_IpAddr *self = PSC_malloc(sizeof *self);
+#ifdef IPA_NO_ATOMICS
+    if (pthread_mutex_init(&self->reflock, 0) != 0)
+    {
+	free(self);
+	return 0;
+    }
+    self->refcnt = 1;
+#else
+    atomic_store_explicit(&self->refcnt, 1, memory_order_release);
+#endif
     self->proto = proto;
     self->prefixlen = prefixlen;
     self->port = -1;
@@ -220,13 +260,17 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_create(const char *str)
     return self;
 }
 
-SOEXPORT PSC_IpAddr *PSC_IpAddr_clone(const PSC_IpAddr *other)
+SOEXPORT PSC_IpAddr *PSC_IpAddr_ref(const PSC_IpAddr *self)
 {
-    PSC_IpAddr *self = PSC_malloc(sizeof *self);
-    memcpy(((char *)self) + IPADDR_CLONEOFFSET,
-	    ((const char *)other) + IPADDR_CLONEOFFSET,
-	    sizeof *self - IPADDR_CLONEOFFSET);
-    return self;
+    PSC_IpAddr *mut = (PSC_IpAddr *)self;
+#ifdef IPA_NO_ATOMICS
+    pthread_mutex_lock(&mut->reflock);
+    ++mut->refcnt;
+    pthread_mutex_unlock(&mut->reflock);
+#else
+    atomic_fetch_add_explicit(&mut->refcnt, 1, memory_order_acq_rel);
+#endif
+    return mut;
 }
 
 SOEXPORT PSC_IpAddr *PSC_IpAddr_tov4(const PSC_IpAddr *self,
@@ -247,6 +291,16 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_tov4(const PSC_IpAddr *self,
     if (!matches) return 0;
 
     PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
+#ifdef IPA_NO_ATOMICS
+    if (pthread_mutex_init(&mapped->reflock, 0) != 0)
+    {
+	free(mapped);
+	return 0;
+    }
+    mapped->refcnt = 1;
+#else
+    atomic_store_explicit(&mapped->refcnt, 1, memory_order_release);
+#endif
     mapped->proto = PSC_P_IPv4;
     mapped->prefixlen = self->prefixlen - 96;
     mapped->port = -1;
@@ -263,6 +317,16 @@ SOEXPORT PSC_IpAddr *PSC_IpAddr_tov6(const PSC_IpAddr *self,
     if (self->proto != PSC_P_IPv4 || prefix->prefixlen != 96) return 0;
 
     PSC_IpAddr *mapped = PSC_malloc(sizeof *mapped);
+#ifdef IPA_NO_ATOMICS
+    if (pthread_mutex_init(&mapped->reflock, 0) != 0)
+    {
+	free(mapped);
+	return 0;
+    }
+    mapped->refcnt = 1;
+#else
+    atomic_store_explicit(&mapped->refcnt, 1, memory_order_release);
+#endif
     mapped->proto = PSC_P_IPv6;
     mapped->prefixlen = self->prefixlen + 96;
     memcpy(mapped->data, prefix->data, 12);
@@ -337,6 +401,19 @@ SOEXPORT int PSC_IpAddr_matches(const PSC_IpAddr *self,
 
 SOEXPORT void PSC_IpAddr_destroy(PSC_IpAddr *self)
 {
+    if (!self) return;
+#ifdef IPA_NO_ATOMICS
+    pthread_mutex_lock(&self->reflock);
+    unsigned refcnt = --self->refcnt;
+    pthread_mutex_unlock(&self->reflock);
+    if (refcnt) return;
+    pthread_mutex_destroy(&self->reflock);
+#else
+    if (atomic_fetch_sub_explicit(&self->refcnt, 1, memory_order_acq_rel) > 1)
+    {
+	return;
+    }
+#endif
     free(self);
 }
 

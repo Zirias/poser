@@ -107,7 +107,7 @@ SOLOCAL void PSC_Connection_blacklistAddress(int hits, const PSC_IpAddr *addr)
     for (size_t i = 0; i < BLACKLISTSIZE; ++i)
     {
 	if (blacklist[i].addr) continue;
-	blacklist[i].addr = PSC_IpAddr_clone(addr);
+	blacklist[i].addr = PSC_IpAddr_ref(addr);
 	blacklist[i].hits = hits;
 	return;
     }

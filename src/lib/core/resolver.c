@@ -51,7 +51,7 @@ SOEXPORT int PSC_Resolver_addAddr(PSC_Resolver *self, const PSC_IpAddr *addr)
 {
     if (self->job) return -1;
     PSC_ResolverEntry *entry = PSC_malloc(sizeof *entry);
-    entry->addr = PSC_IpAddr_clone(addr);
+    entry->addr = PSC_IpAddr_ref(addr);
     entry->name = 0;
     PSC_List_append(self->entries, entry, deleteEntry);
     return 0;
