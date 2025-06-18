@@ -13,6 +13,12 @@ ARC4R_CFLAGS=			-D_DEFAULT_SOURCE
 ARC4R_HEADERS=			stdlib.h
 ARC4R_ARGS=			void *, size_t
 ARC4R_RETURN=			void
+BTINT_FUNC=			backtrace_symbols_fd
+BTINT_HEADERS=			execinfo.h
+BTINT_ARGS=			void *const *, int, int
+BTSZT_FUNC=			backtrace_symbols_fd
+BTSZT_HEADERS=			execinfo.h
+BTSZT_ARGS=			void *const *, size_t, int
 GETRANDOM_FUNC=			getrandom
 GETRANDOM_HEADERS=		sys/random.h
 GETRANDOM_RETURN=		ssize_t
@@ -65,6 +71,10 @@ SIGNALFD_ARGS=			int, const sigset_t *, int
 TIMERFD_FUNC=			timerfd_create
 TIMERFD_HEADERS=		sys/timerfd.h
 TIMERFD_ARGS=			int, int
+
+ifeq ($(BUILDCFG),debug)
+posercore_PRECHECK+=		BTINT BTSZT
+endif
 
 ifneq ($(WITHOUT_EVENTFD),1)
 posercore_PRECHECK+=		EVENTFD
@@ -188,6 +198,10 @@ posercore_DEFINES+=		-DWITH_TLS
 endif
 
 $(call librules, posercore)
+
+ifeq ($(posercore_HAVE_BTSZT),1)
+posercore_LIBS+=		execinfo
+endif
 
 ifeq ($(posercore_HAVE_TLS_C11),1)
 posercore_DEFINES+=		-DTHREADLOCAL=_Thread_local

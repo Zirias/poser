@@ -1,9 +1,10 @@
 #include "event.h"
 
+#include "assert.h"
+
 #include <poser/core/util.h>
 #include <pthread.h>
 
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -125,8 +126,7 @@ SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
     EvHandler hdl;
     EVHDL_INIT(&hdl, handler, receiver, id);
     if (findEntry(self, &hdl)) return;
-    EvHandlerEntry *entry = self->pool ? EvHandlerPool_get(self->pool)
-	: PSC_malloc(sizeof *entry);
+    EvHandlerEntry *entry = EvHandlerPool_get(self->pool);
     entry->prev = self->last;
     entry->next = 0;
     entry->handler = hdl;
