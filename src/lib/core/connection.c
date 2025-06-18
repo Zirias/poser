@@ -145,7 +145,6 @@ static void wantreadwrite(PSC_Connection *self) CMETHOD;
 #ifdef WITH_TLS
 static void tlsHandshakeTimeout(void *receiver, void *sender, void *args);
 static void dohandshake(PSC_Connection *self) CMETHOD;
-static void handshakenow(void *receiver, void *sender, void *args);
 #endif
 static void dowrite(PSC_Connection *self) CMETHOD;
 static void deleteConnection(void *receiver, void *sender, void *args);
@@ -225,11 +224,11 @@ static void dohandshake(PSC_Connection *self)
 {
     PSC_Log_fmt(PSC_L_DEBUG, "connection: handshake with %s",
 	    PSC_Connection_remoteAddr(self));
+    self->tls_connect_st = 0;
     int rc = self->tls_is_client ?
 	SSL_connect(self->tls) : SSL_accept(self->tls);
     if (rc > 0)
     {
-	self->tls_connect_st = 0;
 	PSC_Timer_destroy(self->tlsConnectTimer);
 	self->tlsConnectTimer = 0;
 	if (self->tls_is_client)
@@ -278,17 +277,6 @@ static void dohandshake(PSC_Connection *self)
 	}
     }
     wantreadwrite(self);
-}
-
-static void handshakenow(void *receiver, void *sender, void *args)
-{
-    (void)sender;
-    (void)args;
-
-    PSC_Connection *self = receiver;
-
-    PSC_Event_unregister(PSC_Service_eventsDone(), self, handshakenow, 0);
-    dohandshake(self);
 }
 #endif
 
@@ -892,8 +880,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	PSC_Timer_setMs(self->tlsConnectTimer, CONNTIMEOUT);
 	PSC_Event_register(PSC_Timer_expired(self->tlsConnectTimer), self,
 		tlsHandshakeTimeout, 0);
-	PSC_Event_register(PSC_Service_eventsDone(), self, handshakenow, 0);
 	PSC_Timer_start(self->tlsConnectTimer, 0);
+	dohandshake(self);
     }
 #endif
     else
