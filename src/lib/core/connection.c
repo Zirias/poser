@@ -766,8 +766,8 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     self->rdlocator = 0;
     PSC_Event_initStatic(&self->connected, self);
     PSC_Event_initStatic(&self->closed, self);
-    PSC_Event_initStatic(&self->dataReceived, self);
-    PSC_Event_initStatic(&self->dataSent, self);
+    memset(&self->dataReceived, 0, sizeof self->dataReceived);
+    memset(&self->dataSent, 0, sizeof self->dataSent);
     self->connectTimer = 0;
     self->rdbufsz = opts->rdbufsz;
     self->rdbufused = 0;
@@ -904,11 +904,21 @@ SOEXPORT PSC_Event *PSC_Connection_closed(PSC_Connection *self)
 
 SOEXPORT PSC_Event *PSC_Connection_dataReceived(PSC_Connection *self)
 {
+    if (self->paused) return 0;
+    if (!self->dataReceived.pool)
+    {
+	PSC_Event_initStatic(&self->dataReceived, self);
+    }
     return &self->dataReceived;
 }
 
 SOEXPORT PSC_Event *PSC_Connection_dataSent(PSC_Connection *self)
 {
+    if (self->paused) return 0;
+    if (!self->dataSent.pool)
+    {
+	PSC_Event_initStatic(&self->dataSent, self);
+    }
     return &self->dataSent;
 }
 
@@ -1037,6 +1047,8 @@ SOEXPORT void PSC_Connection_pause(PSC_Connection *self)
 	PSC_Event_unregister(PSC_Service_eventsDone(), self,
 		tryWrite, 0);
     }
+    PSC_Event_destroyStatic(&self->dataReceived);
+    PSC_Event_destroyStatic(&self->dataSent);
 }
 
 SOEXPORT int PSC_Connection_resume(PSC_Connection *self)

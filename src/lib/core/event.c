@@ -168,6 +168,7 @@ SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 
 SOLOCAL void PSC_Event_destroyStatic(PSC_Event *self)
 {
+    if (!self->pool) return;
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	EvHandlerEntry *next = entry->next;

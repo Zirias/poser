@@ -151,9 +151,6 @@ PSC_Process_create(const PSC_ProcessOpts *opts)
     ATTR_RETNONNULL;
 
 /** Execute an external program in the child process.
- * Fails if the process was already started, if cb was required but not
- * given, or when required system/library calls (for setting up pipes or
- * actually forking the process) failed.
  * @memberof PSC_Process
  * @param self the PSC_Process
  * @param obj some object reference for the callback @p cb
@@ -162,15 +159,12 @@ PSC_Process_create(const PSC_ProcessOpts *opts)
  * @param path the path to the external program
  * @returns 0 on success, -1 on error
  */
-DECLEXPORT int
+DECLEXPORT void
 PSC_Process_exec(PSC_Process *self, void *obj, PSC_StreamCallback cb,
 	const char *path)
     CMETHOD ATTR_NONNULL((3));
 
 /** Execute a given function in the child process.
- * Fails if the process was already started, if cb was required but not
- * given, or when required system/library calls (for setting up pipes or
- * actually forking the process) failed.
  * @memberof PSC_Process
  * @param self the PSC_Process
  * @param obj some object reference for the callback @p cb
@@ -179,7 +173,7 @@ PSC_Process_exec(PSC_Process *self, void *obj, PSC_StreamCallback cb,
  * @param main the function to execute in the child
  * @returns 0 on success, -1 on error
  */
-DECLEXPORT int
+DECLEXPORT void
 PSC_Process_run(PSC_Process *self, void *obj, PSC_StreamCallback cb,
 	PSC_ProcessMain main)
     CMETHOD ATTR_NONNULL((3));

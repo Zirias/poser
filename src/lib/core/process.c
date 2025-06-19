@@ -120,6 +120,7 @@ SOEXPORT PSC_Process *PSC_Process_create(const PSC_ProcessOpts *opts)
     PSC_Event_initStatic(&self->done, self);
     self->execError = opts->execError;
     self->argc = argc;
+    self->thrno = PSC_Service_threadNo();
     memcpy(self->actions, opts->actions, sizeof self->actions);
     if (opts->argc == 0) self->args[0] = 0;
     else for (int i = 0; i < argc; ++i)
@@ -187,8 +188,9 @@ fail:
     exit(execError);
 }
 
-static void tryDestroy(PSC_Process *self)
+static void tryDestroy(void *arg)
 {
+    PSC_Process *self = arg;
     if (self->doneArgs.status == CS_RUNNING) return;
     if (self->streams[PSC_ST_STDIN]) return;
     if (self->streams[PSC_ST_STDOUT]) return;
@@ -268,50 +270,82 @@ static void childExited(void *receiver, void *sender, void *args)
     PSC_Service_runOnThread(epa->proc->thrno, endprocess, epa);
 }
 
-static int runprocess(PSC_Process *self,
-	void *obj, PSC_StreamCallback cb,
-	const char *path, PSC_ProcessMain main)
+struct createpipeconnargs
 {
-    if (self->pid) return -1;
-    self->thrno = PSC_Service_threadNo();
+    PSC_StreamCallback cb;
+    PSC_Process *proc;
+    void *obj;
+    int fd;
+    ConnectionCreateMode mode;
+    PSC_StreamType type;
+};
+
+static void createpipeconn(void *arg)
+{
+    struct createpipeconnargs *cpca = arg;
+    PSC_Process *self = cpca->proc;
+    ConnOpts opts;
+    memset(&opts, 0, sizeof opts);
+    opts.rdbufsz = DEFRDBUFSZ;
+    opts.createmode = cpca->mode;
+
+    self->streams[cpca->type] = PSC_Connection_create(cpca->fd, &opts);
+    PSC_Event_register(PSC_Connection_closed(self->streams[cpca->type]),
+	    self, streamClosed, 0);
+    cpca->cb(cpca->obj, cpca->type, self->streams[cpca->type]);
+    free(cpca);
+}
+
+struct runprocessargs
+{
+    PSC_StreamCallback cb;
+    PSC_ProcessMain main;
+    PSC_Process *proc;
+    void *obj;
+    const char *path;
+};
+
+static void runprocess(void *arg)
+{
+    struct runprocessargs *rpa = arg;
+    PSC_Process *self = rpa->proc;
+
+    if (self->pid) return;
 
     int rc = -1;
     int pipefd[][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
 
     for (int i = PSC_ST_STDIN; i <= PSC_ST_STDERR; ++i)
     {
-	if (self->actions[i] == PSC_SA_PIPE
-		&& (!cb || createPipe(pipefd[i], stdfddir[i]) < 0)) goto done;
+	if (self->actions[i] == PSC_SA_PIPE && (!rpa->cb
+		    || createPipe(pipefd[i], stdfddir[i]) < 0)) goto done;
     }
 
-    PSC_Service_lockChildren();
     pid_t pid = fork();
     if (pid < 0)
     {
 	PSC_Log_err(PSC_L_ERROR, "process: cannot fork()");
-	PSC_Service_unlockChildren();
 	goto done;
     }
 
     if (pid == 0)
     {
 	prepareChild(self->actions, pipefd, self->execError);
-	if (path)
+	if (rpa->path)
 	{
-	    if (self->args[0] == 0) self->args[0] = (char *)path;
-	    execv(path, self->args);
+	    if (self->args[0] == 0) self->args[0] = (char *)rpa->path;
+	    execv(rpa->path, self->args);
 	    exit(self->execError);
 	}
 	else
 	{
-	    exit(main(self->argc, self->args));
+	    exit(rpa->main(self->argc, self->args));
 	}
     }
 
     self->pid = pid;
     self->doneArgs.status = CS_RUNNING;
     PSC_Event_register(PSC_Service_childExited(), self, childExited, pid);
-    PSC_Service_unlockChildren();
 
     ConnOpts opts;
     memset(&opts, 0, sizeof opts);
@@ -321,13 +355,15 @@ static int runprocess(PSC_Process *self,
     {
 	if (self->actions[i] == PSC_SA_PIPE)
 	{
-	    opts.createmode = stdfddir[i] ? CCM_PIPEWR : CCM_PIPERD;
-	    self->streams[i] = PSC_Connection_create(
-		    pipefd[i][stdfddir[i]], &opts);
+	    struct createpipeconnargs *cpca = PSC_malloc(sizeof *cpca);
+	    cpca->cb = rpa->cb;
+	    cpca->proc = self;
+	    cpca->obj = rpa->obj;
+	    cpca->fd = pipefd[i][stdfddir[i]];
+	    cpca->mode = stdfddir[i] ? CCM_PIPEWR : CCM_PIPERD;
+	    cpca->type = i;
 	    pipefd[i][stdfddir[i]] = -1;
-	    PSC_Event_register(PSC_Connection_closed(self->streams[i]),
-		    self, streamClosed, 0);
-	    cb(obj, i, self->streams[i]);
+	    PSC_Service_runOnThread(self->thrno, createpipeconn, cpca);
 	}
     }
 
@@ -339,19 +375,36 @@ done:
 	if (pipefd[i][0] >= 0) close(pipefd[i][0]);
 	if (pipefd[i][1] >= 0) close(pipefd[i][1]);
     }
-    return rc;
+    if (rc != 0)
+    {
+	self->doneArgs.exitval = self->execError;
+	self->doneArgs.status = CS_EXITED;
+	PSC_Service_runOnThread(self->thrno, tryDestroy, self);
+    }
 }
 
-SOEXPORT int PSC_Process_exec(PSC_Process *self, void *obj,
+SOEXPORT void PSC_Process_exec(PSC_Process *self, void *obj,
 	PSC_StreamCallback cb, const char *path)
 {
-    return runprocess(self, obj, cb, path, 0);
+    struct runprocessargs *rpa = PSC_malloc(sizeof *rpa);
+    rpa->cb = cb;
+    rpa->main = 0;
+    rpa->proc = self;
+    rpa->obj = obj;
+    rpa->path = path;
+    PSC_Service_runOnThread(-1, runprocess, rpa);
 }
 
-SOEXPORT int PSC_Process_run(PSC_Process *self, void *obj,
+SOEXPORT void PSC_Process_run(PSC_Process *self, void *obj,
 	PSC_StreamCallback cb, PSC_ProcessMain main)
 {
-    return runprocess(self, obj, cb, 0, main);
+    struct runprocessargs *rpa = PSC_malloc(sizeof *rpa);
+    rpa->cb = cb;
+    rpa->main = main;
+    rpa->proc = self;
+    rpa->obj = obj;
+    rpa->path = 0;
+    PSC_Service_runOnThread(-1, runprocess, rpa);
 }
 
 static void forcekill(void *receiver, void *sender, void *args)

@@ -82,11 +82,11 @@ PSC_Connection_closed(PSC_Connection *self)
  * PSC_Connection_confirmDataReceived().
  * @memberof PSC_Connection
  * @param self the PSC_Connection
- * @returns the data received event
+ * @returns the data received event, or NULL when the connection is paused
  */
 DECLEXPORT PSC_Event *
 PSC_Connection_dataReceived(PSC_Connection *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+    CMETHOD ATTR_PURE;
 
 /** Data sent.
  * This event fires when data passed to PSC_Connection_sendAsync() was sent.
@@ -94,11 +94,11 @@ PSC_Connection_dataReceived(PSC_Connection *self)
  * passed back via event args, so you can identify which write completed.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
- * @returns the data sent event
+ * @returns the data sent event, or NULL when the connection is paused
  */
 DECLEXPORT PSC_Event *
 PSC_Connection_dataSent(PSC_Connection *self)
-    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+    CMETHOD ATTR_PURE;
 
 /** The remote IP address.
  * The address of the peer as a PSC_IpAddr instance.
@@ -241,6 +241,7 @@ PSC_Connection_sendTextAsync(PSC_Connection *self, const char *text, void *id)
  * Stop receiving further data unless PSC_Connection_resume() is called. For
  * each call to PSC_Connection_pause(), a corresponding call to
  * PSC_Connection_resume() is necessary.
+ * Also cleans the dataReceived and dataSent events.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  */
@@ -251,6 +252,8 @@ PSC_Connection_pause(PSC_Connection *self)
 /** Resume receiving data.
  * Allow receiving of new data again after calling PSC_Connection_pause().
  * Must be called the same number of times to actually resume receiving.
+ * Handlers for dataSent and dataReceived must be registered again after
+ * a connection was paused.
  * @memberof PSC_Connection
  * @param self the PSC_Connection
  * @returns 1 when receiving was resumed, 0 when still paused, -1 when

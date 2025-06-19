@@ -160,24 +160,6 @@ DECLEXPORT PSC_Event *
 PSC_Service_childExited(void)
     ATTR_RETNONNULL ATTR_PURE;
 
-/** Lock handling child exits.
- * Use this before registering a handler for child exits to prevent race
- * conditions with quickly exiting processes when the service is running
- * with multiple worker threads.
- * @memberof PSC_Service
- * @static
- */
-DECLEXPORT void
-PSC_Service_lockChildren(void);
-
-/** Unlock handling child exits.
- * Use this directly after registering a handler for child exits.
- * @memberof PSC_Service
- * @static
- */
-DECLEXPORT void
-PSC_Service_unlockChildren(void);
-
 /** Check a file descriptor.
  * This checks whether a given file descriptor is valid for read/write
  * monitoring. Optionally log an appropriate error message if it isn't.

@@ -233,7 +233,6 @@ static PSC_Event prestartup;
 static PSC_Event startup;
 static PSC_Event shutdown;
 static PSC_Event childExited;
-static pthread_mutex_t childLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct PSC_EAStartup
 {
@@ -504,16 +503,6 @@ SOEXPORT PSC_Event *PSC_Service_childExited(void)
 {
     if (!childExited.pool) PSC_Event_initStatic(&childExited, 0);
     return &childExited;
-}
-
-SOEXPORT void PSC_Service_lockChildren(void)
-{
-    pthread_mutex_lock(&childLock);
-}
-
-SOEXPORT void PSC_Service_unlockChildren(void)
-{
-    pthread_mutex_unlock(&childLock);
 }
 
 #ifdef WITH_SELECT
@@ -1109,9 +1098,7 @@ static void reapChildren(void)
 	    ea.signaled = 1;
 	}
 	else continue;
-	pthread_mutex_lock(&childLock);
 	PSC_Event_raise(&childExited, (int)pid, &ea);
-	pthread_mutex_unlock(&childLock);
     }
 }
 
