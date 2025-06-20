@@ -153,7 +153,7 @@ SOEXPORT void PSC_Event_unregister(
 
 SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
-    assert(pool->thr == (void *)pthread_self());
+    assert(self->pool->thr == (void *)pthread_self());
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	self->handling = entry->next;
