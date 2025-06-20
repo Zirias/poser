@@ -210,6 +210,7 @@ static int JobQueue_enqueue(JobQueue *self, PSC_ThreadJob *job)
 	pthread_mutex_unlock(&self->lock);
 	return -1;
     }
+    if (job->timeout) PSC_Timer_start(job->timeout, 0);
     --self->avail;
     self->jobs[self->enqpos++] = job;
     if (self->enqpos == self->sz) self->enqpos = 0;
@@ -238,6 +239,7 @@ static int JobQueue_enqueue(JobQueue *self, PSC_ThreadJob *job)
     } while (!atomic_compare_exchange_strong_explicit(&self->avail, &avail,
 		avail - 1, memory_order_release, memory_order_consume));
 
+    if (job->timeout) PSC_Timer_start(job->timeout, 0);
     unsigned next;
     unsigned enqpos = atomic_load_explicit(&self->enqpos,
 	    memory_order_consume);
@@ -391,6 +393,12 @@ static void *worker(void *arg)
 SOEXPORT PSC_ThreadJob *PSC_ThreadJob_create(
 	PSC_ThreadProc proc, void *arg, int timeoutMs)
 {
+    if (PSC_Service_threadNo() < -1)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot create thread job from "
+		"within a pool thread");
+	return 0;
+    }
     PSC_ThreadJob *self = PSC_malloc(sizeof *self);
     memset(self, 0, sizeof *self);
 #ifdef THRP_NO_ATOMICS
@@ -515,10 +523,6 @@ SOEXPORT void *PSC_AsyncTask_arg(PSC_AsyncTask *self)
 SOEXPORT void PSC_AsyncTask_complete(PSC_AsyncTask *self, void *result)
 {
     self->result = result;
-    if (self->threadJob->timeout)
-    {
-	PSC_Timer_start(self->threadJob->timeout, 0);
-    }
 #ifdef HAVE_UCONTEXT
     if (self->threadJob->async) JobQueue_enqueue(jobQueue, self->threadJob);
     else
@@ -736,19 +740,21 @@ SOEXPORT int PSC_ThreadPool_active(void)
 SOEXPORT int PSC_ThreadPool_enqueue(PSC_ThreadJob *job)
 {
     job->thrno = PSC_Service_threadNo();
+    if (job->thrno < -1)
+    {
+	PSC_Log_msg(PSC_L_ERROR, "threadpool: cannot enqueue thread job from "
+		"within a pool thread");
+	return -1;
+    }
     if (job->timeoutMs && !job->timeout)
     {
 	job->timeout = PSC_Timer_create();
 	if (!job->timeout) return -1;
+	PSC_Timer_setMs(job->timeout, job->timeoutMs);
 	PSC_Event_register(PSC_Timer_expired(job->timeout), job,
 		jobTimeout, 0);
     }
     if (JobQueue_enqueue(jobQueue, job) < 0) return -1;
-    if (job->timeout)
-    {
-	PSC_Timer_setMs(job->timeout, job->timeoutMs);
-	PSC_Timer_start(job->timeout, 0);
-    }
     return 0;
 }
 
