@@ -3,6 +3,7 @@
 
 #include <poser/core/service.h>
 
+int PSC_Service_running(void);
 int PSC_Service_shutsdown(void);
 
 #ifdef HAVE_EVPORTS

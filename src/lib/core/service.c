@@ -1821,8 +1821,6 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    }
 	}
 
-	svc->running = 1;
-	svc->shutdownRef = -1;
 	mainsvc = svc;
 #ifdef NO_SHAREDOBJ
 	sem_init(&shutdownrq, 0, 0);
@@ -1908,12 +1906,12 @@ static int serviceLoop(ServiceLoopFlags flags)
     else
     {
 	if (initCommandQueue(&svc->svcid->cq) < 0) goto shutdown;
-	svc->running = 1;
-	svc->shutdownRef = -1;
     }
 
     SOM_registerThread();
 
+    svc->running = 1;
+    svc->shutdownRef = -1;
     while (svc->shutdownRef != 0)
     {
 	if (processEvents() < 0)
@@ -2186,6 +2184,11 @@ SOEXPORT void PSC_Service_panic(const char *msg)
 SOEXPORT int PSC_Service_workers(void)
 {
     return nssvc;
+}
+
+SOLOCAL int PSC_Service_running(void)
+{
+    return svc ? svc->running : 0;
 }
 
 SOEXPORT int PSC_Service_threadNo(void)
