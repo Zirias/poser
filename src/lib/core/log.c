@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
 
 #include "log.h"
+#include "service.h"
 
 #include <poser/core/threadpool.h>
 #include <poser/core/util.h>
@@ -117,12 +118,18 @@ SOEXPORT int PSC_Log_enabled(PSC_LogLevel level)
     return level <= maxlevel;
 }
 
+static void enqueueLogJob(void *arg)
+{
+    PSC_ThreadJob *job = PSC_ThreadJob_create(logmsgJobProc, arg, 4000);
+    PSC_ThreadPool_enqueue(job);
+}
+
 SOEXPORT void PSC_Log_msg(PSC_LogLevel level, const char *message)
 {
     if (!currentwriter) return;
     if (logsilent && level > PSC_L_ERROR) return;
     if (level > maxlevel) return;
-    if (logasync && PSC_ThreadPool_active())
+    if (logasync && PSC_Service_running() && PSC_ThreadPool_active())
     {
 	size_t msgsize = strlen(message)+1;
 	LogJobArgs *lja = PSC_malloc(sizeof *lja + msgsize);
@@ -130,8 +137,9 @@ SOEXPORT void PSC_Log_msg(PSC_LogLevel level, const char *message)
 	lja->writer = currentwriter;
 	lja->writerdata = writerdata;
 	strcpy(lja->message, message);
-	PSC_ThreadJob *job = PSC_ThreadJob_create(logmsgJobProc, lja, 4000);
-	PSC_ThreadPool_enqueue(job);
+	int thrno = PSC_Service_threadNo();
+	if (thrno < -1) thrno = -1;
+	PSC_Service_runOnThread(thrno, enqueueLogJob, lja);
     }
     else currentwriter(level, message, writerdata);
 }
