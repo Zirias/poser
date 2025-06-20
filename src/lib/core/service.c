@@ -1098,7 +1098,7 @@ static void reapChildren(void)
 	    ea.signaled = 1;
 	}
 	else continue;
-	PSC_Event_raise(&childExited, (int)pid, &ea);
+	if (childExited.pool) PSC_Event_raise(&childExited, (int)pid, &ea);
     }
 }
 
@@ -1116,7 +1116,7 @@ static int handleSigfd(void)
 	    case SIGINT:
 	    case SIGTERM:
 		svc->shutdownRef = 0;
-		PSC_Event_raise(&shutdown, 0, 0);
+		if (shutdown.pool) PSC_Event_raise(&shutdown, 0, 0);
 		break;
 
 #ifndef HAVE_TIMERFD
@@ -1249,7 +1249,7 @@ static int processEvents(void)
 		    case SIGINT:
 		    case SIGTERM:
 			svc->shutdownRef = 0;
-			PSC_Event_raise(&shutdown, 0, 0);
+			if (shutdown.pool) PSC_Event_raise(&shutdown, 0, 0);
 			break;
 
 		    case SIGCHLD:
@@ -1715,7 +1715,7 @@ static int serviceLoop(ServiceLoopFlags flags)
     if (flags & SLF_SVCMAIN)
     {
 	PSC_EAStartup sea = { EXIT_SUCCESS };
-	PSC_Event_raise(&prestartup, 0, &sea);
+	if (prestartup.pool) PSC_Event_raise(&prestartup, 0, &sea);
 	if (sea.rc != EXIT_SUCCESS)
 	{
 	    rc = sea.rc;
@@ -1750,7 +1750,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 	    }
 	}
 
-	PSC_Event_raise(&startup, 0, &sea);
+	if (startup.pool) PSC_Event_raise(&startup, 0, &sea);
 	rc = sea.rc;
 	if (rc != EXIT_SUCCESS) goto done;
 
