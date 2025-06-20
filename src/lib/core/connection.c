@@ -865,9 +865,10 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	PSC_Service_registerWrite(fd);
 	PSC_Timer_start(self->connectTimer, 0);
 	self->wrreg = 1;
+	return self;
     }
 #ifdef WITH_TLS
-    else if (self->tls && !self->tls_is_client)
+    if (self->tls && !self->tls_is_client)
     {
 	self->tlsConnectTimer = PSC_Timer_create();
 	if (!self->tlsConnectTimer)
@@ -881,14 +882,11 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 	PSC_Event_register(PSC_Timer_expired(self->tlsConnectTimer), self,
 		tlsHandshakeTimeout, 0);
 	PSC_Timer_start(self->tlsConnectTimer, 0);
-	dohandshake(self);
+	self->tls_connect_st = SSL_ERROR_WANT_READ;
     }
 #endif
-    else
-    {
-	PSC_Service_registerRead(fd);
-	self->rdreg = 1;
-    }
+    PSC_Service_registerRead(fd);
+    self->rdreg = 1;
     return self;
 }
 
