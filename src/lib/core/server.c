@@ -99,11 +99,16 @@ enum tlslevel
     TL_CLIENTCA
 };
 
-struct tlsprops
+typedef struct TlsConfig
 {
+#  ifndef NO_SHAREDOBJ
+    SharedObj base;
+#  endif
+    PSC_CertValidator validator;
+    void *validatorObj;
     SSL_CTX *tls_ctx;
     enum tlslevel tls;
-};
+} TlsConfig;
 #endif
 
 enum saddrt
@@ -136,21 +141,21 @@ struct PSC_Server
     PSC_Timer *shutdownTimer;
     ConnectionPool **clients;
     char *path;
-#ifdef WITH_TLS
-    SSL_CTX *tls_ctx;
-    void *validatorObj;
-    PSC_CertValidator validator;
-#endif
 #ifdef NO_SHAREDOBJ
+#  ifdef WITH_TLS
+    TlsConfig *tlscfg;
+    pthread_mutex_t tlslock;
+#  endif
     pthread_mutex_t lock;
+    size_t nconn;
+#else
+#  ifdef WITH_TLS
+    TlsConfig *_Atomic tlscfg;
+#  endif
+    atomic_size_t nconn;
 #endif
     sem_t allclosed;
     uint64_t bhash;
-#ifdef NO_SHAREDOBJ
-    size_t nconn;
-#else
-    atomic_size_t nconn;
-#endif
     size_t nsocks;
     size_t rdbufsz;
     PSC_Proto proto;
@@ -158,9 +163,6 @@ struct PSC_Server
     int disabled;
     int nthr;
     int nextthr;
-#ifdef WITH_TLS
-    enum tlslevel tls;
-#endif
     SockInfo socks[];
 };
 
@@ -176,13 +178,27 @@ static int ctxverifycallback(int preverify_ok, X509_STORE_CTX *ctx)
 		X509_STORE_CTX_get_ex_data(ctx,
 		    SSL_get_ex_data_X509_STORE_CTX_idx())), ctx_idx);
 
-    if (self->tls == TL_CLIENTCA && !preverify_ok) return 0;
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_lock(&self->tlslock);
+    TlsConfig *tlscfg = self->tlscfg;
+#  else
+    TlsConfig *tlscfg = SOM_reserve((void *_Atomic *)&self->tlscfg);
+#  endif
+
+    int ok = 0;
+    if (tlscfg->tls == TL_CLIENTCA && !preverify_ok) goto done;
 
     X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
     PSC_CertInfo *ci = PSC_CertInfo_create(cert);
-    int ok = self->validator(self->validatorObj, ci);
+    ok = tlscfg->validator(tlscfg->validatorObj, ci);
     PSC_CertInfo_destroy(ci);
 
+done:
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_unlock(&self->tlslock);
+#  else
+    SOM_release();
+#  endif
     return ok;
 }
 #endif
@@ -209,7 +225,24 @@ static void removeConnection(void *receiver, void *sender, void *args)
 static void doaccept(void *arg)
 {
     AcceptRecord *rec = arg;
+#ifdef WITH_TLS
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_lock(&rec->srv->tlslock);
+    TlsConfig *tlscfg = rec->srv->tlscfg;
+#  else
+    TlsConfig *tlscfg = SOM_reserve((void *_Atomic *)&rec->srv->tlscfg);
+#  endif
+    rec->opts.tls_ctx = tlscfg->tls_ctx;
+    rec->opts.tls_mode = tlscfg->tls != TL_NONE ? TM_SERVER : TM_NONE;
+#endif
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &rec->opts);
+#ifdef WITH_TLS
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_unlock(&rec->srv->tlslock);
+#  else
+    SOM_release();
+#  endif
+#endif
     if (!newconn) goto done;
 #ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&rec->srv->lock);
@@ -315,10 +348,6 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     rec->path = self->path;
     rec->opts.pool = self->clients[poolno];
     rec->opts.rdbufsz = self->rdbufsz;
-#ifdef WITH_TLS
-    rec->opts.tls_ctx = self->tls_ctx;
-    rec->opts.tls_mode = self->tls != TL_NONE ? TM_SERVER : TM_NONE;
-#endif
     rec->opts.createmode = CCM_NORMAL;
     rec->fd = connfd;
 
@@ -350,7 +379,15 @@ static uint64_t bindhash(size_t nbinds, char **binds)
 }
 
 #ifdef WITH_TLS
-static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
+static void destroyTlsCfg(void *obj)
+{
+    if (!obj) return;
+    TlsConfig *self = obj;
+    SSL_CTX_free(self->tls_ctx);
+    free(self);
+}
+
+static TlsConfig *initTls(const PSC_TcpServerOpts *opts)
 {
     FILE *certfile = 0;
     FILE *keyfile = 0;
@@ -464,9 +501,18 @@ static int initTls(struct tlsprops *props, const PSC_TcpServerOpts *opts)
 		"server: using certificate `%s'", opts->certfile);
     }
 
-    props->tls = opts->tls ? (opts->cafile ? TL_CLIENTCA : TL_NORMAL) : TL_NONE;
-    props->tls_ctx = tls_ctx;
-    return 0;
+#  ifdef NO_SHAREDOBJ
+    TlsConfig *tlscfg = PSC_malloc(sizeof *tlscfg);
+#  else
+    TlsConfig *tlscfg = SharedObj_create(sizeof *tlscfg, destroyTlsCfg);
+#  endif
+    tlscfg->validator = opts->validator;
+    tlscfg->validatorObj = opts->validatorObj;
+    tlscfg->tls_ctx = tls_ctx;
+    tlscfg->tls = opts->tls
+	? (opts->cafile ? TL_CLIENTCA : TL_NORMAL)
+	: TL_NONE;
+    return tlscfg;
 
 error:
     SSL_CTX_free(tls_ctx);
@@ -474,7 +520,7 @@ error:
     X509_free(cert);
     if (keyfile) fclose(keyfile);
     if (certfile) fclose(certfile);
-    return -1;
+    return 0;
 }
 #endif
 
@@ -485,8 +531,8 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
 {
     if (nsocks < 1) goto error;
 #ifdef WITH_TLS
-    struct tlsprops props;
-    if (initTls(&props, opts) < 0) goto error;
+    TlsConfig *tlscfg = initTls(opts);
+    if (!tlscfg) goto error;
 #endif
     PSC_Server *self = PSC_malloc(sizeof *self + nsocks * sizeof *socks);
     self->owner = owner;
@@ -512,13 +558,15 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->nthr = -1;
     self->nextthr = -1;
 #ifdef WITH_TLS
-    self->tls = props.tls;
-    self->tls_ctx = props.tls_ctx;
-    self->validatorObj = opts->validatorObj;
-    self->validator = opts->validator;
-    if (self->tls_ctx && self->validator)
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_init(&self->tlslock, 0);
+    self->tlscfg = tlscfg;
+#  else
+    atomic_store_explicit(&self->tlscfg, tlscfg, memory_order_release);
+#  endif
+    if (tlscfg->tls_ctx && tlscfg->validator)
     {
-	SSL_CTX_set_ex_data(self->tls_ctx, ctx_idx, self);
+	SSL_CTX_set_ex_data(tlscfg->tls_ctx, ctx_idx, self);
     }
 #endif
     self->nsocks = nsocks;
@@ -809,17 +857,22 @@ SOEXPORT int PSC_Server_configureTcp(PSC_Server *self,
     if (self->rdbufsz != opts->rdbufsz) return -1;
     if (self->bhash != bindhash(opts->bh_count, opts->bindhosts)) return -1;
 #ifdef WITH_TLS
-    struct tlsprops props;
-    if (initTls(&props, opts) < 0) return -1;
-    SSL_CTX_free(self->tls_ctx);
-    self->tls = props.tls;
-    self->tls_ctx = props.tls_ctx;
-    self->validatorObj = opts->validatorObj;
-    self->validator = opts->validator;
-    if (self->tls_ctx && self->validator)
+    TlsConfig *tlscfg = initTls(opts);
+    if (!tlscfg) return -1;
+    if (tlscfg->tls_ctx && tlscfg->validator)
     {
-	SSL_CTX_set_ex_data(self->tls_ctx, ctx_idx, self);
+	SSL_CTX_set_ex_data(tlscfg->tls_ctx, ctx_idx, self);
     }
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_lock(&self->tlslock);
+    destroyTlsCfg(self->tlscfg);
+    self->tlscfg = tlscfg;
+    pthread_mutex_unlock(&self->tlslock);
+#  else
+    TlsConfig *oldcfg = atomic_exchange_explicit(&self->tlscfg, tlscfg,
+	    memory_order_acq_rel);
+    SharedObj_retire(oldcfg);
+#  endif
 #endif
     return 0;
 }
@@ -1068,7 +1121,12 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	free(self->path);
     }
 #ifdef WITH_TLS
-    SSL_CTX_free(self->tls_ctx);
+#  ifdef NO_SHAREDOBJ
+    pthread_mutex_destroy(&self->tlslock);
+    destroyTlsCfg(self->tlscfg);
+#  else
+    SharedObj_retire(self->tlscfg);
+#  endif
 #endif
     free(self);
 }
