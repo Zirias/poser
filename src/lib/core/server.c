@@ -3,6 +3,7 @@
 #include "certinfo.h"
 #include "connection.h"
 #include "ipaddr.h"
+#include "sharedobj.h"
 
 #include <poser/core/event.h>
 #include <poser/core/hash.h>
@@ -28,8 +29,12 @@
 #include <unistd.h>
 
 #ifdef WITH_TLS
-#include <openssl/pem.h>
-#include <openssl/ssl.h>
+#  include <openssl/pem.h>
+#  include <openssl/ssl.h>
+#endif
+
+#ifdef NO_SHAREDOBJ
+#  include <pthread.h>
 #endif
 
 #ifndef MAXSOCKS
@@ -37,20 +42,6 @@
 #endif
 
 #define BINDCHUNK 8
-
-#undef SRV_NO_ATOMICS
-#if defined(NO_ATOMICS) || defined(__STD_NO_ATOMICS__)
-#  define SRV_NO_ATOMICS
-#else
-#  include <stdatomic.h>
-#  if ATOMIC_POINTER_LOCK_FREE != 2
-#    define SRV_NO_ATOMICS
-#  endif
-#endif
-
-#ifdef SRV_NO_ATOMICS
-#  include <pthread.h>
-#endif
 
 #ifdef WITH_TLS
 enum ccertmode
@@ -150,12 +141,12 @@ struct PSC_Server
     void *validatorObj;
     PSC_CertValidator validator;
 #endif
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_t lock;
 #endif
     sem_t allclosed;
     uint64_t bhash;
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     size_t nconn;
 #else
     atomic_size_t nconn;
@@ -203,7 +194,7 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     PSC_Server *self = receiver;
 
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&self->lock);
     if (!--self->nconn) sem_post(&self->allclosed);
     pthread_mutex_unlock(&self->lock);
@@ -220,7 +211,7 @@ static void doaccept(void *arg)
     AcceptRecord *rec = arg;
     PSC_Connection *newconn = PSC_Connection_create(rec->fd, &rec->opts);
     if (!newconn) goto done;
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&rec->srv->lock);
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
     pthread_mutex_unlock(&rec->srv->lock);
@@ -504,12 +495,12 @@ static PSC_Server *PSC_Server_create(const PSC_TcpServerOpts *opts,
     self->shutdownTimer = 0;
     self->clients = 0;
     self->path = path;
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_init(&self->lock, 0);
 #endif
     sem_init(&self->allclosed, 0, 1);
     self->bhash = bindhash(opts->bh_count, opts->bindhosts);
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     self->nconn = 0;
 #else
     atomic_store_explicit(&self->nconn, 0, memory_order_release);
@@ -987,7 +978,7 @@ static void forceDestroy(void *receiver, void *sender, void *args)
 
 SOEXPORT size_t PSC_Server_connections(const PSC_Server *self)
 {
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     size_t n;
     pthread_mutex_lock(&((PSC_Server *)self)->lock);
     n = self->nconn;
@@ -1067,7 +1058,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	close(self->socks[i].fd);
     }
     sem_destroy(&self->allclosed);
-#ifdef SRV_NO_ATOMICS
+#ifdef NO_SHAREDOBJ
     pthread_mutex_destroy(&self->lock);
 #endif
     if (self->shutdownComplete) self->shutdownComplete(self->owner);
