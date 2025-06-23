@@ -40,7 +40,6 @@ struct PSC_IpAddr
     uint8_t data[16];
     char str[44];
 };
-#define IPADDR_CLONEOFFSET offsetof(PSC_IpAddr, proto)
 
 static int parsev4(uint8_t *data, const char *buf)
 {
@@ -371,6 +370,15 @@ SOLOCAL int PSC_IpAddr_sockAddr(const PSC_IpAddr *self,
 	return 0;
     }
     return -1;
+}
+
+SOEXPORT const void *PSC_IpAddr_raw(const PSC_IpAddr *self)
+{
+    switch (self->proto)
+    {
+	case PSC_P_IPv4:    return self->data + 12;
+	default:	    return self->data;
+    }
 }
 
 SOEXPORT const char *PSC_IpAddr_string(const PSC_IpAddr *self)

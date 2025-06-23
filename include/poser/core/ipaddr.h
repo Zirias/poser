@@ -91,6 +91,27 @@ DECLEXPORT unsigned
 PSC_IpAddr_prefixlen(const PSC_IpAddr *self)
     CMETHOD ATTR_PURE;
 
+/** The raw bytes of the address.
+ * Returns a pointer to the raw bytes of the address (not including the
+ * prefix length) in network byte order (most significant byte first).
+ * @memberof PSC_IpAddr
+ * @param self the PSC_IpAddr
+ * @returns a pointer to the raw bytes
+ */
+DECLEXPORT const void *
+PSC_IpAddr_raw(const PSC_IpAddr *self)
+    CMETHOD ATTR_RETNONNULL ATTR_PURE;
+
+
+/** The length of the raw address bytes.
+ * Returns the number of raw bytes returned by PSC_IpAddr_raw().
+ * @memberof PSC_IpAddr
+ * @param self the PSC_IpAddr
+ * @returns 4U for an IPv4 address, 16U for an IPv6 address
+ */
+#define PSC_IpAddr_rawLen(self) \
+	(PSC_IpAddr_proto(self) == PSC_P_IPv4 ? 4U : 16U)
+
 /** The canonical string representation of the address.
  * Returns the canonical string representation of the address. If the prefix
  * length is less than the full length in bits (32 for IPv4, 128 for IPv6),
