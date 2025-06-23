@@ -1049,7 +1049,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     {
 	if (self->nthr) for (int thr = 0; thr < self->nthr; ++thr)
 	{
-	    PSC_Service_runOnThread(thr, destroyPool, self->clients + thr);
+	    PSC_Service_runOnThread(thr, destroyPool, self->clients[thr]);
 	}
 	else ConnectionPool_destroy(*self->clients);
 	free(self->clients);
