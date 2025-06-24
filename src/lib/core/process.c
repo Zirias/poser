@@ -139,6 +139,7 @@ static int createPipe(int *fds, int check)
 	return -1;
     }
     if (!PSC_Service_isValidFd(fds[check], "process")) return -1;
+    fcntl(fds[check], F_SETFD, FD_CLOEXEC);
     fcntl(fds[check], F_SETFL, fcntl(fds[check], F_GETFL) | O_NONBLOCK);
     return 0;
 }
