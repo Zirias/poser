@@ -133,13 +133,23 @@ typedef struct AcceptRecord
     int fd;
 } AcceptRecord;
 
+typedef struct ThreadRecord
+{
+#ifdef NO_SHAREDOBJ
+    size_t nactive;
+#else
+    atomic_size_t nactive;
+#endif
+    ConnectionPool *pool;
+} ThreadRecord;
+
 struct PSC_Server
 {
     void *owner;
     PSC_ClientConnectedCallback clientConnected;
     void (*shutdownComplete)(void *);
     PSC_Timer *shutdownTimer;
-    ConnectionPool **clients;
+    ThreadRecord *clients;
     char *path;
 #ifdef NO_SHAREDOBJ
 #  ifdef WITH_TLS
@@ -210,11 +220,15 @@ static void removeConnection(void *receiver, void *sender, void *args)
 
     PSC_Server *self = receiver;
 
+    int thrno = PSC_Service_threadNo();
 #ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&self->lock);
+    if (thrno >= 0) --self->clients[thrno].nactive;
     if (!--self->nconn) sem_post(&self->allclosed);
     pthread_mutex_unlock(&self->lock);
 #else
+    if (thrno >= 0) atomic_fetch_sub_explicit(&self->clients[thrno].nactive,
+	    1, memory_order_acq_rel);
     if (atomic_fetch_sub_explicit(&self->nconn, 1, memory_order_acq_rel) == 1)
     {
 	sem_post(&self->allclosed);
@@ -243,7 +257,22 @@ static void doaccept(void *arg)
     SOM_release();
 #  endif
 #endif
-    if (!newconn) goto done;
+    if (!newconn)
+    {
+	int thrno = PSC_Service_threadNo();
+	if (thrno >= 0)
+	{
+#ifdef NO_SHAREDOBJ
+	    pthread_mutex_lock(&rec->srv->lock);
+	    --rec->srv->clients[thrno].nactive;
+	    pthread_mutex_unlock(&rec->srv->lock);
+#else
+	    atomic_fetch_sub_explicit(&rec->srv->clients[thrno].nactive, 1,
+		    memory_order_acq_rel);
+#endif
+	}
+	goto done;
+    }
 #ifdef NO_SHAREDOBJ
     pthread_mutex_lock(&rec->srv->lock);
     if (!rec->srv->nconn++) sem_wait(&rec->srv->allclosed);
@@ -335,9 +364,46 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	self->clients = PSC_malloc(npools * sizeof *self->clients);
 	for (int i = 0; i < npools; ++i)
 	{
-	    self->clients[i] = ConnectionPool_create();
+	    self->clients[i].nactive = 0;
+	    self->clients[i].pool = ConnectionPool_create();
 	}
     }
+
+    if (self->nthr)
+    {
+	int nextthr = self->nextthr;
+#ifdef NO_SHAREDOBJ
+	pthread_mutex_lock(&self->lock);
+	size_t minactive = self->clients[nextthr].nactive;
+#else
+	size_t minactive = atomic_load_explicit(
+		&self->clients[nextthr].nactive, memory_order_relaxed);
+#endif
+	for (int i = 1; i < self->nthr; ++i)
+	{
+	    int thrno = (nextthr + i) % self->nthr;
+#ifdef NO_SHAREDOBJ
+	    size_t iactive = self->clients[thrno].nactive;
+#else
+	    size_t iactive = atomic_load_explicit(
+		    &self->clients[thrno].nactive, memory_order_relaxed);
+#endif
+	    if (iactive < minactive)
+	    {
+		minactive = iactive;
+		nextthr = thrno;
+	    }
+	}
+#ifdef NO_SHAREDOBJ
+	++self->clients[nextthr].nactive;
+	pthread_mutex_unlock(&self->lock);
+#else
+	atomic_fetch_add_explicit(&self->clients[nextthr].nactive, 1,
+		memory_order_acq_rel);
+#endif
+	self->nextthr = nextthr;
+    }
+
     int poolno = self->nextthr;
     if (poolno < 0) poolno = 0;
 
@@ -346,13 +412,12 @@ static void acceptConnection(void *receiver, void *sender, void *args)
     rec->srv = self;
     rec->addr = PSC_IpAddr_fromSockAddr(sa);
     rec->path = self->path;
-    rec->opts.pool = self->clients[poolno];
+    rec->opts.pool = self->clients[poolno].pool;
     rec->opts.rdbufsz = self->rdbufsz;
     rec->opts.createmode = CCM_NORMAL;
     rec->fd = connfd;
 
     PSC_Service_runOnThread(self->nextthr, doaccept, rec);
-    if (self->nthr) self->nextthr = (self->nextthr + 1) % self->nthr;
 }
 
 static int bindcmp(const void *a, const void *b)
@@ -1093,11 +1158,11 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
     {
 	if (self->nthr) for (int thr = 0; thr < self->nthr; ++thr)
 	{
-	    PSC_Service_runOnThread(thr, destroyPool, self->clients[thr]);
+	    PSC_Service_runOnThread(thr, destroyPool, self->clients[thr].pool);
 	}
-	else ConnectionPool_destroy(*self->clients);
-	free(self->clients);
+	else ConnectionPool_destroy(self->clients->pool);
 	sem_wait(&self->allclosed);
+	free(self->clients);
     }
     if (!self->nsocks)
     {
