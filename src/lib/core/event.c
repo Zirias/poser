@@ -1,6 +1,7 @@
 #include "event.h"
 
 #include "assert.h"
+#include "objectpool.h"
 
 #include <poser/core/util.h>
 #include <pthread.h>
@@ -30,77 +31,35 @@ typedef struct EvHandler
 
 struct EvHandlerEntry
 {
+    PoolObj base;
     EvHandlerEntry *next;
-    EvHandlerEntry *prev;
     EvHandler handler;
 };
 
-struct EvHandlerPool
-{
-    EvHandlerEntry *first;
-    EvHandlerEntry *last;
-    size_t refcnt;
-#ifndef NDEBUG
-    void *thr;
-#endif
-};
+static THREADLOCAL ObjectPool *pool;
+static THREADLOCAL size_t refcnt;
 
-static THREADLOCAL EvHandlerPool *pool;
-
-static EvHandlerPool *EvHandlerPool_init(void)
+static void poolInit(void)
 {
-    if (!pool)
-    {
-	pool = PSC_malloc(sizeof *pool);
-	memset(pool, 0, sizeof *pool);
-#ifndef NDEBUG
-	pool->thr = (void *)pthread_self();
-#endif
-    }
-    ++pool->refcnt;
-    return pool;
+    if (!pool) pool = ObjectPool_create(sizeof (EvHandlerEntry), 4096);
+    ++refcnt;
 }
 
-static void EvHandlerPool_done(EvHandlerPool *self)
+static void poolDone(void)
 {
-    if (!--self->refcnt)
+    if (!--refcnt)
     {
+	ObjectPool_destroy(pool, 0);
 	pool = 0;
-	for (EvHandlerEntry *e = self->first, *n = 0; e; e = n)
-	{
-	    n = e->next;
-	    free(e);
-	}
-	free(self);
     }
-}
-
-static EvHandlerEntry *EvHandlerPool_get(EvHandlerPool *self)
-{
-    assert(self->thr == (void *)pthread_self());
-    EvHandlerEntry *e = self->first;
-    if (e)
-    {
-	if (!(self->first = e->next)) self->last = 0;
-    }
-    else e = PSC_malloc(sizeof *e);
-    return e;
-}
-
-static void EvHandlerPool_return(EvHandlerPool *self, EvHandlerEntry *e)
-{
-    assert(self->thr == (void *)pthread_self());
-    e->next = 0;
-    if (self->last) self->last->next = e;
-    else self->first = e;
-    self->last = e;
 }
 
 SOLOCAL void PSC_Event_initStatic(PSC_Event *self, void *sender)
 {
+    poolInit();
     memset(self, 0, sizeof *self);
+    self->pool = pool;
     self->sender = sender;
-    self->pool = EvHandlerPool_init();
 }
 
 SOEXPORT PSC_Event *PSC_Event_create(void *sender)
@@ -111,23 +70,28 @@ SOEXPORT PSC_Event *PSC_Event_create(void *sender)
     return self;
 }
 
-static EvHandlerEntry *findEntry(PSC_Event *self, EvHandler *handler)
+static EvHandlerEntry *findEntry(PSC_Event *self, EvHandler *handler,
+	EvHandlerEntry **parent)
 {
-    for (EvHandlerEntry *e = self->first; e; e = e->next)
+    EvHandlerEntry *e = 0;
+    EvHandlerEntry *p = 0;
+    for (e = self->first; e; p = e, e = e->next)
     {
-	if (!memcmp(&e->handler, handler, sizeof *handler)) return e;
+	if (!memcmp(&e->handler, handler, sizeof *handler)) break;
     }
-    return 0;
+    if (!e) p = 0;
+    if (parent) *parent = p;
+    return e;
 }
 
 SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
 	PSC_EventHandler handler, int id)
 {
+    assert(self->pool == pool);
     EvHandler hdl;
     EVHDL_INIT(&hdl, handler, receiver, id);
-    if (findEntry(self, &hdl)) return;
-    EvHandlerEntry *entry = EvHandlerPool_get(self->pool);
-    entry->prev = self->last;
+    if (findEntry(self, &hdl, 0)) return;
+    EvHandlerEntry *entry = ObjectPool_alloc(pool);
     entry->next = 0;
     entry->handler = hdl;
     if (self->last) self->last->next = entry;
@@ -138,22 +102,23 @@ SOEXPORT void PSC_Event_register(PSC_Event *self, void *receiver,
 SOEXPORT void PSC_Event_unregister(
 	PSC_Event *self, void *receiver, PSC_EventHandler handler, int id)
 {
+    assert(self->pool == pool);
     if (!self->first) return;
     EvHandler hdl;
     EVHDL_INIT(&hdl, handler, receiver, id);
-    EvHandlerEntry *entry = findEntry(self, &hdl);
+    EvHandlerEntry *parent = 0;
+    EvHandlerEntry *entry = findEntry(self, &hdl, &parent);
     if (!entry) return;
     if (entry == self->handling) self->handling = entry->next;
-    if (entry->prev) entry->prev->next = entry->next;
+    if (parent) parent->next = entry->next;
     else self->first = entry->next;
-    if (entry->next) entry->next->prev = entry->prev;
-    else self->last = entry->prev;
-    EvHandlerPool_return(self->pool, entry);
+    if (!entry->next) self->last = parent;
+    PoolObj_free(entry);
 }
 
 SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 {
-    assert(self->pool->thr == (void *)pthread_self());
+    assert(self->pool == pool);
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	self->handling = entry->next;
@@ -169,26 +134,21 @@ SOEXPORT void PSC_Event_raise(PSC_Event *self, int id, void *args)
 SOLOCAL void PSC_Event_destroyStatic(PSC_Event *self)
 {
     if (!self->pool) return;
+    assert(self->pool == pool);
     for (EvHandlerEntry *entry = self->first; entry;)
     {
 	EvHandlerEntry *next = entry->next;
-	EvHandlerPool_return(self->pool, entry);
+	PoolObj_free(entry);
 	entry = next;
     }
-    EvHandlerPool_done(self->pool);
     memset(self, 0, sizeof *self);
+    poolDone();
 }
 
 SOEXPORT void PSC_Event_destroy(PSC_Event *self)
 {
     if (!self) return;
-    for (EvHandlerEntry *entry = self->first; entry;)
-    {
-	EvHandlerEntry *next = entry->next;
-	EvHandlerPool_return(self->pool, entry);
-	entry = next;
-    }
-    EvHandlerPool_done(self->pool);
+    PSC_Event_destroyStatic(self);
     free(self);
 }
 

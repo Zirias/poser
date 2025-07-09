@@ -6,12 +6,11 @@
 #include <stddef.h>
 
 C_CLASS_DECL(EvHandlerEntry);
-C_CLASS_DECL(EvHandlerPool);
 
 struct PSC_Event
 {
+    void *pool;
     void *sender;
-    EvHandlerPool *pool;
     EvHandlerEntry *first;
     EvHandlerEntry *last;
     EvHandlerEntry *handling;
