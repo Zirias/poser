@@ -113,6 +113,7 @@ posercore_MODULES=		base64 \
 				json \
 				list \
 				log \
+				objectpool \
 				process \
 				queue \
 				random \
