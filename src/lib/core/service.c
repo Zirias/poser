@@ -2,6 +2,7 @@
 
 #include "event.h"
 #include "log.h"
+#include "objectpool.h"
 #include "runopts.h"
 #include "service.h"
 #include "sharedobj.h"
@@ -283,6 +284,16 @@ static void handlesig(int signum)
 }
 #endif
 
+static void objpoolinit(void)
+{
+    static int done = 0;
+    if (!done)
+    {
+	ObjectPool_init();
+	done = 1;
+    }
+}
+
 static void svcinit(void)
 {
     if (svc) return;
@@ -477,19 +488,31 @@ SOEXPORT PSC_Event *PSC_Service_readyWrite(void)
 
 SOEXPORT PSC_Event *PSC_Service_prestartup(void)
 {
-    if (!prestartup.pool) PSC_Event_initStatic(&prestartup, 0);
+    if (!prestartup.pool)
+    {
+	objpoolinit();
+	PSC_Event_initStatic(&prestartup, 0);
+    }
     return &prestartup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_startup(void)
 {
-    if (!startup.pool) PSC_Event_initStatic(&startup, 0);
+    if (!startup.pool)
+    {
+	objpoolinit();
+	PSC_Event_initStatic(&startup, 0);
+    }
     return &startup;
 }
 
 SOEXPORT PSC_Event *PSC_Service_shutdown(void)
 {
-    if (!shutdown.pool) PSC_Event_initStatic(&shutdown, 0);
+    if (!shutdown.pool)
+    {
+	objpoolinit();
+	PSC_Event_initStatic(&shutdown, 0);
+    }
     return &shutdown;
 }
 
@@ -501,7 +524,11 @@ SOEXPORT PSC_Event *PSC_Service_eventsDone(void)
 
 SOEXPORT PSC_Event *PSC_Service_childExited(void)
 {
-    if (!childExited.pool) PSC_Event_initStatic(&childExited, 0);
+    if (!childExited.pool)
+    {
+	objpoolinit();
+	PSC_Event_initStatic(&childExited, 0);
+    }
     return &childExited;
 }
 
@@ -1611,6 +1638,7 @@ static int serviceLoop(ServiceLoopFlags flags)
 
     if (flags & SLF_SVCMAIN)
     {
+	objpoolinit();
 	opts = runOpts();
 
 	if (flags & SLF_SVCRUN)
