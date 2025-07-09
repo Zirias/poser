@@ -3,6 +3,8 @@
 
 #include <poser/core/connection.h>
 
+#include "objectpool.h"
+
 #include <sys/socket.h>
 
 #ifdef WITH_TLS
@@ -17,8 +19,6 @@
 #ifndef DEFRDBUFSZ
 #define DEFRDBUFSZ WRBUFSZ
 #endif
-
-C_CLASS_DECL(ConnectionPool);
 
 typedef enum ConnectionCreateMode
 {
@@ -37,7 +37,7 @@ typedef enum TlsMode
 
 typedef struct ConnOpts
 {
-    ConnectionPool *pool;
+    ObjectPool *pool;
     size_t rdbufsz;
 #ifdef WITH_TLS
     SSL_CTX *tls_ctx;
@@ -51,11 +51,8 @@ typedef struct ConnOpts
     int blacklisthits;
 } ConnOpts;
 
-ConnectionPool *
-ConnectionPool_create(void);
-
-void
-ConnectionPool_destroy(ConnectionPool *self);
+size_t
+PSC_Connection_size(size_t rdbufsz);
 
 PSC_Connection *
 PSC_Connection_create(int fd, const ConnOpts *opts) ATTR_NONNULL((2));

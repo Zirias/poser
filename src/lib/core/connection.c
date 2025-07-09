@@ -58,9 +58,7 @@ typedef enum ConnectionType
 
 struct PSC_Connection
 {
-    ConnectionPool *pool;
-    PSC_Connection *next;
-    PSC_Connection *prev;
+    PoolObj base;
     PSC_Event connected;
     PSC_Event closed;
     PSC_Event dataReceived;
@@ -108,37 +106,6 @@ struct PSC_Connection
     uint8_t wrbuf[WRBUFSZ];
     uint8_t rdbuf[];
 };
-
-struct ConnectionPool
-{
-    PSC_Connection *active;
-    PSC_Connection *available;
-};
-
-SOLOCAL ConnectionPool *ConnectionPool_create(void)
-{
-    ConnectionPool *self = PSC_malloc(sizeof *self);
-    self->active = 0;
-    self->available = 0;
-    return self;
-}
-
-SOLOCAL void ConnectionPool_destroy(ConnectionPool *self)
-{
-    if (!self) return;
-    for (PSC_Connection *c = self->active, *n = 0; c; c = n)
-    {
-	n = c->next;
-	c->pool = 0;
-	PSC_Connection_close(c, 0);
-    }
-    for (PSC_Connection *c = self->available, *n = 0; c; c = n)
-    {
-	n = c->next;
-	free(c);
-    }
-    free(self);
-}
 
 static void connectionTimeout(void *receiver, void *sender, void *args);
 static void wantreadwrite(PSC_Connection *self) CMETHOD;
@@ -726,6 +693,11 @@ static void deleteConnection(void *receiver, void *sender, void *args)
     PSC_Connection_destroy(self);
 }
 
+SOLOCAL size_t PSC_Connection_size(size_t rdbufsz)
+{
+    return sizeof (PSC_Connection) + rdbufsz + 1;
+}
+
 SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
 {
     PSC_Connection *self;
@@ -733,36 +705,27 @@ SOLOCAL PSC_Connection *PSC_Connection_create(int fd, const ConnOpts *opts)
     ConnectionType type = CT_SOCKET;
     if (opts->createmode == CCM_PIPERD) type = CT_PIPERD;
     else if (opts->createmode == CCM_PIPEWR) type = CT_PIPEWR;
-    size_t connsz = sizeof *self;
-    switch (type)
+
+    if (opts->pool) self = ObjectPool_alloc(opts->pool);
+    else
     {
-	case CT_SOCKET:
-	    connsz += opts->rdbufsz + 1;
-	    break;
+	size_t connsz = sizeof *self;
+	switch (type)
+	{
+	    case CT_SOCKET:
+		connsz += opts->rdbufsz + 1;
+		break;
 
-	case CT_PIPERD:
-	    connsz = connsz - WRBUFSZ + opts->rdbufsz + 1;
-	    break;
+	    case CT_PIPERD:
+		connsz = connsz - WRBUFSZ + opts->rdbufsz + 1;
+		break;
 
-	default:
-	    break;
+	    default:
+		break;
+	}
+	self = PSC_malloc(connsz);
     }
 
-    if (opts->pool && opts->pool->available)
-    {
-	self = opts->pool->available;
-	opts->pool->available = self->next;
-    }
-    else self = PSC_malloc(connsz);
-    if (opts->pool)
-    {
-	if (opts->pool->active) opts->pool->active->prev = self;
-	self->next = opts->pool->active;
-	opts->pool->active = self;
-    }
-    else self->next = 0;
-    self->prev = 0;
-    self->pool = opts->pool;
     self->rdlocator = 0;
     PSC_Event_initStatic(&self->connected, self);
     PSC_Event_initStatic(&self->closed, self);
@@ -1175,14 +1138,7 @@ SOLOCAL void PSC_Connection_destroy(PSC_Connection *self)
     PSC_Event_destroyStatic(&self->closed);
     PSC_Event_destroyStatic(&self->connected);
 
-    if (self->pool)
-    {
-	if (self->prev) self->prev->next = self->next;
-	else self->pool->active = self->next;
-	if (self->next) self->next->prev = self->prev;
-	self->next = self->pool->available;
-	self->pool->available = self;
-    }
+    if (self->base.pool) PoolObj_free(self);
     else free(self);
 }
 

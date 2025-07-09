@@ -140,7 +140,7 @@ typedef struct ThreadRecord
 #else
     atomic_size_t nactive;
 #endif
-    ConnectionPool *pool;
+    ObjectPool *pool;
 } ThreadRecord;
 
 struct PSC_Server
@@ -365,7 +365,8 @@ static void acceptConnection(void *receiver, void *sender, void *args)
 	for (int i = 0; i < npools; ++i)
 	{
 	    self->clients[i].nactive = 0;
-	    self->clients[i].pool = ConnectionPool_create();
+	    self->clients[i].pool = ObjectPool_create(
+		    PSC_Connection_size(self->rdbufsz), 1024);
 	}
     }
 
@@ -1144,9 +1145,14 @@ SOEXPORT void PSC_Server_shutdown(PSC_Server *self, unsigned timeout)
     }
 }
 
+static void destroyPoolConn(void *obj)
+{
+    PSC_Connection_destroy(obj);
+}
+
 static void destroyPool(void *arg)
 {
-    ConnectionPool_destroy(arg);
+    ObjectPool_destroy(arg, destroyPoolConn);
 }
 
 SOEXPORT void PSC_Server_destroy(PSC_Server *self)
@@ -1160,7 +1166,7 @@ SOEXPORT void PSC_Server_destroy(PSC_Server *self)
 	{
 	    PSC_Service_runOnThread(thr, destroyPool, self->clients[thr].pool);
 	}
-	else ConnectionPool_destroy(self->clients->pool);
+	else ObjectPool_destroy(self->clients->pool, destroyPoolConn);
 	sem_wait(&self->allclosed);
 	free(self->clients);
     }
