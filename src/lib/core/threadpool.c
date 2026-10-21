@@ -340,13 +340,13 @@ static void *worker(void *arg)
 	if (!currentJob) continue;
 #ifdef THRP_NO_ATOMICS
 	pthread_mutex_lock(&currentJob->lock);
-	if (currentJob->hasCompleted)
+	if (currentJob->hasCompleted || currentJob->task)
 	{
 	    currentJob->pthrno = t->pthrno;
 	    pthread_mutex_unlock(&currentJob->lock);
 #else
 	if (atomic_load_explicit(&currentJob->hasCompleted,
-		    memory_order_consume))
+		    memory_order_consume) || currentJob->task)
 	{
 	    atomic_store_explicit(&currentJob->pthrno, t->pthrno,
 		    memory_order_release);
