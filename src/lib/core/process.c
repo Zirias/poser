@@ -161,7 +161,7 @@ static void prepareChild(const PSC_StreamAction *actions, int (*pipefd)[2],
 		break;
 
 	    case PSC_SA_NULL:
-		if (nullfd < 0 && (nullfd = open("/dev/null", O_RDWR) < 0))
+		if (nullfd < 0 && (nullfd = open("/dev/null", O_RDWR)) < 0)
 		{
 		    goto fail;
 		}
