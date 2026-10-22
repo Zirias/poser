@@ -157,7 +157,6 @@ PSC_Process_create(const PSC_ProcessOpts *opts)
  * @param cb a callback to receive PSC_Connection objects for configured
  *           pipes. This must be given if any pipes are configured.
  * @param path the path to the external program
- * @returns 0 on success, -1 on error
  */
 DECLEXPORT void
 PSC_Process_exec(PSC_Process *self, void *obj, PSC_StreamCallback cb,
@@ -171,7 +170,6 @@ PSC_Process_exec(PSC_Process *self, void *obj, PSC_StreamCallback cb,
  * @param cb a callback to receive PSC_Connection objects for configured
  *           pipes. This must be given if any pipes are configured.
  * @param main the function to execute in the child
- * @returns 0 on success, -1 on error
  */
 DECLEXPORT void
 PSC_Process_run(PSC_Process *self, void *obj, PSC_StreamCallback cb,
@@ -195,8 +193,8 @@ PSC_Process_stop(PSC_Process *self, unsigned forceMs)
 /** The child process finished.
  * This event fires when the child process terminated, and, if there are pipes
  * configured for standard output and/or standard error, these pipes were
- * closed, for example by reaching EOF. It passes a PSC_EAProcessDone instance
- * as the event argument.
+ * closed, for example by reaching EOF. It is also fired when starting the child
+ * process failed. It passes a PSC_EAProcessDone instance as the event argument.
  * @memberof PSC_Process
  * @param self the PSC_Process
  * @returns the done event
@@ -206,7 +204,7 @@ PSC_Process_done(PSC_Process *self)
     CMETHOD ATTR_RETNONNULL;
 
 /** The process id of the child process.
- * This fails if the child is not currently running.
+ * This fails (returning -1) if the child is not currently running.
  * @memberof PSC_Process
  * @param self the PSC_Process
  * @returns the process id, or -1 on error
