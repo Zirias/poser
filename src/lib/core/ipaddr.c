@@ -399,12 +399,16 @@ SOEXPORT int PSC_IpAddr_matches(const PSC_IpAddr *self,
     if (self->proto != prefix->proto) return 0;
     if (self->prefixlen < prefix->prefixlen) return 0;
 
+    int dataOffset = self->proto == PSC_P_IPv4 ? 12 : 0;
+    const uint8_t *addrData = self->data + dataOffset;
+    const uint8_t *prefixData = prefix->data + dataOffset;
+
     unsigned bytes = prefix->prefixlen / 8;
-    if (memcmp(self->data, prefix->data, bytes)) return 0;
+    if (memcmp(addrData, prefixData, bytes)) return 0;
     unsigned bits = prefix->prefixlen % 8;
     if (!bits) return 1;
     uint8_t mask = (0xff << (8 - bits));
-    return ((self->data[bytes] & mask) == (prefix->data[bytes] & mask));
+    return ((addrData[bytes] & mask) == (prefixData[bytes] & mask));
 }
 
 SOEXPORT void PSC_IpAddr_destroy(PSC_IpAddr *self)
