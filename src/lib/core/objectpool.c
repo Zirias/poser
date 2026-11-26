@@ -242,6 +242,7 @@ SOLOCAL void PoolObj_free(void *obj)
 #endif
 	hdr = self->last;
 	if (hdr) hdr->next = 0;
+	else self->first = 0;
     }
 
     if (lastchunk & POOLOBJ_USEDMASK)
